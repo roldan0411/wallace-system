@@ -1,0 +1,13 @@
+{
+  "name": "wallace-pos",
+  "version": "1.0.0",
+  "description": "Wallace POS - Sistema POS multi-negocio para restaurantes y todo tipo de negocios",
+  "scripts": {
+    "start": "npx serve -s . -l $PORT"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  },
+  "author": "WALLACE COMPANY SYSTEM - Ing. Roldan Aldana",
+  "license": "UNLICENSED"
+}
