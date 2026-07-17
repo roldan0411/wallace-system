@@ -1,4 +1,4 @@
-# Wallace POS — Sistema multi-negocio (SaaS)
+# Wallace System — Sistema multi-negocio (SaaS)
 ### Un solo sistema que cualquier restaurante, barbería o tienda puede usar
 **WALLACE COMPANY SYSTEM — Ing. Roldán Aldana · wallacecompany11@gmail.com**
 
