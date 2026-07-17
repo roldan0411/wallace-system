@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: wallace-pos
+    name: wallace-system
     runtime: static
     buildCommand: ""
     staticPublishPath: .
