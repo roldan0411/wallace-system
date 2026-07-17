@@ -30,11 +30,11 @@ function initFirebase(){
   try{
     const cfg=window.FIREBASE_CONFIG;
     if(!cfg || !cfg.databaseURL || cfg.apiKey==='TU_API_KEY') return false;
-    if(typeof firebase==='undefined') return false;
+    if(typeof firebase==='undefined' || !firebase.initializeApp) return false;
     firebase.initializeApp(cfg);
     FB=firebase.database();
     return true;
-  }catch(e){ console.warn('Firebase no disponible, usando modo local.',e); return false; }
+  }catch(e){ console.warn('Firebase no disponible, usando modo local.',e); FB=null; return false; }
 }
 // Carga inicial desde la nube (sincroniza todos los datos)
 function cargarDeLaNube(callback){
@@ -52,6 +52,67 @@ function fmtMoney(n){ return '$ '+(n||0).toLocaleString('es-CO'); }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('es-CO')+' '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toast(msg,tipo){ const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.className='toast show '+(tipo||'info'); setTimeout(()=>t.className='toast',2600); }
+
+// ============================================================
+//  SISTEMA DE MODALES ELEGANTES (reemplaza los prompt feos)
+// ============================================================
+// abrirModal({titulo, campos:[{id,label,tipo,valor,opciones,placeholder,requerido}], onGuardar, textoBoton})
+// tipos de campo: text, number, tel, date, time, select, textarea
+function abrirModal(cfg){
+  const cont=document.getElementById('modal-container');
+  if(!cont) return;
+  const campos=(cfg.campos||[]).map(c=>{
+    const val=c.valor!=null?String(c.valor):'';
+    if(c.tipo==='select'){
+      return `<div class="m-row"><label>${escapeHtml(c.label)}</label>
+        <select id="m-${c.id}">${(c.opciones||[]).map(o=>{const ov=typeof o==='object'?o.valor:o; const ol=typeof o==='object'?o.label:o; return `<option value="${escapeHtml(String(ov))}" ${String(ov)===val?'selected':''}>${escapeHtml(ol)}</option>`;}).join('')}</select></div>`;
+    }
+    if(c.tipo==='textarea'){
+      return `<div class="m-row"><label>${escapeHtml(c.label)}</label><textarea id="m-${c.id}" placeholder="${escapeHtml(c.placeholder||'')}" rows="3">${escapeHtml(val)}</textarea></div>`;
+    }
+    return `<div class="m-row"><label>${escapeHtml(c.label)}${c.requerido?' *':''}</label><input id="m-${c.id}" type="${c.tipo||'text'}" value="${escapeHtml(val)}" placeholder="${escapeHtml(c.placeholder||'')}" ${c.tipo==='number'?'inputmode="numeric"':''}></div>`;
+  }).join('');
+  cont.innerHTML=`
+    <div class="modal-back" onclick="if(event.target===this)cerrarModal()">
+      <div class="modal-box">
+        <div class="modal-head"><span>${escapeHtml(cfg.titulo||'')}</span><button class="modal-x" onclick="cerrarModal()">×</button></div>
+        <div class="modal-body">${campos}</div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" onclick="cerrarModal()">Cancelar</button>
+          <button class="btn btn-gold" id="modal-guardar">${escapeHtml(cfg.textoBoton||'Guardar')}</button>
+        </div>
+      </div>
+    </div>`;
+  cont.classList.add('activo');
+  // Guardar recoge los valores y llama onGuardar
+  document.getElementById('modal-guardar').onclick=()=>{
+    const datos={};
+    (cfg.campos||[]).forEach(c=>{ const el=document.getElementById('m-'+c.id); datos[c.id]=el?el.value.trim():''; });
+    // Validar requeridos
+    const falta=(cfg.campos||[]).find(c=>c.requerido && !datos[c.id]);
+    if(falta){ toast('Falta: '+falta.label,'error'); return; }
+    cfg.onGuardar(datos);
+  };
+  // Foco al primer campo
+  setTimeout(()=>{ const f=cont.querySelector('input,select,textarea'); if(f)f.focus(); },50);
+}
+function cerrarModal(){ const c=document.getElementById('modal-container'); if(c){ c.classList.remove('activo'); c.innerHTML=''; } }
+// Confirmación elegante (reemplaza confirm feo)
+function confirmarModal(mensaje, onSi, textoBoton){
+  const cont=document.getElementById('modal-container'); if(!cont) return;
+  cont.innerHTML=`
+    <div class="modal-back" onclick="if(event.target===this)cerrarModal()">
+      <div class="modal-box modal-sm">
+        <div class="modal-body" style="padding-top:24px;"><p style="font-size:15px;line-height:1.5;">${escapeHtml(mensaje)}</p></div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" onclick="cerrarModal()">Cancelar</button>
+          <button class="btn btn-danger" id="modal-si">${escapeHtml(textoBoton||'Confirmar')}</button>
+        </div>
+      </div>
+    </div>`;
+  cont.classList.add('activo');
+  document.getElementById('modal-si').onclick=()=>{ cerrarModal(); onSi(); };
+}
 
 // ---------- Iconos SVG (línea, estilo premium) ----------
 const ICONS={
@@ -172,7 +233,7 @@ function seed(){
         plan:'Profesional', precioMes:149900, activo:true,
         palabraProducto:'Plato', palabraProductos:'Platos',
         usaMesas:true, usaCocina:true, usaCitas:false, usaVariantes:false,
-        funciones:['ventas','menu','caja','facturas','clientes','mesas','cocina','domicilios','inventario','recetas','reportes','contable','gastosneg'],
+        funciones:['ventas','menu','caja','facturas','clientes','mesas','cocina','domicilios','inventario','recetas','reportes','contable','gastosneg'], tipoFactura:'pos',
         creado:now()
       }
     ]);
@@ -327,7 +388,7 @@ function crearNegocio(){
     // Vocabulario y comportamiento del perfil
     palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
     usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina, usaCitas:perfil.usaCitas, usaVariantes:perfil.usaVariantes,
-    funciones:perfil.funciones.slice(),
+    funciones:perfil.funciones.slice(), tipoFactura:'pos',
     creado:now()
   });
   DB.set('negocios',negocios);
@@ -389,6 +450,17 @@ function pantallaConfigNegocio(id){
       </div>
 
       <hr class="sep">
+      <div class="card-title">Tipo de factura</div>
+      <p class="muted" style="margin-bottom:10px;">Elige cómo se imprime la factura de este negocio.</p>
+      <div class="form-row"><label>Tamaño / formato de factura</label>
+        <select id="c-factura">
+          <option value="pos" ${(neg.tipoFactura||'pos')==='pos'?'selected':''}>POS / Tirilla térmica (80mm, angosta)</option>
+          <option value="media" ${neg.tipoFactura==='media'?'selected':''}>Media hoja (media carta)</option>
+          <option value="carta" ${neg.tipoFactura==='carta'?'selected':''}>Hoja completa (tamaño carta)</option>
+        </select>
+      </div>
+
+      <hr class="sep">
       <div class="card-title">Funciones activadas</div>
       <p class="muted" style="margin-bottom:10px;">Marca las funciones que este negocio podrá usar. Las demás quedan ocultas para ellos.</p>
       <div class="func-grid">
@@ -411,6 +483,7 @@ function guardarConfigNegocio(id){
   neg.tel=(document.getElementById('c-tel').value||'').trim();
   neg.dir=(document.getElementById('c-dir').value||'').trim();
   neg.plan=document.getElementById('c-plan').value;
+  neg.tipoFactura=document.getElementById('c-factura').value;
   neg.precioMes=parseInt(document.getElementById('c-precio').value)||0;
   neg.palabraProducto=(document.getElementById('c-palabra1').value||'').trim()||'Producto';
   neg.palabraProductos=(document.getElementById('c-palabra2').value||'').trim()||'Productos';
@@ -431,11 +504,12 @@ function toggleNegocio(id){
   render();
 }
 function eliminarNegocio(id){
-  if(!confirm('¿Eliminar este negocio y todos sus usuarios? Esta acción no se puede deshacer.')) return;
-  DB.set('negocios',(DB.get('negocios')||[]).filter(n=>n.id!==id));
-  DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
-  toast('Negocio eliminado','info');
-  render();
+  confirmarModal('¿Eliminar este negocio y todos sus usuarios? Esta acción no se puede deshacer.',()=>{
+    DB.set('negocios',(DB.get('negocios')||[]).filter(n=>n.id!==id));
+    DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
+    toast('Negocio eliminado','info');
+    render();
+  },'Eliminar');
 }
 
 // ============================================================
@@ -458,15 +532,18 @@ function domicilios(){
     </div>`;
 }
 function nuevoDomiciliario(){
-  const nombre=prompt('Nombre del domiciliario:'); if(!nombre) return;
-  const tel=prompt('Teléfono (opcional):')||'';
-  const doms=misDatos('domiciliarios');
-  doms.push({id:uid(), nombre:nombre.trim(), tel, activo:true, creado:now()});
-  guardarMisDatos('domiciliarios',doms);
-  toast('Domiciliario agregado','success'); render();
+  abrirModal({titulo:'Nuevo domiciliario', textoBoton:'Agregar', campos:[
+    {id:'nombre', label:'Nombre', requerido:true},
+    {id:'tel', label:'Teléfono', tipo:'tel'}
+  ], onGuardar:(d)=>{
+    const doms=misDatos('domiciliarios');
+    doms.push({id:uid(), nombre:d.nombre, tel:d.tel, activo:true, creado:now()});
+    guardarMisDatos('domiciliarios',doms);
+    cerrarModal(); toast('Domiciliario agregado','success'); render();
+  }});
 }
 function toggleDomiciliario(id){ const d=misDatos('domiciliarios'); const x=d.find(y=>y.id===id); if(x){x.activo=!x.activo; guardarMisDatos('domiciliarios',d); render();} }
-function eliminarDomiciliario(id){ if(!confirm('¿Eliminar?'))return; guardarMisDatos('domiciliarios',misDatos('domiciliarios').filter(d=>d.id!==id)); render(); }
+function eliminarDomiciliario(id){ confirmarModal('¿Eliminar este domiciliario?',()=>{ guardarMisDatos('domiciliarios',misDatos('domiciliarios').filter(d=>d.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  USUARIOS DEL NEGOCIO (roles: cajero, mesero, cocina...)
@@ -490,17 +567,20 @@ function usuariosNeg(){
     </div>`;
 }
 function nuevoUsuarioNeg(){
-  const nombre=prompt('Nombre del empleado:'); if(!nombre) return;
-  const usuario=prompt('Usuario (para entrar):'); if(!usuario) return;
-  const pass=prompt('Contraseña:'); if(!pass) return;
-  const rolTxt=prompt('Rol: cajero / mesero / cocina','cajero')||'cajero';
-  if((DB.get('usuarios')||[]).some(u=>u.usuario===usuario)){ toast('Ese usuario ya existe','error'); return; }
-  const us=DB.get('usuarios')||[];
-  us.push({id:uid(), negocioId:STATE.negocio.id, nombre:nombre.trim(), usuario:usuario.trim(), pass, rol:rolTxt.toLowerCase(), activo:true, creado:now()});
-  DB.set('usuarios',us);
-  toast('Usuario creado','success'); render();
+  abrirModal({titulo:'Nuevo usuario del negocio', textoBoton:'Crear usuario', campos:[
+    {id:'nombre', label:'Nombre del empleado', requerido:true},
+    {id:'usuario', label:'Usuario (para entrar)', requerido:true},
+    {id:'pass', label:'Contraseña', requerido:true},
+    {id:'rol', label:'Rol', tipo:'select', opciones:[{valor:'cajero',label:'Cajero'},{valor:'mesero',label:'Mesero'},{valor:'cocina',label:'Cocina'}]}
+  ], onGuardar:(d)=>{
+    if((DB.get('usuarios')||[]).some(u=>u.usuario===d.usuario)){ toast('Ese usuario ya existe','error'); return; }
+    const us=DB.get('usuarios')||[];
+    us.push({id:uid(), negocioId:STATE.negocio.id, nombre:d.nombre, usuario:d.usuario, pass:d.pass, rol:d.rol, activo:true, creado:now()});
+    DB.set('usuarios',us);
+    cerrarModal(); toast('Usuario creado','success'); render();
+  }});
 }
-function eliminarUsuarioNeg(id){ if(!confirm('¿Eliminar usuario?'))return; DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.id!==id)); render(); }
+function eliminarUsuarioNeg(id){ confirmarModal('¿Eliminar este usuario?',()=>{ DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  CONFIGURACIÓN DEL NEGOCIO (logo, datos) — la ve el admin del negocio
@@ -586,12 +666,22 @@ function imprimirFactura(ventaId){
   const neg=STATE.negocio;
   const subtotal=v.items.reduce((a,i)=>a+i.precio*i.qty,0);
   const logo=neg.logo||window.LOGO_DEFAULT||'';
-  const html=`<div style="font-family:'Inter',sans-serif;color:#000;width:72mm;padding:4mm;">
-    <div style="text-align:center;padding-bottom:6px;">
-      ${logo?`<img src="${logo}" style="max-height:120px;max-width:240px;margin-bottom:6px;">`:''}
-      <div style="font-size:26px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
-      ${neg.tel?`<div style="font-size:14px;margin-top:4px;">Tel: ${escapeHtml(neg.tel)}</div>`:''}
-      ${neg.dir?`<div style="font-size:14px;">${escapeHtml(neg.dir)}</div>`:''}
+  const tipo=neg.tipoFactura||'pos';
+  // Dimensiones y estilos según el tipo de factura
+  let ancho, pagina, ventanaW;
+  if(tipo==='carta'){ ancho='190mm'; pagina='@page{size:letter;margin:12mm;}'; ventanaW=800; }
+  else if(tipo==='media'){ ancho='140mm'; pagina='@page{size:half-letter;margin:8mm;}'; ventanaW=650; }
+  else { ancho='72mm'; pagina='@page{size:80mm auto;margin:0;}'; ventanaW=400; }
+  const grande = tipo!=='pos'; // en hoja carta/media usamos layout más amplio
+  const html=`<div style="font-family:'Inter',Arial,sans-serif;color:#000;width:${ancho};padding:${grande?'6mm':'4mm'};margin:0 auto;">
+    <div style="text-align:center;padding-bottom:6px;${grande?'display:flex;align-items:center;gap:14px;text-align:left;justify-content:center;':''}">
+      ${logo?`<img src="${logo}" style="max-height:${grande?'90px':'120px'};max-width:240px;margin-bottom:6px;">`:''}
+      <div>
+        <div style="font-size:26px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
+        ${neg.nit?`<div style="font-size:14px;margin-top:2px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
+        ${neg.tel?`<div style="font-size:14px;">Tel: ${escapeHtml(neg.tel)}</div>`:''}
+        ${neg.dir?`<div style="font-size:14px;">${escapeHtml(neg.dir)}</div>`:''}
+      </div>
     </div>
     <div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:6px 0;text-align:center;margin:6px 0;">
       <div style="font-size:15px;font-weight:bold;">FACTURA DE VENTA</div>
@@ -613,10 +703,10 @@ function imprimirFactura(ventaId){
     </div>
     <div style="text-align:center;font-size:14px;margin-top:6px;font-weight:500;">Forma de pago: ${escapeHtml((v.metodo||'').toUpperCase())}</div>
     <div style="text-align:center;margin-top:12px;font-size:16px;font-weight:800;">¡GRACIAS POR SU COMPRA!</div>
-    <div style="text-align:center;font-size:12px;color:#000;margin-top:10px;border-top:1px dashed #000;padding-top:8px;font-weight:500;">Wallace POS · WALLACE COMPANY SYSTEM</div>
+    <div style="text-align:center;font-size:12px;color:#000;margin-top:10px;border-top:1px dashed #000;padding-top:8px;font-weight:500;">Wallace System · WALLACE COMPANY SYSTEM</div>
   </div>`;
-  const w=window.open('','_blank','width=400,height=600');
-  w.document.write('<html><head><title>Factura</title></head><body>'+html+'</body></html>');
+  const w=window.open('','_blank','width='+ventanaW+',height=650');
+  w.document.write('<html><head><title>Factura</title><style>'+pagina+' body{margin:0;}</style></head><body>'+html+'</body></html>');
   w.document.close(); setTimeout(()=>w.print(),300);
 }
 
@@ -640,15 +730,18 @@ function clientes(){
     </div>`;
 }
 function nuevoCliente(){
-  const nombre=prompt('Nombre del cliente:'); if(!nombre) return;
-  const tel=prompt('Teléfono (opcional):')||'';
-  const dir=prompt('Dirección (opcional):')||'';
-  const cls=misDatos('clientes');
-  cls.push({id:uid(), nombre:nombre.trim(), tel, dir, creado:now()});
-  guardarMisDatos('clientes',cls);
-  toast('Cliente agregado','success'); render();
+  abrirModal({titulo:'Nuevo cliente', textoBoton:'Agregar', campos:[
+    {id:'nombre', label:'Nombre', requerido:true},
+    {id:'tel', label:'Teléfono', tipo:'tel'},
+    {id:'dir', label:'Dirección'}
+  ], onGuardar:(d)=>{
+    const cls=misDatos('clientes');
+    cls.push({id:uid(), nombre:d.nombre, tel:d.tel, dir:d.dir, creado:now()});
+    guardarMisDatos('clientes',cls);
+    cerrarModal(); toast('Cliente agregado','success'); render();
+  }});
 }
-function eliminarCliente(id){ if(!confirm('¿Eliminar cliente?'))return; guardarMisDatos('clientes',misDatos('clientes').filter(c=>c.id!==id)); render(); }
+function eliminarCliente(id){ confirmarModal('¿Eliminar este cliente?',()=>{ guardarMisDatos('clientes',misDatos('clientes').filter(c=>c.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  CITAS / TURNOS (barbería, salón)
@@ -679,15 +772,18 @@ function citas(){
     </div>`;
 }
 function nuevaCita(){
-  const cliente=prompt('Nombre del cliente:'); if(!cliente) return;
-  const fecha=prompt('Fecha (AAAA-MM-DD):', today())||today();
-  const hora=prompt('Hora (HH:MM):','10:00')||'10:00';
-  const servicio=prompt('Servicio:','Corte')||'';
-  const profesional=prompt('Profesional (opcional):')||'';
-  const cits=misDatos('citas');
-  cits.push({id:uid(), cliente:cliente.trim(), fechaHora:fecha+'T'+hora+':00', servicio, profesional, estado:'pendiente', creado:now()});
-  guardarMisDatos('citas',cits);
-  toast('Cita agendada','success'); render();
+  abrirModal({titulo:'Agendar cita', textoBoton:'Agendar', campos:[
+    {id:'cliente', label:'Cliente', requerido:true},
+    {id:'fecha', label:'Fecha', tipo:'date', valor:today()},
+    {id:'hora', label:'Hora', tipo:'time', valor:'10:00'},
+    {id:'servicio', label:'Servicio', valor:'Corte'},
+    {id:'profesional', label:'Profesional'}
+  ], onGuardar:(d)=>{
+    const cits=misDatos('citas');
+    cits.push({id:uid(), cliente:d.cliente, fechaHora:d.fecha+'T'+(d.hora||'10:00')+':00', servicio:d.servicio, profesional:d.profesional, estado:'pendiente', creado:now()});
+    guardarMisDatos('citas',cits);
+    cerrarModal(); toast('Cita agendada','success'); render();
+  }});
 }
 function marcarCita(id,estado){
   const cits=misDatos('citas'); const c=cits.find(x=>x.id===id); if(!c)return;
@@ -744,16 +840,20 @@ function gastosneg(){
     </div>`;
 }
 function nuevoGasto(){
-  const concepto=prompt('Concepto (arriendo, luz, materia prima...):'); if(!concepto) return;
-  const valor=parseFloat(prompt('Valor:','0'))||0; if(valor<=0){toast('Valor inválido','error');return;}
-  const fecha=prompt('Fecha (AAAA-MM-DD):',today())||today();
-  const factura=prompt('N° de factura (opcional):')||'';
-  const gastos=misDatos('gastos_negocio');
-  gastos.unshift({id:uid(), concepto:concepto.trim(), valor, fecha, factura, por:STATE.user.nombre, creado:now()});
-  guardarMisDatos('gastos_negocio',gastos);
-  toast('Gasto registrado','success'); render();
+  abrirModal({titulo:'Registrar gasto', textoBoton:'Registrar', campos:[
+    {id:'concepto', label:'Concepto (arriendo, luz, materia prima...)', requerido:true},
+    {id:'valor', label:'Valor', tipo:'number', requerido:true},
+    {id:'fecha', label:'Fecha', tipo:'date', valor:today()},
+    {id:'factura', label:'N° de factura (opcional)'}
+  ], onGuardar:(d)=>{
+    const valor=parseFloat(d.valor)||0; if(valor<=0){toast('Valor inválido','error');return;}
+    const gastos=misDatos('gastos_negocio');
+    gastos.unshift({id:uid(), concepto:d.concepto, valor, fecha:d.fecha||today(), factura:d.factura, por:STATE.user.nombre, creado:now()});
+    guardarMisDatos('gastos_negocio',gastos);
+    cerrarModal(); toast('Gasto registrado','success'); render();
+  }});
 }
-function eliminarGasto(id){ if(!confirm('¿Eliminar gasto?'))return; guardarMisDatos('gastos_negocio',misDatos('gastos_negocio').filter(g=>g.id!==id)); render(); }
+function eliminarGasto(id){ confirmarModal('¿Eliminar este gasto?',()=>{ guardarMisDatos('gastos_negocio',misDatos('gastos_negocio').filter(g=>g.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  REGISTRO CONTABLE MENSUAL (universal)
@@ -822,28 +922,33 @@ function editarProducto(id){
   const neg=STATE.negocio;
   const productos=misDatos('productos');
   const p = id? productos.find(x=>x.id===id) : null;
-  const nombre=prompt((p?'Editar':'Nuevo')+' '+(neg.palabraProducto||'producto')+' — Nombre:', p?p.nombre:''); if(nombre===null) return;
-  if(!nombre.trim()){ toast('Escribe un nombre','error'); return; }
-  const precio=parseFloat(prompt('Precio:', p?p.precio:'0'))||0;
-  const categoria=prompt('Categoría:', p?p.categoria:'General')||'General';
-  let variantes=p?p.variantes:[];
-  if(neg.usaVariantes){
-    const vtxt=prompt('Variantes (tallas/colores) separadas por coma. Ej: S, M, L, XL:', (variantes||[]).join(', '));
-    if(vtxt!==null) variantes=vtxt.split(',').map(s=>s.trim()).filter(Boolean);
-  }
-  if(p){ p.nombre=nombre.trim(); p.precio=precio; p.categoria=categoria; p.variantes=variantes; }
-  else { productos.push({id:uid(), nombre:nombre.trim(), precio, categoria, variantes, agotado:false, receta:[], creado:now()}); }
-  guardarMisDatos('productos',productos);
-  toast('Guardado','success'); render();
+  const pp=neg.palabraProducto||'Producto';
+  const campos=[
+    {id:'nombre', label:'Nombre', valor:p?p.nombre:'', requerido:true},
+    {id:'precio', label:'Precio', tipo:'number', valor:p?p.precio:''},
+    {id:'categoria', label:'Categoría', valor:p?p.categoria:'General'}
+  ];
+  if(neg.usaVariantes){ campos.push({id:'variantes', label:'Variantes (tallas/colores, separadas por coma)', valor:p&&p.variantes?p.variantes.join(', '):'', placeholder:'S, M, L, XL'}); }
+  abrirModal({titulo:(p?'Editar ':'Nuevo ')+pp, textoBoton:'Guardar', campos, onGuardar:(d)=>{
+    if(!d.nombre){ toast('Escribe un nombre','error'); return; }
+    const precio=parseFloat(d.precio)||0;
+    let variantes=p?p.variantes:[];
+    if(neg.usaVariantes && d.variantes!=null){ variantes=d.variantes.split(',').map(s=>s.trim()).filter(Boolean); }
+    if(p){ p.nombre=d.nombre; p.precio=precio; p.categoria=d.categoria||'General'; p.variantes=variantes; }
+    else { productos.push({id:uid(), nombre:d.nombre, precio, categoria:d.categoria||'General', variantes, agotado:false, receta:[], creado:now()}); }
+    guardarMisDatos('productos',productos);
+    cerrarModal(); toast('Guardado','success'); render();
+  }});
 }
 function toggleAgotado(id){
   const productos=misDatos('productos'); const p=productos.find(x=>x.id===id); if(!p) return;
   p.agotado=!p.agotado; guardarMisDatos('productos',productos); render();
 }
 function eliminarProducto(id){
-  if(!confirm('¿Eliminar este producto?')) return;
-  guardarMisDatos('productos', misDatos('productos').filter(p=>p.id!==id));
-  toast('Eliminado','info'); render();
+  confirmarModal('¿Eliminar este producto?',()=>{
+    guardarMisDatos('productos', misDatos('productos').filter(p=>p.id!==id));
+    toast('Eliminado','info'); render();
+  },'Eliminar');
 }
 
 // ============================================================
@@ -899,22 +1004,28 @@ function cobrarVenta(){
   const caja=misDatos('caja_actual')[0];
   if((neg.funciones||[]).includes('caja') && !caja){ toast('Primero abre la caja','error'); return; }
   const total=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
-  const metodo=prompt('Método de pago: efectivo / banco / tarjeta','efectivo')||'efectivo';
-  const ventasArr=misDatos('ventas');
-  const venta={id:uid(), items:_carrito.slice(), total, metodo:metodo.toLowerCase(), estado:'pagada', cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now()};
-  // Si el negocio usa cocina, el pedido entra a la pantalla de cocina
-  if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
-  ventasArr.unshift(venta);
-  guardarMisDatos('ventas',ventasArr);
-  // Descontar inventario por receta (si aplica)
-  descontarInventarioVenta(venta);
-  toast('Venta cobrada: '+fmtMoney(total),'success');
-  _carrito=[];
-  // Ofrecer imprimir factura si el negocio tiene facturación
-  if((neg.funciones||[]).includes('facturas')){
-    setTimeout(()=>{ if(confirm('¿Imprimir factura?')) imprimirFactura(venta.id); }, 100);
-  }
-  render();
+  abrirModal({titulo:'Cobrar '+fmtMoney(total), textoBoton:'Confirmar cobro', campos:[
+    {id:'metodo', label:'Método de pago', tipo:'select', opciones:[{valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]},
+    {id:'recibido', label:'¿Con cuánto paga? (opcional, para calcular vuelto)', tipo:'number', placeholder:String(total)}
+  ], onGuardar:(d)=>{
+    const metodo=d.metodo||'efectivo';
+    const recibido=parseFloat(d.recibido)||0;
+    const ventasArr=misDatos('ventas');
+    const venta={id:uid(), items:_carrito.slice(), total, metodo, estado:'pagada', cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now()};
+    if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
+    ventasArr.unshift(venta);
+    guardarMisDatos('ventas',ventasArr);
+    descontarInventarioVenta(venta);
+    cerrarModal();
+    // Mostrar vuelto si pagó con efectivo y dio más
+    if(metodo==='efectivo' && recibido>total){ toast('Vuelto: '+fmtMoney(recibido-total),'info'); }
+    else { toast('Venta cobrada: '+fmtMoney(total),'success'); }
+    _carrito=[];
+    if((neg.funciones||[]).includes('facturas')){
+      confirmarModal('¿Imprimir factura?', ()=>imprimirFactura(venta.id), 'Imprimir');
+    }
+    render();
+  }});
 }
 function descontarInventarioVenta(venta){
   const neg=STATE.negocio;
@@ -975,14 +1086,19 @@ function cerrarCaja(){
   const ventasCaja=misDatos('ventas').filter(v=>v.cajaId===cajaAct.id && v.estado==='pagada');
   const efectivo=ventasCaja.filter(v=>v.metodo==='efectivo').reduce((a,v)=>a+v.total,0);
   const esperado=cajaAct.base+efectivo;
-  const contado=parseFloat(prompt('Cuenta el efectivo del cajón y escribe el total.\nEsperado: '+fmtMoney(esperado),String(esperado)))||0;
-  const dif=contado-esperado;
-  const cierres=misDatos('cierres');
-  cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+v.total,0), esperado, contado, diferencia:dif});
-  guardarMisDatos('cierres',cierres);
-  guardarMisDatos('caja_actual',[]);
-  toast(dif===0?'Caja cuadrada ✓':dif>0?'Sobró '+fmtMoney(dif):'Faltó '+fmtMoney(Math.abs(dif)), dif===0?'success':'info');
-  render();
+  abrirModal({titulo:'Cerrar caja', textoBoton:'Cerrar caja', campos:[
+    {id:'contado', label:'Cuenta el efectivo del cajón y escribe el total. Esperado: '+fmtMoney(esperado), tipo:'number', valor:String(esperado), requerido:true}
+  ], onGuardar:(d)=>{
+    const contado=parseFloat(d.contado)||0;
+    const dif=contado-esperado;
+    const cierres=misDatos('cierres');
+    cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+v.total,0), esperado, contado, diferencia:dif});
+    guardarMisDatos('cierres',cierres);
+    guardarMisDatos('caja_actual',[]);
+    cerrarModal();
+    toast(dif===0?'Caja cuadrada ✓':dif>0?'Sobró '+fmtMoney(dif):'Faltó '+fmtMoney(Math.abs(dif)), dif===0?'success':'info');
+    render();
+  }});
 }
 
 // ============================================================
@@ -1048,34 +1164,41 @@ function invInsumos(){
     </table></div>`;
 }
 function abrirNuevoInsumo(){
-  const nombre=prompt('Nombre del insumo/producto:'); if(!nombre) return;
-  const unidad=prompt('Unidad (und, g, ml, kg...):','und')||'und';
-  const stock=parseFloat(prompt('Stock inicial:','0'))||0;
-  const minimo=parseFloat(prompt('Stock mínimo (para alertas):','5'))||0;
-  const costo=parseFloat(prompt('Costo de compra (opcional):','0'))||0;
-  const insumos=misDatos('insumos');
-  insumos.push({id:uid(), nombre, unidad, stock, minimo, costo, creado:now()});
-  guardarMisDatos('insumos',insumos);
-  toast('Insumo agregado','success'); render();
+  abrirModal({titulo:'Agregar insumo/producto', textoBoton:'Agregar', campos:[
+    {id:'nombre', label:'Nombre', requerido:true},
+    {id:'unidad', label:'Unidad', tipo:'select', opciones:['und','g','ml','kg','l','paquete'], valor:'und'},
+    {id:'stock', label:'Stock inicial', tipo:'number', valor:'0'},
+    {id:'minimo', label:'Stock mínimo (para alertas)', tipo:'number', valor:'5'},
+    {id:'costo', label:'Costo de compra (opcional)', tipo:'number', valor:'0'}
+  ], onGuardar:(d)=>{
+    const insumos=misDatos('insumos');
+    insumos.push({id:uid(), nombre:d.nombre, unidad:d.unidad||'und', stock:parseFloat(d.stock)||0, minimo:parseFloat(d.minimo)||0, costo:parseFloat(d.costo)||0, creado:now()});
+    guardarMisDatos('insumos',insumos);
+    cerrarModal(); toast('Insumo agregado','success'); render();
+  }});
 }
 function movimientoInsumo(id,tipo){
   const insumos=misDatos('insumos');
   const ins=insumos.find(i=>i.id===id); if(!ins) return;
-  const cant=parseFloat(prompt((tipo==='entrada'?'¿Cuánto ENTRA':'¿Cuánto SALE')+' de '+ins.nombre+'? ('+ins.unidad+')','0'))||0;
-  if(cant<=0) return;
-  const motivo=prompt('Motivo (opcional):', tipo==='entrada'?'Compra':'Merma')||'';
-  ins.stock += (tipo==='entrada'?cant:-cant);
-  if(ins.stock<0) ins.stock=0;
-  guardarMisDatos('insumos',insumos);
-  const movs=misDatos('movimientos');
-  movs.unshift({id:uid(), insumoId:id, insumoNombre:ins.nombre, tipo, cantidad:cant, motivo, por:STATE.user.nombre, fecha:now()});
-  guardarMisDatos('movimientos',movs);
-  toast('Movimiento registrado','success'); render();
+  abrirModal({titulo:(tipo==='entrada'?'Entrada de ':'Salida de ')+ins.nombre, textoBoton:'Registrar', campos:[
+    {id:'cant', label:'¿Cuánto '+(tipo==='entrada'?'entra':'sale')+'? ('+ins.unidad+')', tipo:'number', requerido:true},
+    {id:'motivo', label:'Motivo', valor:tipo==='entrada'?'Compra':'Merma'}
+  ], onGuardar:(d)=>{
+    const cant=parseFloat(d.cant)||0; if(cant<=0){toast('Cantidad inválida','error');return;}
+    ins.stock += (tipo==='entrada'?cant:-cant);
+    if(ins.stock<0) ins.stock=0;
+    guardarMisDatos('insumos',insumos);
+    const movs=misDatos('movimientos');
+    movs.unshift({id:uid(), insumoId:id, insumoNombre:ins.nombre, tipo, cantidad:cant, motivo:d.motivo, por:STATE.user.nombre, fecha:now()});
+    guardarMisDatos('movimientos',movs);
+    cerrarModal(); toast('Movimiento registrado','success'); render();
+  }});
 }
 function eliminarInsumo(id){
-  if(!confirm('¿Eliminar este insumo?')) return;
-  guardarMisDatos('insumos', misDatos('insumos').filter(i=>i.id!==id));
-  toast('Eliminado','info'); render();
+  confirmarModal('¿Eliminar este insumo?',()=>{
+    guardarMisDatos('insumos', misDatos('insumos').filter(i=>i.id!==id));
+    toast('Eliminado','info'); render();
+  },'Eliminar');
 }
 
 // --- Pestaña RECETAS (solo si el negocio usa recetas) ---
@@ -1097,15 +1220,19 @@ function editarReceta(prodId){
   const p=productos.find(x=>x.id===prodId); if(!p) return;
   const insumos=misDatos('insumos');
   if(!insumos.length){ toast('Primero agrega insumos','error'); return; }
-  // Editor simple por prompt (en la interfaz completa será un modal)
-  const lista=insumos.map((i,n)=>n+1+') '+i.nombre+' ('+i.unidad+')').join('\n');
-  const sel=prompt('Receta de "'+p.nombre+'".\nEscribe: numero:cantidad separado por coma.\nEj: 1:1, 2:15\n\n'+lista);
-  if(sel===null) return;
-  const receta=[];
-  sel.split(',').forEach(par=>{ const [n,c]=par.split(':').map(s=>s.trim()); const idx=parseInt(n)-1; if(insumos[idx]&&parseFloat(c)>0){ receta.push({insumoId:insumos[idx].id, cantidad:parseFloat(c)}); } });
-  p.receta=receta;
-  guardarMisDatos('productos',productos);
-  toast('Receta guardada','success'); render();
+  const recetaActual=p.receta||[];
+  // Un campo por insumo, con la cantidad actual (0 = no se usa)
+  const campos=insumos.map(ins=>{
+    const r=recetaActual.find(x=>x.insumoId===ins.id);
+    return {id:'ins_'+ins.id, label:ins.nombre+' ('+ins.unidad+')', tipo:'number', valor:r?String(r.cantidad):'0'};
+  });
+  abrirModal({titulo:'Receta de '+p.nombre, textoBoton:'Guardar receta', campos, onGuardar:(d)=>{
+    const receta=[];
+    insumos.forEach(ins=>{ const cant=parseFloat(d['ins_'+ins.id])||0; if(cant>0){ receta.push({insumoId:ins.id, cantidad:cant}); } });
+    p.receta=receta;
+    guardarMisDatos('productos',productos);
+    cerrarModal(); toast('Receta guardada','success'); render();
+  }});
 }
 
 // --- Pestaña MOVIMIENTOS ---
@@ -1208,7 +1335,7 @@ function vistaNegocio(){
   <div class="layout">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-logo">
-        <div class="brand">Wallace<span> POS</span></div>
+        <div class="brand">Wallace<span> System</span></div>
         <div class="sub">${escapeHtml(neg.tipo)}</div>
         <div class="neg-badge">${escapeHtml(neg.nombre)}</div>
       </div>
@@ -1287,7 +1414,7 @@ function vistaLogin(){
   return `
   <div class="login-screen">
     <div class="login-box">
-      <div class="login-logo">Wallace<span> POS</span></div>
+      <div class="login-logo">Wallace<span> System</span></div>
       <p class="login-sub">Sistema para restaurantes y todo tipo de negocios</p>
       <div class="form-row"><label>Usuario</label><input id="l-user" placeholder="usuario" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
       <div class="form-row"><label>Contraseña</label><input id="l-pass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
@@ -1323,11 +1450,25 @@ function render(){
   app.innerHTML=vistaNegocio();
 }
 
-// ---------- Arranque ----------
-initFirebase(); // conecta a la nube si hay config válida
-cargarDeLaNube(()=>{
-  seed();
-  render();
-});
+// ---------- Arranque (a prueba de fallos: siempre renderiza) ----------
+function arrancar(){
+  try{ seed(); }catch(e){ console.error('seed error',e); }
+  try{ render(); }catch(e){ console.error('render error',e); document.getElementById('app').innerHTML='<div style="padding:40px;color:#fff;text-align:center;">Error al cargar. Recarga la página (Ctrl+Shift+R).</div>'; }
+}
+try{
+  const fbOk = initFirebase(); // conecta a la nube si hay config válida
+  if(fbOk){
+    // Con Firebase: intenta cargar de la nube, pero si tarda o falla, arranca igual
+    let arrancado=false;
+    const forzar=setTimeout(()=>{ if(!arrancado){ arrancado=true; arrancar(); } }, 2500);
+    cargarDeLaNube(()=>{ if(!arrancado){ arrancado=true; clearTimeout(forzar); arrancar(); } });
+  } else {
+    // Sin Firebase: arranca de una vez en modo local
+    arrancar();
+  }
+}catch(e){
+  console.error('Error de arranque, usando modo local:',e);
+  arrancar();
+}
 // Reloj en vivo
 setInterval(()=>{ const c=document.getElementById('clock'); if(c){ c.textContent=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); } },1000);
