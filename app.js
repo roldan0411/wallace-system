@@ -11,6 +11,7 @@
 // Al arrancar carga de la nube para sincronizar entre dispositivos.
 let FB = null; // referencia a Firebase Realtime Database si está disponible
 const CACHE = {}; // espejo en memoria
+let _ultimoCambioLocal=0; // momento del último cambio hecho por este dispositivo
 
 const DB = {
   get(k){
@@ -21,7 +22,7 @@ const DB = {
     CACHE[k]=val;
     try{ localStorage.setItem('posu_'+k, JSON.stringify(val)); }catch(e){}
     // Sincronizar a la nube si Firebase está activo
-    if(FB){ try{ FB.ref('posu/'+k).set(val); }catch(e){} }
+    if(FB){ try{ _ultimoCambioLocal=Date.now(); FB.ref('posu/'+k).set(val); }catch(e){} }
   },
 };
 
@@ -43,7 +44,30 @@ function cargarDeLaNube(callback){
     const data=snap.val()||{};
     Object.keys(data).forEach(k=>{ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} });
     callback();
+    // Después de cargar, escuchar cambios en tiempo real (multi-dispositivo)
+    escucharCambios();
   }).catch(()=>callback());
+}
+// Escucha cambios de otros dispositivos y actualiza la pantalla
+function escucharCambios(){
+  if(!FB) return;
+  FB.ref('posu').on('value', snap=>{
+    // Evitar refrescar por nuestros propios cambios recién hechos
+    if(Date.now()-_ultimoCambioLocal < 1500) return;
+    const data=snap.val()||{};
+    let hayCambio=false;
+    Object.keys(data).forEach(k=>{
+      const nuevo=JSON.stringify(data[k]);
+      const viejo=JSON.stringify(CACHE[k]);
+      if(nuevo!==viejo){ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} hayCambio=true; }
+    });
+    // Si cambió algo y estamos en una pantalla, refrescar suavemente
+    if(hayCambio && STATE.user && typeof render==='function'){
+      // No refrescar si hay un modal abierto (para no interrumpir al usuario)
+      const modal=document.getElementById('modal-container');
+      if(!modal || !modal.classList.contains('activo')) render();
+    }
+  });
 }
 
 function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
@@ -968,6 +992,7 @@ function catalogo(){
             <div class="cat-card-nombre">${escapeHtml(p.nombre)}</div>
             <div class="cat-card-cat">${escapeHtml(p.categoria||'General')}</div>
             <div class="cat-card-precio">${fmtMoney(p.precio)}</div>
+            ${p.stock!=null?`<div class="cat-card-stock ${p.stock<=(p.stockMin||0)?'bajo':''}">Stock: ${p.stock}${p.stock<=(p.stockMin||0)?' ⚠️':''}</div>`:''}
             ${neg.usaVariantes&&(p.variantes||[]).length?`<div class="cat-card-var">${p.variantes.map(v=>`<span>${escapeHtml(v)}</span>`).join('')}</div>`:''}
           </div>
           <div class="cat-card-actions">
@@ -994,6 +1019,12 @@ function editarProducto(id){
     {id:'categoria', label:'Categoría', valor:p?p.categoria:'General'}
   ];
   if(neg.usaVariantes){ campos.push({id:'variantes', label:'Variantes (tallas/colores, separadas por coma)', valor:p&&p.variantes?p.variantes.join(', '):'', placeholder:'S, M, L, XL'}); }
+  // Para tiendas (sin recetas), el producto lleva su propio stock
+  const usaRecetas=(neg.funciones||[]).includes('recetas');
+  if(!usaRecetas){
+    campos.push({id:'stock', label:'Cantidad en stock', tipo:'number', valor:p&&p.stock!=null?p.stock:'0'});
+    campos.push({id:'stockMin', label:'Stock mínimo (alerta)', tipo:'number', valor:p&&p.stockMin!=null?p.stockMin:'3'});
+  }
   abrirModal({titulo:(p?'Editar ':'Nuevo ')+pp, textoBoton:'Guardar', campos, extraHTML:`
     <div class="m-row"><label>Imagen (opcional)</label>
       <input type="file" accept="image/*" onchange="cargarImgProducto(event)">
@@ -1003,8 +1034,10 @@ function editarProducto(id){
     const precio=parseFloat(d.precio)||0;
     let variantes=p?p.variantes:[];
     if(neg.usaVariantes && d.variantes!=null){ variantes=d.variantes.split(',').map(s=>s.trim()).filter(Boolean); }
-    if(p){ p.nombre=d.nombre; p.precio=precio; p.categoria=d.categoria||'General'; p.variantes=variantes; p.imagen=_prodImgTmp; }
-    else { productos.push({id:uid(), nombre:d.nombre, precio, categoria:d.categoria||'General', variantes, imagen:_prodImgTmp, agotado:false, receta:[], creado:now()}); }
+    const stock=d.stock!=null?parseFloat(d.stock)||0:undefined;
+    const stockMin=d.stockMin!=null?parseFloat(d.stockMin)||0:undefined;
+    if(p){ p.nombre=d.nombre; p.precio=precio; p.categoria=d.categoria||'General'; p.variantes=variantes; p.imagen=_prodImgTmp; if(stock!=null)p.stock=stock; if(stockMin!=null)p.stockMin=stockMin; }
+    else { const np={id:uid(), nombre:d.nombre, precio, categoria:d.categoria||'General', variantes, imagen:_prodImgTmp, agotado:false, receta:[], creado:now()}; if(stock!=null)np.stock=stock; if(stockMin!=null)np.stockMin=stockMin; productos.push(np); }
     guardarMisDatos('productos',productos);
     cerrarModal(); toast('Guardado','success'); render();
   }});
@@ -1012,7 +1045,24 @@ function editarProducto(id){
 function cargarImgProducto(e){
   const file=e.target.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=ev=>{ _prodImgTmp=ev.target.result; const pv=document.getElementById('prod-img-preview'); if(pv) pv.innerHTML=`<img src="${_prodImgTmp}" style="max-height:90px;border-radius:10px;">`; };
+  reader.onload=ev=>{
+    // Redimensionar y comprimir la imagen para que no sea gigante
+    const img=new Image();
+    img.onload=()=>{
+      const max=400; // tamaño máximo del lado
+      let w=img.width, h=img.height;
+      if(w>h && w>max){ h=Math.round(h*max/w); w=max; }
+      else if(h>max){ w=Math.round(w*max/h); h=max; }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      _prodImgTmp=canvas.toDataURL('image/jpeg',0.75); // JPEG comprimido
+      const pv=document.getElementById('prod-img-preview');
+      if(pv) pv.innerHTML=`<img src="${_prodImgTmp}" style="max-height:90px;border-radius:10px;">`;
+    };
+    img.src=ev.target.result;
+  };
   reader.readAsDataURL(file);
 }
 function toggleAgotado(id){
@@ -1166,16 +1216,28 @@ function cobrarVenta(){
 function descontarInventarioVenta(venta){
   const neg=STATE.negocio;
   if(!(neg.funciones||[]).includes('inventario')) return;
+  const usaRecetas=(neg.funciones||[]).includes('recetas');
   const productos=misDatos('productos');
-  const insumos=misDatos('insumos');
-  let cambio=false;
-  venta.items.forEach(item=>{
-    const prod=productos.find(p=>p.id===item.prodId);
-    if(prod && prod.receta && prod.receta.length){
-      prod.receta.forEach(r=>{ const ins=insumos.find(i=>i.id===r.insumoId); if(ins){ ins.stock-=r.cantidad*item.qty; if(ins.stock<0)ins.stock=0; cambio=true; } });
-    }
-  });
-  if(cambio) guardarMisDatos('insumos',insumos);
+  let cambioProd=false;
+  if(usaRecetas){
+    // Restaurante: descuenta insumos según receta
+    const insumos=misDatos('insumos');
+    let cambio=false;
+    venta.items.forEach(item=>{
+      const prod=productos.find(p=>p.id===item.prodId);
+      if(prod && prod.receta && prod.receta.length){
+        prod.receta.forEach(r=>{ const ins=insumos.find(i=>i.id===r.insumoId); if(ins){ ins.stock-=r.cantidad*item.qty; if(ins.stock<0)ins.stock=0; cambio=true; } });
+      }
+    });
+    if(cambio) guardarMisDatos('insumos',insumos);
+  } else {
+    // Tienda: descuenta el stock del propio producto
+    venta.items.forEach(item=>{
+      const prod=productos.find(p=>p.id===item.prodId);
+      if(prod && prod.stock!=null){ prod.stock-=item.qty; if(prod.stock<0)prod.stock=0; cambioProd=true; }
+    });
+    if(cambioProd) guardarMisDatos('productos',productos);
+  }
 }
 
 // ============================================================
@@ -1267,6 +1329,9 @@ function caja(){
   const domBanco=ventasCaja.filter(v=>v.valorDom>0 && v.metodo!=='efectivo').reduce((a,v)=>a+v.valorDom,0);
   // Efectivo en caja
   const efectivoEnCaja=cajaAct.base + porMetodo.efectivo + entradas - gastos - retiros - domBanco;
+  // Solo restaurantes/negocios con cocina o domicilios ven la sección de "terceros" (propinas, domicilios)
+  const usaDom=(neg.funciones||[]).includes('domicilios');
+  const mostrarTerceros = neg.usaCocina || usaDom || recargos>0;
   return `
     <div class="stats-grid">
       <div class="stat-card green"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Efectivo</div><div class="stat-value">${fmtMoney(porMetodo.efectivo)}</div></div>
@@ -1284,7 +1349,7 @@ function caja(){
         <div class="resumen-row"><span>Gastos / Nómina</span><strong class="text-red">-${fmtMoney(gastos)}</strong></div>
         <div class="resumen-row"><span>Retiros</span><strong class="text-red">-${fmtMoney(retiros)}</strong></div>
         <div class="resumen-row big"><span>Efectivo en caja</span><strong>${fmtMoney(efectivoEnCaja)}</strong></div>
-        <p class="muted" style="margin-top:8px;font-size:12px;">Efectivo del cajón: base + ventas en efectivo + entradas − gastos − retiros − domicilios pagados por banco. Solo la venta de productos es del negocio.</p>
+        <p class="muted" style="margin-top:8px;font-size:12px;">Efectivo del cajón: base + ventas en efectivo + entradas − gastos − retiros${mostrarTerceros?' − domicilios pagados por banco':''}.</p>
         <div style="display:flex;gap:8px;margin-top:14px;">
           <button class="btn" style="flex:1;" onclick="movCaja('gasto')">$ Gasto</button>
           <button class="btn" style="flex:1;" onclick="movCaja('retiro')">$ Retiro</button>
@@ -1292,15 +1357,19 @@ function caja(){
         </div>
         <button class="btn btn-danger btn-block" style="margin-top:8px;" onclick="cerrarCaja()">🔒 Cerrar caja</button>
       </div>
-      <div class="card">
+      ${mostrarTerceros?`<div class="card">
         <div class="card-title">${ic('users')} No son ingreso del negocio</div>
         <p class="muted" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
-        <div class="resumen-row"><span>Propinas (del mesero)</span><strong class="text-green">${fmtMoney(propinas)}</strong></div>
-        <div class="resumen-row"><span>Domicilios (del domiciliario)</span><strong class="text-green">${fmtMoney(domicilios)}</strong></div>
+        ${neg.usaCocina?`<div class="resumen-row"><span>Propinas (del mesero)</span><strong class="text-green">${fmtMoney(propinas)}</strong></div>`:''}
+        ${usaDom?`<div class="resumen-row"><span>Domicilios (del domiciliario)</span><strong class="text-green">${fmtMoney(domicilios)}</strong></div>`:''}
         <div class="resumen-row"><span>Recargos datáfono</span><strong class="text-gold">${fmtMoney(recargos)}</strong></div>
         ${movs.length?`<div class="card-title" style="font-size:13px;margin-top:16px;">Movimientos del día</div>
-          ${movs.map(m=>`<div class="resumen-row"><span>${m.tipo==='gasto'?'Gasto':m.tipo==='retiro'?'Retiro':'Entrada'}: ${escapeHtml(m.concepto||'')}</span><strong class="${m.tipo==='entrada'?'text-green':'text-red'}">${m.tipo==='entrada'?'+':'-'}${fmtMoney(m.valor)}</strong></div>`).join('')}`:'<p class="muted" style="margin-top:14px;">Sin movimientos registrados.</p>'}
-      </div>
+          ${movs.map(m=>`<div class="resumen-row"><span>${m.tipo==='gasto'?'Gasto':m.tipo==='retiro'?'Retiro':'Entrada'}: ${escapeHtml(m.concepto||'')}</span><strong class="${m.tipo==='entrada'?'text-green':'text-red'}">${m.tipo==='entrada'?'+':'-'}${fmtMoney(m.valor)}</strong></div>`).join('')}`:''}
+      </div>`
+      :`<div class="card">
+        <div class="card-title">${ic('report')} Movimientos del día</div>
+        ${movs.length?movs.map(m=>`<div class="resumen-row"><span>${m.tipo==='gasto'?'Gasto':m.tipo==='retiro'?'Retiro':'Entrada'}: ${escapeHtml(m.concepto||'')}</span><strong class="${m.tipo==='entrada'?'text-green':'text-red'}">${m.tipo==='entrada'?'+':'-'}${fmtMoney(m.valor)}</strong></div>`).join(''):'<p class="muted">Sin movimientos registrados. Usa los botones de Gasto, Retiro o Entrada.</p>'}
+      </div>`}
     </div>`;
 }
 function abrirCaja(){
@@ -1544,13 +1613,17 @@ function vistaNegocio(){
   nav.push({id:'inicio',icon:'dashboard',label:'Dashboard'});
   if(F.includes('ventas')) nav.push({id:'ventas',icon:'cart',label:'Nueva Venta'});
   if(F.includes('ventas')) nav.push({id:'pedidos',icon:'report',label:'Pedidos'});
-  if(F.includes('menu')) nav.push({id:'catalogo',icon:'menu',label:neg.usaVariantes?'Catálogo':'Catálogo'});
+  const usaRecetas=F.includes('recetas');
+  // Tiendas (sin recetas): el catálogo ES el inventario (productos con stock). Un solo menú.
+  // Restaurantes (con recetas): Catálogo de platos + Inventario de insumos por separado.
+  if(F.includes('menu')) nav.push({id:'catalogo',icon:'box',label:usaRecetas?'Catálogo':'Inventario'});
   nav.push({grupo:'OPERACIONES'});
   if(F.includes('caja')) nav.push({id:'caja',icon:'cash',label:'Caja'});
   if(F.includes('cocina')&&neg.usaCocina) nav.push({id:'cocina',icon:'chef',label:'Cocina'});
   if(F.includes('citas')&&neg.usaCitas) nav.push({id:'citas',icon:'scissors',label:'Citas'});
   if(F.includes('domicilios')) nav.push({id:'domicilios',icon:'truck',label:'Domicilios'});
-  if(F.includes('inventario')) nav.push({id:'inventario',icon:'box',label:'Inventario'});
+  // Solo restaurantes (con recetas) tienen el inventario de insumos separado
+  if(F.includes('inventario') && usaRecetas) nav.push({id:'inventario',icon:'box',label:'Insumos'});
   if(F.includes('clientes')) nav.push({id:'clientes',icon:'users',label:'Clientes'});
   nav.push({grupo:'GESTIÓN'});
   if(F.includes('reportes')) nav.push({id:'reportes',icon:'report',label:'Reportes'});
