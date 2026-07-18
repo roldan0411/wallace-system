@@ -2287,15 +2287,12 @@ function vistaLogin(){
   return `
   <div class="login-screen">
     <div class="login-box">
+      <div class="login-emblem">${window.WALLACE_LOGO||''}</div>
       <div class="login-logo">Wallace<span> System</span></div>
       <p class="login-sub">Sistema para restaurantes y todo tipo de negocios</p>
       <div class="form-row"><label>Usuario</label><input id="l-user" placeholder="usuario" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
       <div class="form-row"><label>Contraseña</label><input id="l-pass" type="password" placeholder="••••••" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
       <button class="btn btn-gold btn-block" onclick="hacerLogin()">Entrar</button>
-      <div class="login-demo">
-        <div><strong>Demo super-admin:</strong> superadmin / super123</div>
-        <div><strong>Demo negocio:</strong> admin / admin123</div>
-      </div>
       <div class="login-credit">WALLACE COMPANY SYSTEM</div>
     </div>
   </div>`;
