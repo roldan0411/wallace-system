@@ -475,6 +475,16 @@ function pantallaConfigNegocio(id){
       </div>
 
       <hr class="sep">
+      <div class="card-title">Tipos de pedido / entrega</div>
+      <p class="muted" style="margin-bottom:10px;">Marca las formas de entrega que usa este negocio. Aparecerán como botones en Nueva Venta.</p>
+      <div class="func-grid" style="margin-bottom:6px;">
+        <label class="check"><input type="checkbox" class="c-entrega" value="mesa" ${(neg.tiposEntrega||[]).includes('mesa')?'checked':''}> Mesa (comer en el local)</label>
+        <label class="check"><input type="checkbox" class="c-entrega" value="llevar" ${(neg.tiposEntrega||['llevar']).includes('llevar')?'checked':''}> Para llevar / recoger</label>
+        <label class="check"><input type="checkbox" class="c-entrega" value="domicilio" ${(neg.tiposEntrega||[]).includes('domicilio')?'checked':''}> Domicilio local</label>
+        <label class="check"><input type="checkbox" class="c-entrega" value="envio" ${(neg.tiposEntrega||[]).includes('envio')?'checked':''}> Envío nacional</label>
+      </div>
+
+      <hr class="sep">
       <div class="card-title">Tipo de factura</div>
       <p class="muted" style="margin-bottom:10px;">Elige cómo se imprime la factura de este negocio.</p>
       <div class="form-row"><label>Tamaño / formato de factura</label>
@@ -516,6 +526,8 @@ function guardarConfigNegocio(id){
   neg.usaCocina=document.getElementById('c-cocina').checked;
   neg.usaCitas=document.getElementById('c-citas').checked;
   neg.usaVariantes=document.getElementById('c-variantes').checked;
+  neg.tiposEntrega=Array.from(document.querySelectorAll('.c-entrega:checked')).map(c=>c.value);
+  if(!neg.tiposEntrega.length) neg.tiposEntrega=['llevar'];
   neg.funciones=Array.from(document.querySelectorAll('.c-func:checked')).map(c=>c.value);
   DB.set('negocios',negocios);
   toast('Configuración guardada','success');
@@ -672,11 +684,11 @@ function guardarConfigNeg(){
 }
 // Aplica el tema/color de fondo del negocio al sistema
 const TEMAS={
-  oscuro:{bg:'#0a0b0d', bg2:'#101215', panel:'#16191e', panel2:'#1c2026', card:'#16191e', txt:'#f2f3f5', muted:'#9aa0a6'},
-  claro:{bg:'#eef0f3', bg2:'#f6f7f9', panel:'#ffffff', panel2:'#ffffff', card:'#ffffff', txt:'#1a1d21', muted:'#6b7280'},
-  azul:{bg:'#0a1420', bg2:'#0d1b2a', panel:'#12263a', panel2:'#1b3a53', card:'#12263a', txt:'#e8f0f7', muted:'#8fa8bd'},
-  verde:{bg:'#0a1510', bg2:'#0f1a14', panel:'#16241c', panel2:'#1d2f24', card:'#16241c', txt:'#e8f2ea', muted:'#8fad9a'},
-  vino:{bg:'#150a0e', bg2:'#1a0f13', panel:'#26161c', panel2:'#301c24', card:'#26161c', txt:'#f5e8ec', muted:'#bd8f9a'}
+  oscuro:{bg:'#0a0b0d', bg2:'#101215', panel:'#16191e', panel2:'#1c2026', card:'#181b20', txt:'#f4f5f7', txt2:'#c8ccd2', muted:'#8b9199', line:'rgba(212,175,55,.08)', line2:'rgba(255,255,255,.06)'},
+  claro:{bg:'#eef0f3', bg2:'#f8f9fb', panel:'#ffffff', panel2:'#ffffff', card:'#ffffff', txt:'#1a1d21', txt2:'#3a3f47', muted:'#6b7280', line:'rgba(0,0,0,.08)', line2:'rgba(0,0,0,.06)'},
+  azul:{bg:'#0a1420', bg2:'#0d1b2a', panel:'#12263a', panel2:'#1b3a53', card:'#14283e', txt:'#e8f0f7', txt2:'#c0d2e0', muted:'#8fa8bd', line:'rgba(212,175,55,.1)', line2:'rgba(255,255,255,.08)'},
+  verde:{bg:'#0a1510', bg2:'#0f1a14', panel:'#16241c', panel2:'#1d2f24', card:'#18281e', txt:'#e8f2ea', txt2:'#c0d5c6', muted:'#8fad9a', line:'rgba(212,175,55,.1)', line2:'rgba(255,255,255,.08)'},
+  vino:{bg:'#150a0e', bg2:'#1a0f13', panel:'#26161c', panel2:'#301c24', card:'#28171d', txt:'#f5e8ec', txt2:'#d8c0c8', muted:'#bd8f9a', line:'rgba(212,175,55,.1)', line2:'rgba(255,255,255,.08)'}
 };
 function aplicarTema(neg){
   if(!neg) return;
@@ -684,7 +696,9 @@ function aplicarTema(neg){
   let t;
   if(neg.tema==='personalizado' && neg.colorFondo){
     const esOscuro=esColorOscuro(neg.colorFondo);
-    t={bg:neg.colorFondo, bg2:aclararOscurecer(neg.colorFondo,esOscuro?6:-5), panel:aclararOscurecer(neg.colorFondo,esOscuro?12:-8), panel2:aclararOscurecer(neg.colorFondo,esOscuro?20:-14), card:aclararOscurecer(neg.colorFondo,esOscuro?12:-8), txt:esOscuro?'#f2f3f5':'#1a1d21', muted:esOscuro?'#9aa0a6':'#6b7280'};
+    t={bg:neg.colorFondo, bg2:aclararOscurecer(neg.colorFondo,esOscuro?6:-5), panel:aclararOscurecer(neg.colorFondo,esOscuro?12:-8), panel2:aclararOscurecer(neg.colorFondo,esOscuro?20:-14), card:aclararOscurecer(neg.colorFondo,esOscuro?14:-10),
+      txt:esOscuro?'#f4f5f7':'#1a1d21', txt2:esOscuro?'#c8ccd2':'#3a3f47', muted:esOscuro?'#8b9199':'#6b7280',
+      line:esOscuro?'rgba(212,175,55,.1)':'rgba(0,0,0,.08)', line2:esOscuro?'rgba(255,255,255,.08)':'rgba(0,0,0,.06)'};
   } else {
     t=TEMAS[neg.tema||'oscuro']||TEMAS.oscuro;
   }
@@ -694,7 +708,10 @@ function aplicarTema(neg){
   root.style.setProperty('--panel2',t.panel2);
   root.style.setProperty('--card',t.card);
   root.style.setProperty('--txt',t.txt);
+  root.style.setProperty('--txt2',t.txt2);
   root.style.setProperty('--muted',t.muted);
+  root.style.setProperty('--line',t.line);
+  root.style.setProperty('--line2',t.line2);
 }
 function esColorOscuro(hex){
   const c=hex.replace('#',''); const r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
@@ -912,20 +929,59 @@ function gastosneg(){
   const mes=today().substring(0,7);
   const delMes=gastos.filter(g=>(g.fecha||'').substring(0,7)===mes);
   const total=delMes.reduce((a,g)=>a+g.valor,0);
+  const porConcepto={};
+  delMes.forEach(g=>{ porConcepto[g.concepto]=(porConcepto[g.concepto]||0)+g.valor; });
+  const conceptosOrd=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
   return `
-    <div class="card">
-      <div class="inv-head">
-        <div class="card-title">🧾 Gastos del Negocio</div>
-        <button class="btn btn-gold btn-sm" onclick="nuevoGasto()">+ Registrar gasto</button>
+    <div class="card" style="background:linear-gradient(135deg,rgba(212,175,55,.06),transparent);">
+      <div class="card-title" style="margin:0;">${ic('cash')} Gastos del Negocio</div>
+      <p class="muted">Gastos que se pagan de la cuenta del negocio o del dinero retirado (arriendo, recibos, materia prima...). Son APARTE de la caja diaria. Se guardan por mes.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">+ Registrar nuevo gasto</div>
+        <div class="form-row"><label>Concepto *</label><input id="gn-concepto" placeholder="Ej: Arriendo, Recibo de luz, Materia prima..." list="gn-conceptos"><datalist id="gn-conceptos">${[...new Set(gastos.map(g=>g.concepto))].map(c=>`<option>${escapeHtml(c)}</option>`).join('')}</datalist></div>
+        <div class="grid2">
+          <div class="form-row"><label>Valor *</label><input id="gn-valor" type="number" placeholder="0"></div>
+          <div class="form-row"><label>Fecha *</label><input id="gn-fecha" type="date" value="${today()}"></div>
+        </div>
+        <div class="grid2">
+          <div class="form-row"><label>N° Factura (opcional)</label><input id="gn-factura" placeholder="Ej: F-00123"></div>
+          <div class="form-row"><label>Pagado con</label><select id="gn-metodo"><option>Efectivo (retiro de caja)</option><option>Banco / Transferencia</option><option>Tarjeta</option></select></div>
+        </div>
+        <div class="form-row"><label>Nota (opcional)</label><input id="gn-nota" placeholder="Detalle adicional..."></div>
+        <button class="btn btn-gold btn-block" onclick="guardarGastoNeg()">✓ Guardar gasto</button>
       </div>
-      <p class="muted" style="margin-bottom:10px;">Gastos aparte de la caja (arriendo, recibos, materia prima...). Total del mes: <strong>${fmtMoney(total)}</strong></p>
+      <div class="card">
+        <div class="card-title">${ic('report')} Resumen del mes</div>
+        <div class="stat-card red" style="margin-bottom:14px;"><div class="stat-label">Total gastos del negocio</div><div class="stat-value">${fmtMoney(total)}</div><div class="stat-sub">${delMes.length} gasto(s) este mes</div></div>
+        <div class="card-title" style="font-size:13px;">Por concepto</div>
+        ${conceptosOrd.length?conceptosOrd.map(([c,v])=>`<div class="resumen-row"><span>${escapeHtml(c)}</span><strong class="text-red">${fmtMoney(v)}</strong></div>`).join(''):'<p class="muted">Sin gastos este mes.</p>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">${ic('history')} Gastos registrados</div>
       <div class="table-wrap"><table class="tbl">
-        <thead><tr><th>Fecha</th><th>Concepto</th><th>N° Factura</th><th>Valor</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th>N° Factura</th><th>Pagado con</th><th>Valor</th><th></th></tr></thead>
         <tbody>
-        ${delMes.length? delMes.map(g=>`<tr><td>${escapeHtml((g.fecha||'').split('T')[0])}</td><td><strong>${escapeHtml(g.concepto)}</strong></td><td>${escapeHtml(g.factura||'—')}</td><td class="txt-red">${fmtMoney(g.valor)}</td><td class="actions"><button class="btn btn-sm btn-danger" onclick="eliminarGasto('${g.id}')">×</button></td></tr>`).join('') : '<tr><td colspan="5" class="muted">Sin gastos este mes.</td></tr>'}
+        ${delMes.length? delMes.map(g=>`<tr><td>${escapeHtml((g.fecha||'').split('T')[0])}</td><td><strong>${escapeHtml(g.concepto)}</strong>${g.nota?`<br><span class="muted" style="font-size:11px;">${escapeHtml(g.nota)}</span>`:''}</td><td>${escapeHtml(g.factura||'—')}</td><td class="muted">${escapeHtml(g.metodo||'Efectivo')}</td><td class="text-red font-bold">${fmtMoney(g.valor)}</td><td class="actions"><button class="btn btn-sm btn-danger" onclick="eliminarGasto('${g.id}')">×</button></td></tr>`).join('') : '<tr><td colspan="6" class="muted">Sin gastos este mes.</td></tr>'}
         </tbody>
       </table></div>
     </div>`;
+}
+function guardarGastoNeg(){
+  const concepto=(document.getElementById('gn-concepto').value||'').trim();
+  const valor=parseFloat(document.getElementById('gn-valor').value)||0;
+  const fecha=document.getElementById('gn-fecha').value||today();
+  const factura=(document.getElementById('gn-factura').value||'').trim();
+  const metodo=document.getElementById('gn-metodo').value;
+  const nota=(document.getElementById('gn-nota').value||'').trim();
+  if(!concepto){ toast('Escribe el concepto','error'); return; }
+  if(valor<=0){ toast('Valor inválido','error'); return; }
+  const gastos=misDatos('gastos_negocio');
+  gastos.unshift({id:uid(), concepto, valor, fecha, factura, metodo, nota, por:STATE.user.nombre, creado:now()});
+  guardarMisDatos('gastos_negocio',gastos);
+  toast('Gasto registrado','success'); render();
 }
 function nuevoGasto(){
   abrirModal({titulo:'Registrar gasto', textoBoton:'Registrar', campos:[
@@ -948,26 +1004,54 @@ function eliminarGasto(id){ confirmarModal('¿Eliminar este gasto?',()=>{ guarda
 // ============================================================
 function contable(){
   const mes=today().substring(0,7);
-  const ventasArr=misDatos('ventas').filter(v=>v.estado==='pagada' && (v.fecha||'').substring(0,7)===mes);
-  const totalVentas=ventasArr.reduce((a,v)=>a+v.total,0);
+  // Mes anterior para comparativo
+  const dPrev=new Date(); dPrev.setMonth(dPrev.getMonth()-1);
+  const mesPrev=dPrev.toISOString().substring(0,7);
+  const todasV=misDatos('ventas').filter(v=>v.estado==='pagada');
+  const ventasArr=todasV.filter(v=>(v.fecha||'').substring(0,7)===mes);
+  const ventasPrev=todasV.filter(v=>(v.fecha||'').substring(0,7)===mesPrev);
+  const totalVentas=ventasArr.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
+  const totalVentasPrev=ventasPrev.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
+  const cambioV=totalVentasPrev>0?Math.round((totalVentas-totalVentasPrev)/totalVentasPrev*100):0;
   const porMetodo={efectivo:0,banco:0,tarjeta:0};
-  ventasArr.forEach(v=>{ porMetodo[v.metodo]=(porMetodo[v.metodo]||0)+v.total; });
+  ventasArr.forEach(v=>{ const r=v.subtotal!==undefined?v.subtotal:v.total; if(porMetodo[v.metodo]!==undefined)porMetodo[v.metodo]+=r; });
+  // Gastos del negocio
   const gastos=misDatos('gastos_negocio').filter(g=>(g.fecha||'').substring(0,7)===mes);
   const totalGastos=gastos.reduce((a,g)=>a+g.valor,0);
+  // Gastos agrupados por concepto
+  const porConcepto={};
+  gastos.forEach(g=>{ porConcepto[g.concepto]=(porConcepto[g.concepto]||0)+g.valor; });
+  const conceptosOrd=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
+  // Cierres del mes
+  const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
+  const sumDif=cierres.reduce((a,c)=>a+(c.diferencia||0),0);
   const utilidad=totalVentas-totalGastos;
   return `
-    <div class="stats-grid">
-      <div class="stat-card green"><div class="stat-label">Ventas del mes</div><div class="stat-value">${fmtMoney(totalVentas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Gastos del mes</div><div class="stat-value">${fmtMoney(totalGastos)}</div></div>
-      <div class="stat-card gold"><div class="stat-label">Utilidad estimada</div><div class="stat-value">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − gastos</div></div>
+    <div class="card" style="background:linear-gradient(135deg,rgba(212,175,55,.06),transparent);">
+      <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+        <div><div class="card-title" style="margin:0;">${ic('report')} Registro Contable Mensual</div>
+        <p class="muted">Informe interno de gestión para el dueño. No es tributario ni tiene relación con la DIAN.</p></div>
+      </div>
     </div>
-    <div class="card">
-      <div class="card-title">Ventas por método de pago</div>
-      <div class="resumen-row"><span>Efectivo</span><strong>${fmtMoney(porMetodo.efectivo)}</strong></div>
-      <div class="resumen-row"><span>Banco</span><strong>${fmtMoney(porMetodo.banco)}</strong></div>
-      <div class="resumen-row"><span>Tarjeta</span><strong>${fmtMoney(porMetodo.tarjeta)}</strong></div>
-      <div class="resumen-row big"><span>TOTAL</span><strong>${fmtMoney(totalVentas)}</strong></div>
-      <p class="muted" style="margin-top:8px;">Informe interno de gestión. No es tributario ni tiene relación con la DIAN.</p>
+    <div class="stats-grid">
+      <div class="stat-card green"><div class="stat-label">Ventas del mes</div><div class="stat-value">${fmtMoney(totalVentas)}</div><div class="stat-sub">${cambioV>=0?'▲ +':'▼ '}${cambioV}% vs mes anterior</div></div>
+      <div class="stat-card red"><div class="stat-label">Gastos del mes</div><div class="stat-value">${fmtMoney(totalGastos)}</div><div class="stat-sub">del negocio</div></div>
+      <div class="stat-card gold"><div class="stat-label">Utilidad estimada</div><div class="stat-value">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − gastos</div></div>
+      <div class="stat-card blue"><div class="stat-label">Cierres del mes</div><div class="stat-value">${cierres.length}</div><div class="stat-sub">${sumDif===0?'cuadrados':sumDif>0?'sobró '+fmtMoney(sumDif):'faltó '+fmtMoney(Math.abs(sumDif))}</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">${ic('cash')} Ventas por método de pago</div>
+        <div class="resumen-row"><span>Efectivo</span><strong class="text-green">${fmtMoney(porMetodo.efectivo)}</strong></div>
+        <div class="resumen-row"><span>Banco / Transferencia</span><strong class="text-blue" style="color:var(--blue);">${fmtMoney(porMetodo.banco)}</strong></div>
+        <div class="resumen-row"><span>Tarjeta</span><strong class="text-gold">${fmtMoney(porMetodo.tarjeta)}</strong></div>
+        <div class="resumen-row big"><span>TOTAL VENTAS</span><strong>${fmtMoney(totalVentas)}</strong></div>
+      </div>
+      <div class="card">
+        <div class="card-title">${ic('cash')} Egresos por concepto (lo que se gastó)</div>
+        ${conceptosOrd.length?conceptosOrd.map(([c,v])=>`<div class="resumen-row"><span>${escapeHtml(c)}</span><strong class="text-red">${fmtMoney(v)}</strong></div>`).join(''):'<p class="muted">Sin gastos registrados este mes.</p>'}
+        ${conceptosOrd.length?`<div class="resumen-row big"><span>TOTAL GASTOS</span><strong class="text-red">${fmtMoney(totalGastos)}</strong></div>`:''}
+      </div>
     </div>`;
 }
 
@@ -1103,13 +1187,12 @@ function ventas(){
   if(_ventaBusca) productos=productos.filter(p=>p.nombre.toLowerCase().includes(_ventaBusca.toLowerCase()));
   const catsAll=['Todas',...new Set(misDatos('productos').filter(p=>!p.agotado).map(p=>p.categoria||'General'))];
   const total=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
-  const usaMesas=neg.usaMesas;
-  const usaDom=(neg.funciones||[]).includes('domicilios');
-  // Tipos de pedido según el negocio
-  const tipos=[];
-  if(usaMesas) tipos.push(['mesa','Mesa','table']);
-  tipos.push(['llevar','Llevar','bag']);
-  if(usaDom) tipos.push(['domicilio','Domicilio','truck']);
+  // Tipos de pedido configurados por el super-admin
+  const tiposCfg=neg.tiposEntrega&&neg.tiposEntrega.length?neg.tiposEntrega:(neg.usaMesas?['mesa','llevar']:['llevar']);
+  const labels={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío nacional'};
+  const tipos=tiposCfg.map(t=>[t,labels[t]||t]);
+  // Asegurar que _ventaTipo sea uno válido
+  if(!tiposCfg.includes(_ventaTipo)) _ventaTipo=tiposCfg[0];
   return `
     <div class="venta-layout">
       <div style="display:flex;flex-direction:column;gap:12px;overflow:hidden;">
@@ -1144,6 +1227,17 @@ function camposTipo(){
     const nMesas=neg.numMesas||20;
     return `<select class="mini-input" onchange="_ventaMesa=this.value"><option value="">Seleccionar mesa...</option>${Array.from({length:nMesas},(_,i)=>`<option ${_ventaMesa==='Mesa '+(i+1)?'selected':''}>Mesa ${i+1}</option>`).join('')}</select>`;
   }
+  if(_ventaTipo==='envio'){
+    // Envío nacional: más campos (ciudad, departamento, transportadora)
+    return `
+      <input type="text" class="mini-input" placeholder="Nombre del cliente" value="${escapeHtml(_ventaCli.nombre)}" oninput="_ventaCli.nombre=this.value">
+      <input type="text" class="mini-input" placeholder="Teléfono / WhatsApp" value="${escapeHtml(_ventaCli.tel)}" oninput="_ventaCli.tel=this.value">
+      <input type="text" class="mini-input" placeholder="Dirección completa" value="${escapeHtml(_ventaCli.dir)}" oninput="_ventaCli.dir=this.value">
+      <input type="text" class="mini-input" placeholder="Ciudad" value="${escapeHtml(_ventaCli.ciudad||'')}" oninput="_ventaCli.ciudad=this.value">
+      <input type="text" class="mini-input" placeholder="Departamento" value="${escapeHtml(_ventaCli.depto||'')}" oninput="_ventaCli.depto=this.value">
+      <input type="text" class="mini-input" placeholder="Transportadora (Servientrega, Envía...)" value="${escapeHtml(_ventaCli.transportadora||'')}" oninput="_ventaCli.transportadora=this.value">
+      <input type="number" class="mini-input" placeholder="Valor del envío" value="${_ventaCli.valorDom||''}" oninput="_ventaCli.valorDom=this.value">`;
+  }
   if(_ventaTipo==='domicilio'){
     const doms=misDatos('domiciliarios').filter(d=>d.activo);
     return `
@@ -1154,7 +1248,7 @@ function camposTipo(){
       <input type="number" class="mini-input" placeholder="Valor del domicilio" value="${_ventaCli.valorDom||''}" oninput="_ventaCli.valorDom=this.value">
       <select class="mini-input" onchange="_ventaCli.domiciliario=this.value"><option value="">Domiciliario...</option>${doms.map(d=>`<option ${_ventaCli.domiciliario===d.nombre?'selected':''}>${escapeHtml(d.nombre)}</option>`).join('')}</select>`;
   }
-  // llevar
+  // llevar / recoger
   return `<input type="text" class="mini-input" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(_ventaCli.nombre)}" oninput="_ventaCli.nombre=this.value">`;
 }
 function setVentaTipo(t){ _ventaTipo=t; render(); }
@@ -1736,37 +1830,54 @@ function dashboardNeg(){
     </div>`;
 }
 function reportesNeg(){
+  const neg=STATE.negocio;
   const vs=misDatos('ventas').filter(v=>v.estado==='pagada');
   const t=new Date().toISOString().split('T')[0];
   const hoy=vs.filter(v=>(v.fecha||'').startsWith(t));
-  const weekAgo=new Date(Date.now()-7*864e5).toISOString().split('T')[0];
-  const sem=vs.filter(v=>(v.fecha||'')>=weekAgo);
-  const mes=vs.filter(v=>(v.fecha||'').substring(0,7)===t.substring(0,7));
-  const porMetodo={efectivo:0,banco:0,tarjeta:0};
-  vs.forEach(v=>{ if(porMetodo[v.metodo]!==undefined) porMetodo[v.metodo]+=v.total; });
+  const totalHoy=hoy.reduce((a,v)=>a+v.total,0);
+  const ticketProm=hoy.length?Math.round(totalHoy/hoy.length):0;
+  // Comparativo con mismo día semana pasada
+  const hace7=new Date(Date.now()-7*864e5).toISOString().split('T')[0];
+  const ventasHace7=vs.filter(v=>(v.fecha||'').startsWith(hace7)).reduce((a,v)=>a+v.total,0);
+  const cambio=ventasHace7>0?Math.round((totalHoy-ventasHace7)/ventasHace7*100):0;
+  // Terceros
+  const propinas=hoy.reduce((a,v)=>a+(v.propina||0),0);
+  const domicilios=hoy.filter(v=>v.valorDom>0).length;
+  const recargos=hoy.reduce((a,v)=>a+(v.recargo||0),0);
+  // Más vendidos hoy
   const items={};
-  vs.forEach(v=>v.items.forEach(i=>{ items[i.nombre]=(items[i.nombre]||0)+i.qty; }));
-  const top=Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  hoy.forEach(v=>v.items.forEach(i=>{ items[i.nombre]=(items[i.nombre]||0)+i.qty; }));
+  const top=Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  // Gráfico 7 días
+  const days=[];
+  for(let i=6;i>=0;i--){ const d=new Date(Date.now()-i*864e5); const dk=d.toISOString().split('T')[0];
+    days.push({lbl:d.toLocaleDateString('es-CO',{weekday:'short'}), tot:vs.filter(v=>(v.fecha||'').startsWith(dk)).reduce((a,v)=>a+v.total,0)}); }
+  const mx7=Math.max(...days.map(d=>d.tot),1);
+  // Gráfico 12 meses
+  const meses=[];
+  for(let i=11;i>=0;i--){ const d=new Date(); d.setMonth(d.getMonth()-i); const mk=d.toISOString().substring(0,7);
+    meses.push({lbl:d.toLocaleDateString('es-CO',{month:'short'}), tot:vs.filter(v=>(v.fecha||'').substring(0,7)===mk).reduce((a,v)=>a+v.total,0)}); }
+  const mxM=Math.max(...meses.map(m=>m.tot),1);
+  const usaMeseros=neg.usaCocina;
   return `
+    <div class="card">
+      <div class="card-title">${ic('report')} Resumen del día (hoy)</div>
+      <div class="stats-grid">
+        <div class="stat-card green"><div class="stat-label">Vendido hoy</div><div class="stat-value">${fmtMoney(totalHoy)}</div><div class="stat-sub">${hoy.length} ventas</div></div>
+        ${usaMeseros?`<div class="stat-card gold"><div class="stat-label">Propinas del día</div><div class="stat-value">${fmtMoney(propinas)}</div><div class="stat-sub">para los meseros</div></div>`:''}
+        <div class="stat-card blue"><div class="stat-label">${usaMeseros?'Domicilios':'Pedidos'}</div><div class="stat-value">${domicilios||hoy.length}</div><div class="stat-sub">${recargos>0?'recargos: '+fmtMoney(recargos):'hoy'}</div></div>
+      </div>
+      ${top.length?`<div class="card-title" style="font-size:14px;margin-top:16px;">Más pedidos hoy</div>
+      <div class="table-wrap"><table class="tbl"><tbody>${top.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td style="text-align:right;"><strong>${q}</strong></td></tr>`).join('')}</tbody></table></div>`:''}
+    </div>
     <div class="stats-grid">
-      <div class="stat-card green"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Ventas hoy</div><div class="stat-value">${fmtMoney(hoy.reduce((a,v)=>a+v.total,0))}</div><div class="stat-sub">${hoy.length} pedidos</div></div>
-      <div class="stat-card gold"><div class="stat-icon">${ic('history')}</div><div class="stat-label">Esta semana</div><div class="stat-value">${fmtMoney(sem.reduce((a,v)=>a+v.total,0))}</div><div class="stat-sub">${sem.length} pedidos</div></div>
-      <div class="stat-card blue"><div class="stat-icon">${ic('report')}</div><div class="stat-label">Este mes</div><div class="stat-value">${fmtMoney(mes.reduce((a,v)=>a+v.total,0))}</div><div class="stat-sub">${mes.length} pedidos</div></div>
+      <div class="stat-card green"><div class="stat-label">Ventas hoy</div><div class="stat-value">${fmtMoney(totalHoy)}</div><div class="stat-sub">${hoy.length} transacciones</div></div>
+      <div class="stat-card gold"><div class="stat-label">Ticket promedio</div><div class="stat-value">${fmtMoney(ticketProm)}</div></div>
+      <div class="stat-card ${cambio>=0?'green':'red'}"><div class="stat-label">vs. mismo día semana pasada</div><div class="stat-value">${cambio>=0?'+':''}${cambio}%</div><div class="stat-sub">Hace 7 días: ${fmtMoney(ventasHace7)}</div></div>
     </div>
     <div class="grid-2">
-      <div class="card">
-        <div class="card-title">${ic('cash')} Ventas por método (total)</div>
-        <div class="resumen-row"><span>Efectivo</span><strong class="text-gold">${fmtMoney(porMetodo.efectivo)}</strong></div>
-        <div class="resumen-row"><span>Banco</span><strong class="text-gold">${fmtMoney(porMetodo.banco)}</strong></div>
-        <div class="resumen-row"><span>Tarjeta</span><strong class="text-gold">${fmtMoney(porMetodo.tarjeta)}</strong></div>
-        <div class="resumen-row big"><span>Total</span><strong>${fmtMoney(vs.reduce((a,v)=>a+v.total,0))}</strong></div>
-      </div>
-      <div class="card">
-        <div class="card-title">${ic('report')} Más vendidos</div>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>Producto</th><th>Cant.</th></tr></thead><tbody>
-        ${top.length?top.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td><strong>${q}</strong></td></tr>`).join(''):'<tr><td colspan="2" class="muted">Sin ventas aún</td></tr>'}
-        </tbody></table></div>
-      </div>
+      <div class="card"><div class="card-title">${ic('report')} Ventas por día (7 días)</div><div class="bar-chart">${days.map(d=>`<div class="bar-item"><div class="bar-val">${d.tot>0?(d.tot/1000).toFixed(0)+'k':''}</div><div class="bar-fill" style="height:${Math.max(4,(d.tot/mx7)*130)}px"></div><div class="bar-label">${d.lbl}</div></div>`).join('')}</div></div>
+      <div class="card"><div class="card-title">${ic('report')} Ventas mensuales (12 meses)</div><div class="bar-chart">${meses.map(m=>`<div class="bar-item"><div class="bar-val">${m.tot>0?(m.tot/1000).toFixed(0)+'k':''}</div><div class="bar-fill" style="height:${Math.max(4,(m.tot/mxM)*130)}px"></div><div class="bar-label">${m.lbl}</div></div>`).join('')}</div></div>
     </div>`;
 }
 
