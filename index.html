@@ -170,6 +170,8 @@
   /* ===== LOGIN ===== */
   .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 25% 15%,rgba(1,195,142,.1),transparent 55%),radial-gradient(circle at 80% 80%,rgba(192,57,43,.08),transparent 55%),var(--bg);}
   .login-box{background:linear-gradient(160deg,var(--card),var(--panel));border:1px solid var(--line);border-radius:22px;padding:40px 36px;width:100%;max-width:400px;box-shadow:var(--shadow-lg);}
+  .login-emblem{width:96px;height:96px;margin:0 auto 16px;border-radius:24px;overflow:hidden;box-shadow:0 10px 34px rgba(1,195,142,.28);animation:emblemIn .5s ease;}
+  @keyframes emblemIn{from{opacity:0;transform:translateY(-10px) scale(.9);}to{opacity:1;transform:none;}}
   .login-logo{font-size:34px;font-weight:900;text-align:center;letter-spacing:-1px;}
   .login-logo span{color:var(--gold);}
   .login-sub{text-align:center;color:var(--muted);font-size:13px;margin:8px 0 28px;}
