@@ -47,7 +47,7 @@
   .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);}
 
   .main{flex:1;margin-left:250px;min-height:100vh;display:flex;flex-direction:column;}
-  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 26px;background:rgba(16,18,21,.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 26px;background:var(--bg2);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;}
   .topbar h1{font-size:19px;font-weight:700;display:flex;align-items:center;gap:10px;}
   .topbar .tb-right{display:flex;align-items:center;gap:12px;}
   .clock{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;}
@@ -153,6 +153,13 @@
   .resumen-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line2);font-size:15px;}
   .resumen-row.big{font-size:19px;font-weight:700;border-top:2px solid var(--gold);border-bottom:none;margin-top:8px;padding-top:14px;}
   .text-green{color:var(--green)!important;} .text-red{color:var(--red-l,#f87171)!important;} .text-gold{color:var(--gold)!important;}
+
+  /* Gráfico de barras */
+  .bar-chart{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;height:180px;padding:20px 4px 0;}
+  .bar-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;}
+  .bar-val{font-size:11px;color:var(--gold-l);font-weight:700;min-height:14px;}
+  .bar-fill{width:100%;max-width:44px;background:linear-gradient(180deg,var(--gold-l),var(--gold-d));border-radius:6px 6px 0 0;min-height:4px;transition:height .3s;}
+  .bar-label{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600;}
 
   /* ===== LOGIN ===== */
   .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 25% 15%,rgba(212,175,55,.1),transparent 55%),radial-gradient(circle at 80% 80%,rgba(192,57,43,.08),transparent 55%),var(--bg);}
