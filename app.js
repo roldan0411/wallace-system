@@ -307,6 +307,19 @@ function panelSuperAdmin(){
   const negocios = DB.get('negocios')||[];
   const totalActivos = negocios.filter(n=>n.activo).length;
   const ingresoMensual = negocios.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
+  const totalUsuarios = (DB.get('usuarios')||[]).length;
+  // Estadísticas de uso del sistema (ventas totales de todos los negocios)
+  let ventasTotales=0, ventasHoyTotal=0, negocioTop={nombre:'—',total:0};
+  const hoyKey=new Date().toISOString().split('T')[0];
+  negocios.forEach(n=>{
+    const vs=(datosDe(n.id,'ventas')||[]).filter(v=>v.estado==='pagada');
+    const suma=vs.reduce((a,v)=>a+v.total,0);
+    ventasTotales+=suma;
+    ventasHoyTotal+=vs.filter(v=>(v.fecha||'').startsWith(hoyKey)).reduce((a,v)=>a+v.total,0);
+    if(suma>negocioTop.total) negocioTop={nombre:n.nombre,total:suma};
+  });
+  const busca=(STATE.buscaNegocio||'').toLowerCase();
+  const negociosFiltrados=busca?negocios.filter(n=>n.nombre.toLowerCase().includes(busca)||(n.tipo||'').toLowerCase().includes(busca)||(n.ciudad||'').toLowerCase().includes(busca)):negocios;
 
   return `
   <div class="topbar" style="position:sticky;">
@@ -323,30 +336,42 @@ function panelSuperAdmin(){
       <div class="stat-card"><div class="stat-icon">${ic('building')}</div><div class="stat-label">Negocios activos</div><div class="stat-value">${totalActivos}</div><div class="stat-sub">de ${negocios.length} en total</div></div>
       <div class="stat-card green"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Ingreso mensual</div><div class="stat-value">${fmtMoney(ingresoMensual)}</div><div class="stat-sub">suma de planes activos</div></div>
       <div class="stat-card red"><div class="stat-icon">${ic('shield')}</div><div class="stat-label">Suspendidos</div><div class="stat-value">${negocios.length-totalActivos}</div><div class="stat-sub">no pagan / pausados</div></div>
+      <div class="stat-card blue"><div class="stat-icon">${ic('users')}</div><div class="stat-label">Usuarios totales</div><div class="stat-value">${totalUsuarios}</div><div class="stat-sub">empleados en el sistema</div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card gold"><div class="stat-icon">${ic('report')}</div><div class="stat-label">Ventas hoy (todos)</div><div class="stat-value">${fmtMoney(ventasHoyTotal)}</div><div class="stat-sub">movimiento del sistema</div></div>
+      <div class="stat-card green"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Ventas históricas</div><div class="stat-value">${fmtMoney(ventasTotales)}</div><div class="stat-sub">todos los negocios</div></div>
+      <div class="stat-card"><div class="stat-icon">${ic('building')}</div><div class="stat-label">Negocio con más ventas</div><div class="stat-value" style="font-size:18px;">${escapeHtml(negocioTop.nombre)}</div><div class="stat-sub">${fmtMoney(negocioTop.total)}</div></div>
     </div>
 
     <div class="card">
-      <div class="card-head">
+      <div class="card-head" style="flex-wrap:wrap;gap:10px;">
         <div class="card-title">${ic('building')} Negocios del sistema</div>
-        <button class="btn btn-gold" onclick="abrirNuevoNegocio()">${ic('plus')} Crear negocio</button>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <input type="text" placeholder="🔍 Buscar negocio..." value="${escapeHtml(STATE.buscaNegocio||'')}" oninput="STATE.buscaNegocio=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+          <button class="btn btn-gold" onclick="abrirNuevoNegocio()">${ic('plus')} Crear negocio</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="tbl">
-          <thead><tr><th>Negocio</th><th>Tipo</th><th>Plan</th><th>Precio/mes</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Negocio</th><th>Tipo</th><th>Plan</th><th>Precio/mes</th><th>Usuarios</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
-          ${negocios.length? negocios.map(n=>`
+          ${negociosFiltrados.length? negociosFiltrados.map(n=>`
             <tr>
               <td><strong>${escapeHtml(n.nombre)}</strong><br><span class="muted">${escapeHtml(n.ciudad||'')}</span></td>
               <td>${escapeHtml(n.tipo)}</td>
               <td>${escapeHtml(n.plan||'—')}</td>
               <td>${fmtMoney(n.precioMes)}</td>
+              <td>${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
               <td>${n.activo?'<span class="pill pill-green">Activo</span>':'<span class="pill pill-red">Suspendido</span>'}</td>
               <td class="actions">
+                <button class="btn btn-sm btn-green" onclick="entrarComoNegocio('${n.id}')">${ic('cash')} Entrar</button>
                 <button class="btn btn-sm" onclick="abrirConfigNegocio('${n.id}')">${ic('cog')} Configurar</button>
+                <button class="btn btn-sm" onclick="abrirUsuariosNegocio('${n.id}')">${ic('users')} Usuarios</button>
                 <button class="btn btn-sm ${n.activo?'btn-warn':'btn-green'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Suspender':'Activar'}</button>
                 <button class="btn btn-sm btn-danger" onclick="eliminarNegocio('${n.id}')">×</button>
               </td>
-            </tr>`).join('') : '<tr><td colspan="6" class="muted">Aún no hay negocios. Crea el primero.</td></tr>'}
+            </tr>`).join('') : '<tr><td colspan="7" class="muted">No se encontraron negocios.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -548,6 +573,116 @@ function eliminarNegocio(id){
     render();
   },'Eliminar');
 }
+// El super-admin entra a supervisar un negocio (modo supervisión)
+function entrarComoNegocio(id){
+  const neg=(DB.get('negocios')||[]).find(n=>n.id===id); if(!neg) return;
+  STATE.negocio=neg;
+  STATE.user={nombre:'Supervisor (Super-Admin)', rol:'admin', negocioId:id, esSupervisor:true};
+  STATE.esSuperAdmin=false;
+  STATE.modoSupervision=true;
+  STATE.pageNeg='dashboard';
+  aplicarTema(neg);
+  toast('Entrando a '+neg.nombre+' como supervisor','info');
+  render();
+}
+// Volver al panel de super-admin
+function volverSuperAdmin(){
+  const sa=(DB.get('superadmins')||[])[0];
+  STATE.user=sa; STATE.esSuperAdmin=true; STATE.negocio=null; STATE.modoSupervision=false;
+  aplicarTema({tema:'oscuro'});
+  render();
+}
+
+// ============================================================
+//  GESTIÓN DE USUARIOS DESDE EL SUPER-ADMIN
+// ============================================================
+const ROLES_DISPONIBLES=[
+  ['admin','Administrador','Ve y maneja todo el negocio'],
+  ['cajero','Cajero','Cobra y maneja caja'],
+  ['mesero','Mesero','Toma pedidos, ve mesas'],
+  ['cocina','Cocina','Solo ve la pantalla de cocina'],
+  ['dueno','Dueño','Solo consulta: reportes, caja, contable'],
+  ['vendedor','Vendedor','Vende y consulta inventario']
+];
+// Pantallas que puede tener cada usuario (para permisos personalizados)
+const PANTALLAS_USUARIO=[
+  ['dashboard','Dashboard'],['ventas','Nueva Venta'],['pedidos','Pedidos'],['catalogo','Catálogo/Inventario'],
+  ['caja','Caja'],['cocina','Cocina'],['citas','Citas'],['clientes','Clientes'],['domicilios','Domicilios'],
+  ['reportes','Reportes'],['contable','Registro Contable'],['gastosneg','Gastos del Negocio']
+];
+function abrirUsuariosNegocio(id){ STATE.page='usuarios-negocio:'+id; render(); }
+function pantallaUsuariosNegocio(id){
+  const neg=(DB.get('negocios')||[]).find(n=>n.id===id);
+  if(!neg) return '<div class="wrap"><div class="card">Negocio no encontrado.</div></div>';
+  const us=(DB.get('usuarios')||[]).filter(u=>u.negocioId===id);
+  return `
+  <div class="topbar">
+    <div class="topbar-title">${ic('users')} Usuarios de ${escapeHtml(neg.nombre)}</div>
+    <div class="topbar-right"><button class="btn btn-ghost btn-sm" onclick="STATE.page='';render()">← Volver</button></div>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <div class="inv-head">
+        <div class="card-title">Empleados del negocio</div>
+        <button class="btn btn-gold btn-sm" onclick="nuevoUsuarioSuper('${id}')">+ Crear usuario</button>
+      </div>
+      <p class="muted" style="margin-bottom:10px;">Tú (super-admin) creas los usuarios de cada negocio con su rol y las pantallas que puede usar según lo que necesite el cliente.</p>
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Pantallas habilitadas</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+        ${us.length?us.map(u=>`<tr>
+          <td><strong>${escapeHtml(u.nombre)}</strong></td>
+          <td>${escapeHtml(u.usuario)}</td>
+          <td>${escapeHtml((ROLES_DISPONIBLES.find(r=>r[0]===u.rol)||['',u.rol])[1])}</td>
+          <td class="muted" style="font-size:12px;">${u.pantallas&&u.pantallas.length?u.pantallas.length+' pantallas':'según su rol'}</td>
+          <td>${u.activo!==false?'<span class="pill pill-green">Activo</span>':'<span class="pill pill-red">Inactivo</span>'}</td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick="editarUsuarioSuper('${id}','${u.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="eliminarUsuarioSuper('${id}','${u.id}')">×</button>
+          </td>
+        </tr>`).join(''):'<tr><td colspan="6" class="muted">Sin usuarios. Crea el primero.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+function nuevoUsuarioSuper(negId){ editarUsuarioSuper(negId, null); }
+function editarUsuarioSuper(negId, userId){
+  const neg=(DB.get('negocios')||[]).find(n=>n.id===negId); if(!neg) return;
+  const u = userId? (DB.get('usuarios')||[]).find(x=>x.id===userId) : null;
+  // Sugerir usuario basado en el nombre del negocio
+  const sugerencia=neg.nombre.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,8);
+  const rolesOpts=ROLES_DISPONIBLES.map(r=>({valor:r[0],label:r[1]+' — '+r[2]}));
+  abrirModal({titulo:(u?'Editar':'Nuevo')+' usuario · '+neg.nombre, textoBoton:'Guardar', campos:[
+    {id:'nombre', label:'Nombre del empleado', valor:u?u.nombre:'', requerido:true},
+    {id:'usuario', label:'Usuario para entrar', valor:u?u.usuario:sugerencia, requerido:true, placeholder:sugerencia},
+    {id:'pass', label:'Contraseña', valor:u?u.pass:'', requerido:true},
+    {id:'rol', label:'Rol', tipo:'select', opciones:rolesOpts, valor:u?u.rol:'cajero'}
+  ], extraHTML:`
+    <div class="m-row"><label>Pantallas habilitadas (opcional — si no marcas nada, usa las de su rol)</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+        ${PANTALLAS_USUARIO.map(([pid,plabel])=>`<label class="check" style="font-size:12px;padding:7px 9px;"><input type="checkbox" class="u-pantalla" value="${pid}" ${u&&u.pantallas&&u.pantallas.includes(pid)?'checked':''}> ${plabel}</label>`).join('')}
+      </div>
+    </div>`,
+    onGuardar:(d)=>{
+    if(!d.nombre||!d.usuario||!d.pass){ toast('Faltan datos','error'); return; }
+    // Verificar usuario único (excepto si es el mismo)
+    const existe=(DB.get('usuarios')||[]).find(x=>x.usuario===d.usuario && (!u||x.id!==u.id)) || (DB.get('superadmins')||[]).some(s=>s.usuario===d.usuario);
+    if(existe){ toast('Ese usuario ya existe','error'); return; }
+    const pantallas=Array.from(document.querySelectorAll('.u-pantalla:checked')).map(c=>c.value);
+    const usuarios=DB.get('usuarios')||[];
+    if(u){ Object.assign(u,{nombre:d.nombre,usuario:d.usuario,pass:d.pass,rol:d.rol,pantallas}); }
+    else { usuarios.push({id:uid(), negocioId:negId, nombre:d.nombre, usuario:d.usuario, pass:d.pass, rol:d.rol, pantallas, activo:true, creado:now()}); }
+    DB.set('usuarios',usuarios);
+    cerrarModal(); toast('Usuario guardado','success'); render();
+  }});
+}
+function eliminarUsuarioSuper(negId,userId){
+  confirmarModal('¿Eliminar este usuario?',()=>{
+    DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.id!==userId));
+    toast('Usuario eliminado','info'); render();
+  },'Eliminar');
+}
 
 // ============================================================
 //  DOMICILIOS (universal)
@@ -585,20 +720,22 @@ function eliminarDomiciliario(id){ confirmarModal('¿Eliminar este domiciliario?
 // ============================================================
 //  USUARIOS DEL NEGOCIO (roles: cajero, mesero, cocina...)
 // ============================================================
-const ROLES_NEGOCIO=[['admin','Administrador'],['cajero','Cajero'],['mesero','Mesero'],['cocina','Cocina']];
 function usuariosNeg(){
   const us=(DB.get('usuarios')||[]).filter(u=>u.negocioId===STATE.negocio.id);
   return `
     <div class="card">
-      <div class="inv-head">
-        <div class="card-title">👤 Usuarios del negocio</div>
-        <button class="btn btn-gold btn-sm" onclick="nuevoUsuarioNeg()">+ Agregar usuario</button>
-      </div>
-      <p class="muted" style="margin-bottom:10px;">Empleados que pueden entrar a tu negocio. Cada uno con su rol.</p>
+      <div class="card-title">${ic('users')} Usuarios del negocio</div>
+      <p class="muted" style="margin-bottom:12px;">Empleados que pueden entrar a este negocio, con su rol y las pantallas que ven. Para crear, cambiar o quitar usuarios, contacta a tu proveedor del sistema (WALLACE COMPANY SYSTEM).</p>
       <div class="table-wrap"><table class="tbl">
-        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Pantallas</th><th>Estado</th></tr></thead>
         <tbody>
-        ${us.map(u=>`<tr><td><strong>${escapeHtml(u.nombre)}</strong></td><td>${escapeHtml(u.usuario)}</td><td>${escapeHtml((ROLES_NEGOCIO.find(r=>r[0]===u.rol)||['',u.rol])[1])}</td><td>${u.activo?'<span class="pill pill-green">Activo</span>':'<span class="pill pill-red">Inactivo</span>'}</td><td class="actions">${u.rol!=='admin'?`<button class="btn btn-sm btn-danger" onclick="eliminarUsuarioNeg('${u.id}')">×</button>`:'<span class="muted">principal</span>'}</td></tr>`).join('')}
+        ${us.length?us.map(u=>`<tr>
+          <td><strong>${escapeHtml(u.nombre)}</strong></td>
+          <td>${escapeHtml(u.usuario)}</td>
+          <td>${escapeHtml((ROLES_DISPONIBLES.find(r=>r[0]===u.rol)||['',u.rol])[1])}</td>
+          <td class="muted" style="font-size:12px;">${u.pantallas&&u.pantallas.length?u.pantallas.length+' personalizadas':'según su rol'}</td>
+          <td>${u.activo!==false?'<span class="pill pill-green">Activo</span>':'<span class="pill pill-red">Inactivo</span>'}</td>
+        </tr>`).join(''):'<tr><td colspan="5" class="muted">Sin usuarios registrados.</td></tr>'}
         </tbody>
       </table></div>
     </div>`;
@@ -769,49 +906,69 @@ function estadoCocina(id,estado){
 function imprimirFactura(ventaId){
   const v=misDatos('ventas').find(x=>x.id===ventaId); if(!v) return;
   const neg=STATE.negocio;
-  const subtotal=v.items.reduce((a,i)=>a+i.precio*i.qty,0);
+  const subtotal=v.subtotal!==undefined?v.subtotal:v.items.reduce((a,i)=>a+i.precio*i.qty,0);
   const logo=neg.logo||window.LOGO_DEFAULT||'';
   const tipo=neg.tipoFactura||'pos';
-  // Dimensiones y estilos según el tipo de factura
+  const tipoLabel={mesa:'Mesa',domicilio:'Domicilio',llevar:'Para llevar',envio:'Envío nacional'}[v.tipo]||'Venta';
   let ancho, pagina, ventanaW;
   if(tipo==='carta'){ ancho='190mm'; pagina='@page{size:letter;margin:12mm;}'; ventanaW=800; }
   else if(tipo==='media'){ ancho='140mm'; pagina='@page{size:half-letter;margin:8mm;}'; ventanaW=650; }
   else { ancho='72mm'; pagina='@page{size:80mm auto;margin:0;}'; ventanaW=400; }
-  const grande = tipo!=='pos'; // en hoja carta/media usamos layout más amplio
-  const html=`<div style="font-family:'Inter',Arial,sans-serif;color:#000;width:${ancho};padding:${grande?'6mm':'4mm'};margin:0 auto;">
+  const grande = tipo!=='pos';
+  // Filas de datos del cliente según el tipo de pedido
+  let datosCliente='';
+  if(v.cliNombre) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Cliente</span><span style="font-weight:600;">${escapeHtml(v.cliNombre)}</span></div>`;
+  if(v.cliTel) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Teléfono</span><span style="font-weight:600;">${escapeHtml(v.cliTel)}</span></div>`;
+  if(v.cliDir) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Dirección</span><span style="font-weight:600;text-align:right;max-width:60%;">${escapeHtml(v.cliDir)}</span></div>`;
+  if(v.cliBarrio) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Barrio</span><span style="font-weight:600;">${escapeHtml(v.cliBarrio)}</span></div>`;
+  if(v.cliCiudad) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Ciudad</span><span style="font-weight:600;">${escapeHtml(v.cliCiudad)}</span></div>`;
+  if(v.cliDepto) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Departamento</span><span style="font-weight:600;">${escapeHtml(v.cliDepto)}</span></div>`;
+  if(v.transportadora) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Transportadora</span><span style="font-weight:600;">${escapeHtml(v.transportadora)}</span></div>`;
+  if(v.domiciliario) datosCliente+=`<div style="display:flex;justify-content:space-between;"><span>Mensajero</span><span style="font-weight:600;">${escapeHtml(v.domiciliario)}</span></div>`;
+  // Totales extra
+  let extras='';
+  if(v.valorDom>0) extras+=`<div style="display:flex;justify-content:space-between;"><span>${v.tipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(v.valorDom)}</span></div>`;
+  if(v.propina>0) extras+=`<div style="display:flex;justify-content:space-between;"><span>Propina</span><span>${fmtMoney(v.propina)}</span></div>`;
+  if(v.recargo>0) extras+=`<div style="display:flex;justify-content:space-between;"><span>Recargo datáfono</span><span>${fmtMoney(v.recargo)}</span></div>`;
+  const html=`<div style="font-family:'Inter',Arial,sans-serif;color:#000;width:${ancho};padding:${grande?'6mm':'4mm'};margin:0 auto;font-weight:500;">
     <div style="text-align:center;padding-bottom:6px;${grande?'display:flex;align-items:center;gap:14px;text-align:left;justify-content:center;':''}">
       ${logo?`<img src="${logo}" style="max-height:${grande?'90px':'120px'};max-width:240px;margin-bottom:6px;">`:''}
       <div>
         <div style="font-size:26px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
         ${neg.nit?`<div style="font-size:14px;margin-top:2px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
-        ${neg.tel?`<div style="font-size:14px;">Tel: ${escapeHtml(neg.tel)}</div>`:''}
         ${neg.dir?`<div style="font-size:14px;">${escapeHtml(neg.dir)}</div>`:''}
+        ${neg.tel?`<div style="font-size:14px;">Tel: ${escapeHtml(neg.tel)}</div>`:''}
       </div>
     </div>
-    <div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:6px 0;text-align:center;margin:6px 0;">
-      <div style="font-size:15px;font-weight:bold;">FACTURA DE VENTA</div>
+    <div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:7px 0;text-align:center;margin:6px 0;">
+      <div style="font-size:13px;letter-spacing:1px;">${tipoLabel.toUpperCase()}</div>
+      <div style="font-size:19px;font-weight:800;">FACTURA N° ${escapeHtml(v.factura||'—')}</div>
     </div>
-    <div style="font-size:15px;line-height:1.7;margin:6px 0;font-weight:500;">
-      <div style="display:flex;justify-content:space-between;"><span>Fecha</span><span>${fmtDate(v.fecha)}</span></div>
-      <div style="display:flex;justify-content:space-between;"><span>Atendió</span><span>${escapeHtml(v.vendedor||'')}</span></div>
-      ${v.mesa?`<div style="display:flex;justify-content:space-between;"><span>Mesa</span><span>${escapeHtml(v.mesa)}</span></div>`:''}
+    <div style="font-size:15px;line-height:1.7;margin:6px 0;">
+      <div style="display:flex;justify-content:space-between;"><span>Fecha</span><span style="font-weight:600;">${fmtDate(v.fecha)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Atendió</span><span style="font-weight:600;">${escapeHtml(v.vendedor||'')}</span></div>
+      ${v.mesa?`<div style="display:flex;justify-content:space-between;"><span>Mesa</span><span style="font-weight:600;">${escapeHtml(v.mesa)}</span></div>`:''}
+      ${datosCliente}
     </div>
     <div style="border-top:1px dashed #000;padding-top:5px;">
       <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:5px;"><span>CANT / PRODUCTO</span><span>VALOR</span></div>
-      ${v.items.map(i=>`<div style="display:flex;justify-content:space-between;font-size:15px;padding:4px 0;font-weight:500;"><span style="flex:1;padding-right:8px;">${i.qty} × ${escapeHtml(i.nombre)}</span><span>${fmtMoney(i.precio*i.qty)}</span></div>`).join('')}
+      ${v.items.map(i=>`<div style="display:flex;justify-content:space-between;font-size:15px;padding:4px 0;"><span style="flex:1;padding-right:8px;">${i.qty} × ${escapeHtml(i.nombre)}</span><span>${fmtMoney(i.precio*i.qty)}</span></div>`).join('')}
     </div>
-    <div style="border-top:1px dashed #000;margin-top:6px;padding-top:6px;font-size:15px;font-weight:500;">
+    <div style="border-top:1px dashed #000;margin-top:6px;padding-top:6px;font-size:15px;">
       <div style="display:flex;justify-content:space-between;"><span>Subtotal</span><span>${fmtMoney(subtotal)}</span></div>
+      ${extras}
     </div>
-    <div style="border-top:2px solid #000;border-bottom:2px solid #000;margin-top:6px;padding:9px 0;display:flex;justify-content:space-between;font-size:20px;font-weight:800;">
+    <div style="border-top:2px solid #000;border-bottom:2px solid #000;margin-top:6px;padding:9px 0;display:flex;justify-content:space-between;font-size:22px;font-weight:800;">
       <span>TOTAL</span><span>${fmtMoney(v.total)}</span>
     </div>
-    <div style="text-align:center;font-size:14px;margin-top:6px;font-weight:500;">Forma de pago: ${escapeHtml((v.metodo||'').toUpperCase())}</div>
-    <div style="text-align:center;margin-top:12px;font-size:16px;font-weight:800;">¡GRACIAS POR SU COMPRA!</div>
-    <div style="text-align:center;font-size:12px;color:#000;margin-top:10px;border-top:1px dashed #000;padding-top:8px;font-weight:500;">Wallace System · WALLACE COMPANY SYSTEM</div>
+    <div style="text-align:center;font-size:14px;margin-top:6px;">Forma de pago: <strong>${escapeHtml((v.metodo||'').toUpperCase())}</strong></div>
+    ${v.obs?`<div style="border-top:1px dashed #000;margin-top:8px;padding-top:6px;font-size:13px;"><strong>Obs:</strong> ${escapeHtml(v.obs)}</div>`:''}
+    <div style="text-align:center;margin-top:14px;font-size:16px;font-weight:800;">¡GRACIAS POR SU COMPRA!</div>
+    <div style="text-align:center;font-size:13px;margin-top:3px;font-style:italic;">Vuelva pronto, será un placer atenderle</div>
+    <div style="text-align:center;font-size:11px;color:#000;margin-top:10px;border-top:1px dashed #000;padding-top:8px;">Software por WALLACE COMPANY SYSTEM<br>wallacecompany11@gmail.com</div>
   </div>`;
   const w=window.open('','_blank','width='+ventanaW+',height=650');
-  w.document.write('<html><head><title>Factura</title><style>'+pagina+' body{margin:0;}</style></head><body>'+html+'</body></html>');
+  w.document.write('<html><head><title>Factura '+(v.factura||'')+'</title><style>'+pagina+' body{margin:0;-webkit-print-color-adjust:exact;}</style></head><body>'+html+'</body></html>');
   w.document.close(); setTimeout(()=>w.print(),300);
 }
 
@@ -1292,7 +1449,7 @@ function cobrarVenta(){
     const venta={id:uid(), factura:numFactura, items:_carrito.slice(), total:total+valorDom, subtotal:total, valorDom,
       metodo, estado:'pagada', tipo:_ventaTipo, cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now(),
       obs:_ventaObs, mesa:_ventaTipo==='mesa'?_ventaMesa:'',
-      cliNombre:_ventaCli.nombre, cliTel:_ventaCli.tel, cliDir:_ventaCli.dir, cliBarrio:_ventaCli.barrio, domiciliario:_ventaCli.domiciliario};
+      cliNombre:_ventaCli.nombre, cliTel:_ventaCli.tel, cliDir:_ventaCli.dir, cliBarrio:_ventaCli.barrio, cliCiudad:_ventaCli.ciudad, cliDepto:_ventaCli.depto, transportadora:_ventaCli.transportadora, domiciliario:_ventaCli.domiciliario};
     if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
     ventasArr.unshift(venta);
     guardarMisDatos('ventas',ventasArr);
@@ -1722,8 +1879,11 @@ function vistaNegocio(){
   nav.push({grupo:'GESTIÓN'});
   if(F.includes('reportes')) nav.push({id:'reportes',icon:'report',label:'Reportes'});
   if(F.includes('contable')) nav.push({id:'contable',icon:'report',label:'Registro Contable'});
-  if(F.includes('gastosneg')) nav.push({id:'gastosneg',icon:'cash',label:'Gastos del Negocio'});
+  if(F.includes('gastosneg')) nav.push({id:'gastosneg',icon:'report',label:'Gastos del Negocio'});
   if(STATE.user.rol==='admin'){ nav.push({id:'usuariosneg',icon:'users',label:'Usuarios'}); nav.push({id:'confignegocio',icon:'cog',label:'Configuración'}); }
+
+  // Filtrar el menú según los permisos del usuario
+  const navFiltrado=filtrarNavPorUsuario(nav);
 
   // Contenido según página
   let contenido='';
@@ -1758,7 +1918,7 @@ function vistaNegocio(){
         <div class="neg-badge">${escapeHtml(neg.nombre)}</div>`}
       </div>
       <nav class="nav">
-        ${nav.map(n=>n.grupo?`<div class="nav-group">${n.grupo}</div>`:`<div class="nav-item ${pg===n.id?'active':''}" onclick="irNeg('${n.id}')">${ic(n.icon)}<span>${n.label}</span></div>`).join('')}
+        ${navFiltrado.map(n=>n.grupo?`<div class="nav-group">${n.grupo}</div>`:`<div class="nav-item ${pg===n.id?'active':''}" onclick="irNeg('${n.id}')">${ic(n.icon)}<span>${n.label}</span></div>`).join('')}
       </nav>
       <div class="sidebar-foot">
         <div class="user-box">
@@ -1772,6 +1932,10 @@ function vistaNegocio(){
       </div>
     </aside>
     <div class="main">
+      ${STATE.modoSupervision?`<div style="background:linear-gradient(90deg,rgba(212,175,55,.18),rgba(212,175,55,.05));border-bottom:1px solid var(--gold);padding:10px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--gold-l);">👁️ Modo supervisión — estás viendo este negocio como Super-Admin</span>
+        <button class="btn btn-sm btn-gold" onclick="volverSuperAdmin()">← Volver al panel de Super-Admin</button>
+      </div>`:''}
       <div class="topbar">
         <h1><button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button> ${escapeHtml(titulo)}</h1>
         <div class="tb-right"><span class="clock" id="clock"></span></div>
@@ -1781,6 +1945,42 @@ function vistaNegocio(){
   </div>`;
 }
 function irNeg(pg){ STATE.pageNeg=pg; if(pg==='inventario')_invTab='insumos'; render(); const sb=document.getElementById('sidebar'); if(sb)sb.classList.remove('open'); }
+
+// Pantallas que ve cada rol por defecto (si el super-admin no personalizó)
+const PANTALLAS_POR_ROL={
+  admin:  ['inicio','ventas','pedidos','catalogo','caja','cocina','citas','domicilios','inventario','clientes','reportes','contable','gastosneg','usuariosneg','confignegocio'],
+  cajero: ['inicio','ventas','pedidos','caja','clientes','domicilios'],
+  mesero: ['inicio','ventas','pedidos','clientes'],
+  cocina: ['cocina','pedidos'],
+  dueno:  ['inicio','caja','pedidos','reportes','contable','gastosneg','catalogo'],
+  vendedor:['inicio','ventas','pedidos','catalogo','clientes']
+};
+// Filtra el menú lateral según el rol del usuario y sus pantallas personalizadas
+function filtrarNavPorUsuario(nav){
+  const u=STATE.user;
+  // El supervisor (super-admin) ve todo
+  if(u.esSupervisor) return nav;
+  // Pantallas permitidas: las personalizadas o las del rol
+  let permitidas;
+  if(u.pantallas && u.pantallas.length){
+    permitidas=u.pantallas.slice();
+    // Traducir nombres de pantalla a ids del menú
+    if(permitidas.includes('dashboard')) permitidas.push('inicio');
+    if(permitidas.includes('catalogo')) permitidas.push('inventario');
+  } else {
+    permitidas=PANTALLAS_POR_ROL[u.rol]||PANTALLAS_POR_ROL.cajero;
+  }
+  // Recorrer y quedarnos con los grupos que tengan al menos un item visible
+  const salida=[]; let grupoPend=null;
+  nav.forEach(n=>{
+    if(n.grupo){ grupoPend=n; return; }
+    if(permitidas.includes(n.id)){
+      if(grupoPend){ salida.push(grupoPend); grupoPend=null; }
+      salida.push(n);
+    }
+  });
+  return salida;
+}
 
 // Dashboard del negocio
 function dashboardNeg(){
@@ -1919,6 +2119,7 @@ function render(){
     aplicarTema({tema:'oscuro'});
     if(STATE.page==='nuevo-negocio'){ app.innerHTML=pantallaNuevoNegocio(); return; }
     if(STATE.page.startsWith('config-negocio:')){ app.innerHTML=pantallaConfigNegocio(STATE.page.split(':')[1]); return; }
+    if(STATE.page.startsWith('usuarios-negocio:')){ app.innerHTML=pantallaUsuariosNegocio(STATE.page.split(':')[1]); return; }
     app.innerHTML=panelSuperAdmin(); return;
   }
   // Usuario de negocio: aplicar su tema personalizado
