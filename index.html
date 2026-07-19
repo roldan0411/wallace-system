@@ -260,6 +260,21 @@
   /* Alerta de stock */
   .alerta-stock{border-left:4px solid var(--red);background:linear-gradient(135deg,rgba(192,57,43,.07),transparent);}
   .alerta-stock p{font-size:13px;line-height:1.6;}
+  /* Pedidos por cobrar */
+  .card-pendientes{border-left:4px solid var(--gold);background:linear-gradient(135deg,rgba(1,195,142,.07),transparent);}
+  .fila-pendiente{background:rgba(1,195,142,.04);}
+  .pill-gold{background:rgba(1,195,142,.16);color:var(--gold);border:1px solid rgba(1,195,142,.3);}
+  /* Espaciados generales */
+  .flex-between{display:flex;justify-content:space-between;align-items:center;gap:12px;}
+  .flex-between+.table-wrap,.flex-between+p{margin-top:14px;}
+  .card>p.muted{margin-bottom:14px;}
+  .card>p.muted:last-child{margin-bottom:0;}
+  .stats-grid+.card,.card+.card{margin-top:0;}
+  .tbl td,.tbl th{padding:13px 14px;}
+  .actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+  .order-items{margin:14px 0;}
+  .form-row{margin-bottom:14px;}
+  .form-row:last-child{margin-bottom:0;}
 
   /* Catálogo con imágenes */
   .catalogo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;width:100%;margin-top:4px;}
