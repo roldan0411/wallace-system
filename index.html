@@ -64,7 +64,13 @@
   /* ===== CARDS ===== */
   .card{background:linear-gradient(160deg,var(--card),var(--panel));border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:20px;box-shadow:var(--shadow);}
   .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;}
-  .card-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:9px;}
+  .card-title{font-size:17px;font-weight:700;display:flex;align-items:center;gap:9px;margin-bottom:16px;}
+  .card-title:last-child{margin-bottom:0;}
+  .card-title+.stats-grid,.card-title+.table-wrap{margin-top:4px;}
+  .inv-head .card-title,.flex-between .card-title,.card-head .card-title{margin-bottom:0;}
+  .card>.stats-grid:last-child{margin-bottom:0;}
+  .card p+.table-wrap,.card p+.stats-grid{margin-top:14px;}
+  .card .muted{line-height:1.6;}
   .card-title svg{width:20px;height:20px;color:var(--gold);}
   .muted{color:var(--muted);font-size:13px;line-height:1.65;}
   .sep{border:none;border-top:1px solid var(--line);margin:20px 0;}
@@ -86,7 +92,7 @@
   .stat-sub{font-size:12px;color:var(--muted);}
 
   /* ===== TABLE ===== */
-  .table-wrap{overflow-x:auto;border-radius:12px;}
+  .table-wrap{overflow-x:auto;border-radius:12px;margin-top:4px;}
   .tbl{width:100%;border-collapse:collapse;font-size:14px;}
   .tbl th{text-align:left;padding:11px 14px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;border-bottom:1px solid var(--line);}
   .tbl td{padding:13px 14px;border-bottom:1px solid var(--line2);vertical-align:middle;}
@@ -156,7 +162,8 @@
   .carrito-total{display:flex;justify-content:space-between;font-size:22px;font-weight:800;padding:16px 0;border-top:2px solid var(--gold);margin-top:12px;}
 
   /* ===== CAJA ===== */
-  .resumen-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line2);font-size:15px;}
+  .resumen-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line2);font-size:15px;}
+  .resumen-row:last-child{border-bottom:none;}
   .resumen-row.big{font-size:19px;font-weight:700;border-top:2px solid var(--gold);border-bottom:none;margin-top:8px;padding-top:14px;}
   .text-green{color:var(--green)!important;} .text-red{color:var(--red-l,#f87171)!important;} .text-gold{color:var(--gold)!important;}
 
@@ -171,6 +178,10 @@
   .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 25% 15%,rgba(1,195,142,.1),transparent 55%),radial-gradient(circle at 80% 80%,rgba(192,57,43,.08),transparent 55%),var(--bg);}
   .login-box{background:linear-gradient(160deg,var(--card),var(--panel));border:1px solid var(--line);border-radius:22px;padding:40px 36px;width:100%;max-width:400px;box-shadow:var(--shadow-lg);}
   .login-emblem{width:96px;height:96px;margin:0 auto 16px;border-radius:24px;overflow:hidden;box-shadow:0 10px 34px rgba(1,195,142,.28);animation:emblemIn .5s ease;}
+  .sa-emblem{display:inline-block;width:34px;height:34px;border-radius:9px;overflow:hidden;vertical-align:middle;margin-right:4px;box-shadow:0 3px 12px rgba(1,195,142,.3);}
+  .sa-emblem svg{width:100%;height:100%;display:block;}
+  .sa-brand{font-weight:900;letter-spacing:-.4px;vertical-align:middle;}
+  .sa-brand span{color:var(--gold);}
   @keyframes emblemIn{from{opacity:0;transform:translateY(-10px) scale(.9);}to{opacity:1;transform:none;}}
   .login-logo{font-size:34px;font-weight:900;text-align:center;letter-spacing:-1px;}
   .login-logo span{color:var(--gold);}
@@ -201,13 +212,20 @@
   .m-row input:focus,.m-row select:focus,.m-row textarea:focus{outline:none;border-color:var(--gold);}
   .modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 22px;border-top:1px solid var(--line);}
   .modal-foot .btn{padding:11px 20px;}
+  /* Recuadro de resumen al cobrar */
+  .cobro-box{margin-top:6px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;}
+  .cb-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;}
+  .cb-row strong{font-weight:700;}
+  .cb-total{border-top:2px solid var(--gold);margin-top:8px;padding-top:11px;font-size:17px;}
+  .cb-total strong{color:var(--gold);font-size:20px;font-weight:800;}
+  .cb-nota{display:none;margin-top:10px;padding:9px 12px;background:rgba(1,195,142,.08);border-left:3px solid var(--gold);border-radius:6px;font-size:12px;line-height:1.5;color:var(--txt2);}
 
   /* Ventas POS */
   .venta-layout{display:grid;grid-template-columns:1fr 380px;gap:18px;align-items:start;}
   @media(max-width:900px){.venta-layout{grid-template-columns:1fr;}}
   .venta-search{width:100%;padding:13px 16px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;color:var(--txt);font-size:15px;}
   .venta-search:focus{outline:none;border-color:var(--gold);}
-  .category-tabs{display:flex;gap:8px;flex-wrap:wrap;}
+  .category-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
   .cat-tab{background:var(--panel2);border:1px solid var(--line2);color:var(--muted);padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s;}
   .cat-tab.active{background:var(--gold);color:#1a1400;border-color:var(--gold);}
   .cat-tab:hover:not(.active){border-color:var(--gold);color:var(--txt);}
@@ -235,9 +253,16 @@
   .carrito-total{display:flex;justify-content:space-between;font-size:19px;font-weight:800;padding:12px 0;border-top:2px solid var(--gold);margin-top:8px;color:var(--gold);}
   .empty-cart{text-align:center;color:var(--muted);padding:40px 20px;font-size:36px;}
   .empty-cart p{font-size:13px;margin-top:8px;}
+  /* Descuento en el carrito */
+  .carrito-desc{margin:8px 0;}
+  .cd-aplicado{display:flex;justify-content:space-between;align-items:center;padding:8px 11px;background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.25);border-radius:9px;font-size:13px;}
+  .carrito-sub{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:var(--muted);}
+  /* Alerta de stock */
+  .alerta-stock{border-left:4px solid var(--red);background:linear-gradient(135deg,rgba(192,57,43,.07),transparent);}
+  .alerta-stock p{font-size:13px;line-height:1.6;}
 
   /* Catálogo con imágenes */
-  .catalogo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;width:100%;}
+  .catalogo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;width:100%;margin-top:4px;}
   .cat-card{background:linear-gradient(160deg,var(--card),var(--panel));border:1px solid var(--line2);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;transition:.15s;min-width:0;max-width:100%;}
   .cat-card:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.3);}
   .cat-card.agotado{opacity:.6;}
