@@ -463,7 +463,7 @@ function login(usuario, pass){
   }
   return {ok:false, msg:'Usuario o contraseña incorrectos.'};
 }
-function logout(){ STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false; render(); }
+function logout(){ STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false; STATE.sucursal=null; STATE.modoSupervision=false; STATE.pageNeg='dashboard'; render(); }
 
 // ---------- Helpers de datos POR NEGOCIO (aislamiento) ----------
 // Todos los datos operativos se guardan por negocio: la clave incluye el negocioId.
@@ -497,16 +497,22 @@ function sucursalActual(){
   return STATE.sucursal || (sucursalesDe(neg)[0]||{}).id || 'principal';
 }
 // Arma la clave de guardado: las tablas de operación llevan la sucursal
+// Arma la clave de guardado. IMPORTANTE:
+//  - se calcula desde el NEGOCIO (no desde estado volátil que se pierde al salir)
+//  - solo separa si el negocio tiene 2+ sucursales de verdad
+//  - usa "-" en vez de "__" porque Firebase es quisquilloso con las rutas
 function claveTabla(negocioId, tabla){
   const base='data_'+negocioId+'_'+tabla;
-  if(!usaSucursales(STATE.negocio)) return base;
+  const neg=(DB.get('negocios')||[]).find(n=>n.id===negocioId);
+  if(!neg || !neg.sucursales || neg.sucursales.length<2) return base;
   if(!TABLAS_POR_SUCURSAL.includes(tabla)) return base;   // compartida
-  return base+'__'+sucursalActual();
+  const suc=sucursalActual()||'principal';
+  return base+'-suc-'+suc;
 }
 // Datos de una sucursal concreta (para consolidados del admin)
 function datosDeSucursal(negocioId, tabla, sucId){
   if(!TABLAS_POR_SUCURSAL.includes(tabla)) return DB.get('data_'+negocioId+'_'+tabla)||[];
-  return DB.get('data_'+negocioId+'_'+tabla+'__'+sucId)||[];
+  return DB.get('data_'+negocioId+'_'+tabla+'-suc-'+sucId)||[];
 }
 // Junta una tabla de TODAS las sucursales (para contabilidad y reportes)
 function datosTodasSucursales(tabla){
@@ -2225,7 +2231,16 @@ function ventas(){
   const tipos=tiposCfg.map(t=>[t,labels[t]||t]);
   // Asegurar que _ventaTipo sea uno válido
   if(!tiposCfg.includes(_ventaTipo)) _ventaTipo=tiposCfg[0];
+  // Estado de la caja: si está cerrada, avisar claramente (la caja es del NEGOCIO,
+  // no de cada empleado: el vendedor usa la misma que abrió el cajero)
+  const cajaAbierta=misDatos('caja_actual')[0];
+  const exigeCaja=(neg.funciones||[]).includes('caja');
   return `
+    ${exigeCaja&&!cajaAbierta?`<div class="card aviso-caja">
+      <div class="card-title" style="font-size:15px;">🔒 La caja está cerrada</div>
+      <p class="muted">Nadie puede vender hasta que se abra la caja${usaSucursales(neg)?' de <strong>'+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||'')+'</strong>':''}. Ábrela desde la pantalla <strong>Caja</strong>; queda abierta para todos los empleados.</p>
+      <button class="btn btn-gold btn-sm" onclick="irNeg('caja')">Ir a Caja</button>
+    </div>`:exigeCaja&&cajaAbierta?`<div class="caja-ok">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>`:''}
     <div class="venta-layout">
       <div style="display:flex;flex-direction:column;gap:12px;overflow:hidden;">
         <div style="position:relative;">
@@ -2337,7 +2352,11 @@ function confirmarPedido(){
   const total=Math.max(0, subtotalBruto-_descuento);
   const valorDom=(_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0;
   const ventasArr=misDatos('ventas');
-  const numFactura='F-'+String(ventasArr.length+1).padStart(5,'0');
+  // Número de factura: tomar el mayor existente + 1 (evita repetidos cuando
+  // dos personas confirman al mismo tiempo desde equipos distintos)
+  let mayor=0;
+  ventasArr.forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; });
+  const numFactura='F-'+String(mayor+1).padStart(5,'0');
   const venta={id:uid(), factura:numFactura, items:_carrito.slice(),
     subtotal:total, subtotalBruto, descuento:_descuento, descMotivo:_descMotivo,
     valorDom, propina:0, recargo:0,
