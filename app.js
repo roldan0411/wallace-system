@@ -73,32 +73,42 @@ function borrarFusionado(clave, id){
 
 // Inicializa Firebase si hay configuración válida
 function initFirebase(){
+  // Cargar el respaldo local PRIMERO (arranque instantáneo, como Portal Imperial).
+  // Así, si la nube tarda o falla, el usuario igual ve sus datos.
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && k.startsWith('posu_')){
+        const clave=k.substring(5);
+        try{ const v=localStorage.getItem(k); if(v!==null) CACHE[clave]=JSON.parse(v); }catch(e){}
+      }
+    }
+  }catch(e){}
   try{
     const cfg=window.FIREBASE_CONFIG;
-    if(!cfg || !cfg.databaseURL || cfg.apiKey==='TU_API_KEY') return false;
-    if(typeof firebase==='undefined' || !firebase.initializeApp) return false;
+    if(!cfg || !cfg.databaseURL || cfg.apiKey==='TU_API_KEY'){ FB_ESTADO='off'; return false; }
+    if(typeof firebase==='undefined' || !firebase.initializeApp){ FB_ESTADO='off'; return false; }
     firebase.initializeApp(cfg);
     FB=firebase.database();
+    // Vigilar el estado real de conexión (como Portal Imperial)
+    try{
+      FB.ref('.info/connected').on('value', s=>{
+        if(s.val()){ if(FB_ESTADO!=='error') FB_ESTADO='ok'; }
+        else { FB_ESTADO='off'; }
+      });
+    }catch(e){}
     return true;
-  }catch(e){ console.warn('Firebase no disponible, usando modo local.',e); FB=null; return false; }
+  }catch(e){ console.error('Firebase init falló:',e); FB=null; FB_ESTADO='off'; return false; }
 }
 // Carga inicial desde la nube (sincroniza todos los datos)
 function cargarDeLaNube(callback){
   if(!FB){ callback(); return; }
   let escuchando=false;
   const activarEscucha=()=>{ if(!escuchando){ escuchando=true; escucharCambios(); } };
-  // Prueba real: ¿Firebase nos deja ESCRIBIR? Si las reglas están cerradas,
-  // todo parece funcionar pero nada se comparte entre dispositivos.
-  FB.ref('posu/_prueba').set({t:Date.now()})
-    .then(()=>{ FB_ESTADO='ok'; })
-    .catch(err=>{
-      FB_ESTADO='error';
-      console.error('FIREBASE RECHAZA ESCRITURA:', err && err.message);
-      setTimeout(()=>{ if(typeof toast==='function') toast('⚠️ La base de datos no acepta cambios. Los pedidos NO se están compartiendo.','error'); },1500);
-    });
   FB.ref('posu').once('value').then(snap=>{
     const data=snap.val()||{};
-    Object.keys(data).forEach(k=>{ if(k!=='_prueba'){ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} } });
+    Object.keys(data).forEach(k=>{ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} });
+    FB_ESTADO='ok';
     callback();
     activarEscucha();
   }).catch(err=>{
@@ -2273,8 +2283,9 @@ function ventas(){
     return `<div class="card" style="max-width:520px;margin:40px auto;text-align:center;padding:40px;">
       <div style="font-size:44px;margin-bottom:12px;">🔒</div>
       <div class="card-title" style="justify-content:center;">Caja cerrada</div>
-      <p class="muted" style="margin-bottom:16px;">Debes abrir la caja antes de vender, para que el cuadre sea correcto.</p>
+      <p class="muted" style="margin-bottom:16px;">Nadie puede vender hasta que se abra la caja. Es <strong>una sola caja para todo el negocio</strong>: cuando el cajero la abra, todos podrán vender.</p>
       <button class="btn btn-gold" onclick="irNeg('caja')">Ir a abrir caja</button>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="refrescarDeLaNube()">🔄 Ya la abrieron, actualizar</button>
     </div>`;
   }
   let productos=misDatos('productos').filter(p=>!p.agotado);
@@ -2293,12 +2304,13 @@ function ventas(){
   // no de cada empleado: el vendedor usa la misma que abrió el cajero)
   const cajaAbierta=misDatos('caja_actual')[0];
   const exigeCaja=(neg.funciones||[]).includes('caja');
+  // Si la caja está cerrada hay un bloqueo antes de este punto, así que aquí
+  // solo mostramos el aviso de que está abierta y quién la abrió.
+  const avisoCaja = (exigeCaja&&cajaAbierta)
+    ? `<div class="caja-ok">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>`
+    : '';
   return `
-    ${exigeCaja&&!cajaAbierta?`<div class="card aviso-caja">
-      <div class="card-title" style="font-size:15px;">🔒 La caja está cerrada</div>
-      <p class="muted">Nadie puede vender hasta que se abra la caja${usaSucursales(neg)?' de <strong>'+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||'')+'</strong>':''}. Ábrela desde la pantalla <strong>Caja</strong>; queda abierta para todos los empleados.</p>
-      <button class="btn btn-gold btn-sm" onclick="irNeg('caja')">Ir a Caja</button>
-    </div>`:exigeCaja&&cajaAbierta?`<div class="caja-ok">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>`:''}
+    ${avisoCaja}
     <div class="venta-layout">
       <div style="display:flex;flex-direction:column;gap:12px;overflow:hidden;">
         <div style="position:relative;">
