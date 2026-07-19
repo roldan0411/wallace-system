@@ -135,7 +135,10 @@ function escucharCambios(){
       if(local===undefined){
         try{ const v=localStorage.getItem('posu_'+k); local=v?JSON.parse(v):null; }catch(e){ local=null; }
       }
-      if(Array.isArray(remoto) && esListaConId(remoto)){
+      // La caja NO se fusiona: si alguien la cierra, se cierra para todos.
+      // (Al fusionar, el "vacio" del cierre se perdia y seguia abierta en los demas.)
+      const esCaja = k.indexOf('_caja_actual')>-1;
+      if(!esCaja && Array.isArray(remoto) && esListaConId(remoto)){
         const porId={};
         (Array.isArray(local)?local:[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
         let cambio=!Array.isArray(local);   // si no había nada local, ya es un cambio
@@ -213,17 +216,14 @@ function esListaConId(arr){ return arr.length===0 || (typeof arr[0]==='object' &
 
 // ¿El usuario está en medio de algo? Si sí, no le refrescamos la pantalla.
 function estaOcupado(){
-  // 1) Modal abierto (cobro, edición, etc.)
+  // Solo bloqueamos el refresco en DOS casos muy concretos.
+  // (Antes se miraba document.activeElement, que casi nunca está vacío en un
+  //  navegador: eso dejaba la pantalla congelada para siempre.)
+  // 1) Modal abierto (cobro, edición): no interrumpir
   const modal=document.getElementById('modal-container');
   if(modal && modal.classList.contains('activo')) return true;
-  // 2) Armando un pedido en Nueva Venta
-  if(STATE.pageNeg==='ventas' && typeof _carrito!=='undefined' && _carrito.length) return true;
-  // 3) Escribiendo en algún campo (que no sea un buscador)
-  const act=document.activeElement;
-  if(act && (act.tagName==='INPUT'||act.tagName==='TEXTAREA'||act.tagName==='SELECT')){
-    const ph=(act.placeholder||'');
-    if(!ph.includes('Buscar')&&!ph.includes('🔍')) return true;
-  }
+  // 2) Armando un pedido con productos en el carrito
+  if(STATE.pageNeg==='ventas' && typeof _carrito!=='undefined' && _carrito.length>0) return true;
   return false;
 }
 
@@ -237,7 +237,10 @@ function refrescarDeLaNube(){
       const remoto=data[k];
       let local=CACHE[k];
       if(local===undefined){ try{ const v=localStorage.getItem('posu_'+k); local=v?JSON.parse(v):null; }catch(e){ local=null; } }
-      if(Array.isArray(remoto) && esListaConId(remoto)){
+      // La caja NO se fusiona: si alguien la cierra, se cierra para todos.
+      // (Al fusionar, el "vacio" del cierre se perdia y seguia abierta en los demas.)
+      const esCaja = k.indexOf('_caja_actual')>-1;
+      if(!esCaja && Array.isArray(remoto) && esListaConId(remoto)){
         const porId={};
         (Array.isArray(local)?local:[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
         remoto.forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
