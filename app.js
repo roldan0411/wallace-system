@@ -72,13 +72,17 @@ function initFirebase(){
 // Carga inicial desde la nube (sincroniza todos los datos)
 function cargarDeLaNube(callback){
   if(!FB){ callback(); return; }
+  let escuchando=false;
+  const activarEscucha=()=>{ if(!escuchando){ escuchando=true; escucharCambios(); } };
   FB.ref('posu').once('value').then(snap=>{
     const data=snap.val()||{};
     Object.keys(data).forEach(k=>{ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} });
     callback();
-    // Después de cargar, escuchar cambios en tiempo real (multi-dispositivo)
-    escucharCambios();
-  }).catch(()=>callback());
+    activarEscucha();
+  }).catch(()=>{ callback(); activarEscucha(); });
+  // Si la nube tarda, igual dejamos el oído puesto: sin esto, el dispositivo
+  // se quedaba sin recibir NADA de los demás durante toda la sesión.
+  setTimeout(activarEscucha, 3000);
 }
 // Escucha cambios de otros dispositivos y actualiza la pantalla.
 // IMPORTANTE: nunca descarta datos de la nube; los FUSIONA con lo local por id,
@@ -90,12 +94,17 @@ function escucharCambios(){
     let hayCambio=false;
     Object.keys(data).forEach(k=>{
       const remoto=data[k];
-      const local=CACHE[k];
-      // Si ambos son listas de registros con id, fusionamos (nada se pierde)
-      if(Array.isArray(remoto) && Array.isArray(local) && esListaConId(remoto)){
+      // IMPORTANTE: leer lo local con DB.get, no con CACHE directo.
+      // Si este dispositivo nunca abrió esa pantalla, CACHE está vacío y
+      // antes se saltaba la fusión: por eso no llegaban los pedidos de otros.
+      let local=CACHE[k];
+      if(local===undefined){
+        try{ const v=localStorage.getItem('posu_'+k); local=v?JSON.parse(v):null; }catch(e){ local=null; }
+      }
+      if(Array.isArray(remoto) && esListaConId(remoto)){
         const porId={};
-        local.forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
-        let cambio=false;
+        (Array.isArray(local)?local:[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+        let cambio=!Array.isArray(local);   // si no había nada local, ya es un cambio
         remoto.forEach(x=>{
           if(!x||!x.id) return;
           const mio=porId[x.id];
@@ -130,6 +139,33 @@ function escucharCambios(){
   });
 }
 function esListaConId(arr){ return arr.length===0 || (typeof arr[0]==='object' && arr[0] && arr[0].id!==undefined); }
+
+// Fuerza traer todo de la nube ahora mismo (botón "Actualizar")
+function refrescarDeLaNube(){
+  if(!FB){ toast('Sin conexión a la nube','error'); return; }
+  toast('Actualizando...','info');
+  FB.ref('posu').once('value').then(snap=>{
+    const data=snap.val()||{};
+    Object.keys(data).forEach(k=>{
+      const remoto=data[k];
+      let local=CACHE[k];
+      if(local===undefined){ try{ const v=localStorage.getItem('posu_'+k); local=v?JSON.parse(v):null; }catch(e){ local=null; } }
+      if(Array.isArray(remoto) && esListaConId(remoto)){
+        const porId={};
+        (Array.isArray(local)?local:[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+        remoto.forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+        const fusion=Object.values(porId);
+        CACHE[k]=fusion;
+        try{ localStorage.setItem('posu_'+k, JSON.stringify(fusion)); }catch(e){}
+      } else {
+        CACHE[k]=remoto;
+        try{ localStorage.setItem('posu_'+k, JSON.stringify(remoto)); }catch(e){}
+      }
+    });
+    toast('Actualizado','success');
+    render();
+  }).catch(()=>toast('No se pudo actualizar','error'));
+}
 
 function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
@@ -2384,6 +2420,7 @@ function pedidos(){
         <span class="card-title" style="margin:0;">${ic('report')} Pedidos ${caja?'(jornada actual)':'(hoy)'}</span>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <input type="text" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pedidosBusca)}" oninput="_pedidosBusca=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+          <button class="btn btn-sm" onclick="refrescarDeLaNube()" title="Traer pedidos de otros equipos">🔄 Actualizar</button>
           <button class="btn btn-gold" onclick="irNeg('ventas')">+ Nueva</button>
         </div>
       </div>
@@ -2827,7 +2864,7 @@ function vistaNegocio(){
           <div class="avatar">${inicial}</div>
           <div class="user-info">
             <div class="n">${escapeHtml(STATE.user.nombre)}</div>
-            <div class="r"><span class="sync-dot"></span> Sincronizado</div>
+            <div class="r">${FB?'<span class="sync-dot"></span> Sincronizado':'<span class="sync-dot off"></span> Sin conexión'}</div>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="logout()" title="Salir">${ic('logout')}</button>
         </div>
