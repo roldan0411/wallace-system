@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Prueba de conexión — Wallace System</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{font-family:system-ui,Arial,sans-serif;background:#0f1218;color:#f4f6f8;margin:0;padding:24px;line-height:1.6;}
+  .caja{max-width:760px;margin:0 auto;}
+  h1{font-size:22px;margin-bottom:4px;}
+  .sub{color:#8b93a3;font-size:14px;margin-bottom:24px;}
+  .fila{display:flex;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:15px;}
+  .fila strong{text-align:right;word-break:break-all;}
+  .ok{color:#01c38e;} .mal{color:#e74c3c;} .esp{color:#e67e22;}
+  .btn{background:#01c38e;color:#0f1218;border:none;padding:14px 22px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:20px;width:100%;}
+  .btn2{background:transparent;color:#01c38e;border:1px solid #01c38e;margin-top:10px;}
+  #log{margin-top:20px;background:#1a1e29;padding:16px;border-radius:10px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:280px;overflow-y:auto;}
+  .aviso{margin-top:20px;padding:16px;border-radius:10px;font-size:14px;}
+  .aviso.mal{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.4);color:#f4f6f8;}
+  .aviso.ok{background:rgba(1,195,142,.12);border:1px solid rgba(1,195,142,.4);color:#f4f6f8;}
+  code{display:block;background:#0f1218;padding:10px;border-radius:6px;margin-top:8px;color:#01c38e;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="caja">
+  <h1>Prueba de conexión</h1>
+  <div class="sub">Esta página revisa si Firebase está funcionando. No toca tus datos.</div>
+  <div id="resultados"></div>
+  <button class="btn" onclick="probarEscritura()">Probar si puedo GUARDAR datos</button>
+  <button class="btn btn2" onclick="location.reload()">Volver a revisar</button>
+  <div id="veredicto"></div>
+  <div id="log"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+const R=document.getElementById('resultados');
+const L=document.getElementById('log');
+const V=document.getElementById('veredicto');
+let FB=null;
+
+function fila(k,v,clase){ R.innerHTML+='<div class="fila"><span>'+k+'</span><strong class="'+(clase||'')+'">'+v+'</strong></div>'; }
+function log(t){ L.textContent += t+'\n'; }
+
+// 1) ¿Cargó la librería?
+if(typeof firebase==='undefined' || !firebase.initializeApp){
+  fila('Librería Firebase','NO CARGÓ','mal');
+  log('La librería de Firebase no se descargó. Puede ser el internet o un bloqueador.');
+} else {
+  fila('Librería Firebase','cargada ✓','ok');
+}
+
+// 2) ¿Hay configuración?
+const cfg = window.FIREBASE_CONFIG;
+if(!cfg){
+  fila('Archivo firebase-config.js','NO SE ENCONTRÓ','mal');
+  log('Falta el archivo firebase-config.js o no se subió.');
+} else {
+  fila('Proyecto', cfg.projectId||'?', cfg.projectId?'ok':'mal');
+  fila('Base de datos', cfg.databaseURL||'FALTA', cfg.databaseURL?'ok':'mal');
+}
+
+// 3) Conectar
+if(cfg && typeof firebase!=='undefined'){
+  try{
+    firebase.initializeApp(cfg);
+    FB=firebase.database();
+    fila('Conexión iniciada','sí ✓','ok');
+    FB.ref('.info/connected').on('value', s=>{
+      const c=s.val();
+      const el=document.getElementById('estado-con');
+      if(el) el.outerHTML='<div class="fila"><span>Estado en vivo</span><strong id="estado-con" class="'+(c?'ok':'mal')+'">'+(c?'CONECTADO ✓':'DESCONECTADO')+'</strong></div>';
+    });
+    R.innerHTML+='<div class="fila"><span>Estado en vivo</span><strong id="estado-con" class="esp">comprobando...</strong></div>';
+    // 4) ¿Puedo LEER?
+    FB.ref('posu').limitToFirst(1).once('value')
+      .then(snap=>{
+        fila('Permiso de LECTURA','funciona ✓','ok');
+        log('Lectura OK. La base responde.');
+      })
+      .catch(err=>{
+        fila('Permiso de LECTURA','RECHAZADO','mal');
+        log('ERROR AL LEER: '+err.message);
+        V.innerHTML='<div class="aviso mal"><strong>⛔ Las reglas de Firebase están bloqueando todo.</strong><br>Entra a console.firebase.google.com → tu proyecto → Realtime Database → Reglas, y pon esto:<code>{ "rules": { ".read": true, ".write": true } }</code>Luego dale Publicar y recarga esta página.</div>';
+      });
+  }catch(e){
+    fila('Conexión','FALLÓ','mal');
+    log('ERROR: '+e.message);
+  }
+}
+
+function probarEscritura(){
+  if(!FB){ log('No hay conexión, no se puede probar.'); return; }
+  log('Intentando guardar un dato de prueba...');
+  FB.ref('prueba_conexion').set({cuando:new Date().toISOString(), desde:navigator.userAgent.substring(0,40)})
+    .then(()=>{
+      fila('Permiso de ESCRITURA','funciona ✓','ok');
+      log('GUARDADO CORRECTO. Firebase acepta cambios.');
+      V.innerHTML='<div class="aviso ok"><strong>✅ Firebase funciona bien.</strong><br>Puede guardar y leer. Si aun así los empleados no se ven entre sí, el problema está en el código del sistema, no en la base de datos. Mándame esta captura.</div>';
+    })
+    .catch(err=>{
+      fila('Permiso de ESCRITURA','RECHAZADO','mal');
+      log('ERROR AL GUARDAR: '+err.message);
+      V.innerHTML='<div class="aviso mal"><strong>⛔ Firebase NO deja guardar.</strong><br>Por eso cada empleado ve solo lo suyo: los pedidos nunca llegan a la nube.<br>Entra a console.firebase.google.com → tu proyecto → Realtime Database → Reglas, y pon esto:<code>{ "rules": { ".read": true, ".write": true } }</code>Dale Publicar y vuelve a probar.</div>';
+    });
+}
+</script>
+</body>
+</html>
