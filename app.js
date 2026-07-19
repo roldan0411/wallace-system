@@ -406,7 +406,9 @@ function guardarDatosDe(negocioId, tabla, arr){ DB.set('data_'+negocioId+'_'+tab
 function misDatos(tabla){ return STATE.negocio ? datosDe(STATE.negocio.id, tabla) : []; }
 // Guarda fusionando por ID: si otro dispositivo agregó algo al mismo tiempo, NO se pierde.
 // Las tablas de un solo registro (caja_actual) se guardan directo.
-const TABLAS_DIRECTAS=['caja_actual'];
+// caja_actual ya NO va directo: si cada dispositivo la sobrescribía,
+// se creaban cajas distintas y cada quien veía solo sus propios pedidos.
+const TABLAS_DIRECTAS=[];
 // Ventas de la jornada actual, sin importar en qué dispositivo se hicieron.
 // Antes se filtraba solo por cajaId y cada equipo tenía su propia caja,
 // así que cada quien veía únicamente sus propios pedidos.
@@ -2067,7 +2069,7 @@ function ventas(){
           </div>
           ${_descuento>0?`<div class="carrito-sub"><span>Subtotal</span><span>${fmtMoney(subtotalBruto)}</span></div>`:''}
           <div class="carrito-total"><span>TOTAL</span><span>${fmtMoney(total+ ((_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0))}</span></div>
-          <button class="btn btn-gold btn-block" onclick="cobrarVenta()">Cobrar</button>
+          <button class="btn btn-gold btn-block" onclick="confirmarPedido()">✓ Confirmar pedido</button>
         `:''}
       </div>
     </div>`;
@@ -2138,63 +2140,87 @@ function agregarAlCarrito(prodId){
   render();
 }
 function cambiarQty(idx,d){ _carrito[idx].qty+=d; if(_carrito[idx].qty<=0) _carrito.splice(idx,1); render(); }
-function cobrarVenta(){
+// Confirma el pedido SIN cobrar (igual que Portal Imperial).
+// El cobro se hace después desde la pantalla Pedidos.
+function confirmarPedido(){
   if(!_carrito.length) return;
   const neg=STATE.negocio;
-  // ¿Caja abierta?
   const caja=misDatos('caja_actual')[0];
   if((neg.funciones||[]).includes('caja') && !caja){ toast('Primero abre la caja','error'); return; }
-  const total=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  const subtotalBruto=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  const total=Math.max(0, subtotalBruto-_descuento);
   const valorDom=(_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0;
-  const usaPropina=neg.usaCocina; // solo restaurantes/cafeterías manejan propina de mesero
-  // Recargo sugerido del datáfono (% que configura el super-admin, por defecto 0)
+  const ventasArr=misDatos('ventas');
+  const numFactura='F-'+String(ventasArr.length+1).padStart(5,'0');
+  const venta={id:uid(), factura:numFactura, items:_carrito.slice(),
+    subtotal:total, subtotalBruto, descuento:_descuento, descMotivo:_descMotivo,
+    valorDom, propina:0, recargo:0,
+    total:total+valorDom,
+    metodo:'', estado:'abierta',      // ← abierta = confirmada pero sin cobrar
+    tipo:_ventaTipo, cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now(),
+    obs:_ventaObs, mesa:_ventaTipo==='mesa'?_ventaMesa:'',
+    cliNombre:_ventaCli.nombre, cliTel:_ventaCli.tel, cliDir:_ventaCli.dir, cliBarrio:_ventaCli.barrio,
+    cliCiudad:_ventaCli.ciudad, cliDepto:_ventaCli.depto, transportadora:_ventaCli.transportadora, domiciliario:_ventaCli.domiciliario};
+  if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
+  ventasArr.unshift(venta);
+  guardarMisDatos('ventas',ventasArr);
+  sonidoPedidoNuevo();
+  toast('Pedido '+numFactura+' confirmado. Cóbralo desde Pedidos.','success');
+  clearOrder();
+  irNeg('pedidos');
+}
+// Cobra un pedido YA CONFIRMADO (se llama desde la pantalla Pedidos)
+function cobrarVenta(ventaId){
+  const neg=STATE.negocio;
+  const ventasArr=misDatos('ventas');
+  const v=ventasArr.find(x=>x.id===ventaId);
+  if(!v){ toast('Pedido no encontrado','error'); return; }
+  if(v.estado==='pagada'){ toast('Este pedido ya fue cobrado','info'); return; }
+  const caja=misDatos('caja_actual')[0];
+  if((neg.funciones||[]).includes('caja') && !caja){ toast('Primero abre la caja','error'); return; }
+  const base=v.subtotal||0;
+  const valorDom=v.valorDom||0;
+  const usaPropina=neg.usaCocina;
   const pctDatafono=neg.pctDatafono||0;
   const campos=[
     {id:'metodo', label:'Método de pago', tipo:'select', opciones:[{valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}
   ];
   if(usaPropina) campos.push({id:'propina', label:'Propina (para el mesero, no es del negocio)', tipo:'number', valor:'0'});
   campos.push({id:'recargo', label:'Recargo del datáfono (lo cobra el banco, no es del negocio)', tipo:'number', valor:'0'});
-  campos.push({id:'recibido', label:'¿Con cuánto paga? (opcional, para el vuelto)', tipo:'number', placeholder:String(total+valorDom)});
-  abrirModal({titulo:'Cobrar '+fmtMoney(total+valorDom), textoBoton:'Confirmar cobro',
+  campos.push({id:'recibido', label:'¿Con cuánto paga? (opcional, para el vuelto)', tipo:'number', placeholder:String(base+valorDom)});
+  abrirModal({titulo:'Cobrar '+(v.factura||'')+' · '+fmtMoney(base+valorDom), textoBoton:'Confirmar cobro',
     campos,
     extraHTML:`<div id="cobro-resumen" class="cobro-box">
-      <div class="cb-row"><span>${escapeHtml(neg.palabraProductos||'Productos')}</span><strong>${fmtMoney(total)}</strong></div>
-      ${valorDom>0?`<div class="cb-row"><span>${_ventaTipo==='envio'?'Envío':'Domicilio'}</span><strong>${fmtMoney(valorDom)}</strong></div>`:''}
+      <div class="cb-row"><span>${escapeHtml(neg.palabraProductos||'Productos')}</span><strong>${fmtMoney(v.subtotalBruto!==undefined?v.subtotalBruto:base)}</strong></div>
+      ${v.descuento>0?`<div class="cb-row"><span>Descuento${v.descMotivo?' · '+escapeHtml(v.descMotivo):''}</span><strong class="text-red">−${fmtMoney(v.descuento)}</strong></div>`:''}
+      ${valorDom>0?`<div class="cb-row"><span>${v.tipo==='envio'?'Envío':'Domicilio'}</span><strong>${fmtMoney(valorDom)}</strong></div>`:''}
       <div class="cb-row" id="cb-propina-row" style="display:none;"><span>Propina</span><strong id="cb-propina">$ 0</strong></div>
       <div class="cb-row" id="cb-recargo-row" style="display:none;"><span>Recargo datáfono</span><strong id="cb-recargo">$ 0</strong></div>
-      <div class="cb-row cb-total"><span>TOTAL A COBRAR</span><strong id="cb-total">${fmtMoney(total+valorDom)}</strong></div>
+      <div class="cb-row cb-total"><span>TOTAL A COBRAR</span><strong id="cb-total">${fmtMoney(base+valorDom)}</strong></div>
       <div class="cb-nota" id="cb-nota"></div>
     </div>`,
     onAbrir:()=>{
-      // Recalcular el total en vivo y sugerir el recargo si paga con datáfono
       const recalc=()=>{
         const met=(document.getElementById('m-metodo')||{}).value||'efectivo';
         const prop=parseFloat((document.getElementById('m-propina')||{}).value)||0;
         const rec=parseFloat((document.getElementById('m-recargo')||{}).value)||0;
-        const t=total+valorDom+prop+rec;
-        const setTxt=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+        const t=base+valorDom+prop+rec;
+        const setTxt=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
         const show=(id,on)=>{ const el=document.getElementById(id); if(el) el.style.display=on?'flex':'none'; };
         setTxt('cb-propina',fmtMoney(prop)); show('cb-propina-row',prop>0);
         setTxt('cb-recargo',fmtMoney(rec)); show('cb-recargo-row',rec>0);
         setTxt('cb-total',fmtMoney(t));
         const nota=document.getElementById('cb-nota');
         if(nota){
-          if(met==='tarjeta'){
-            nota.innerHTML='💳 Pago con datáfono. El recargo lo cobra el banco por usar el datáfono, <strong>no es ingreso del negocio</strong>.';
-            nota.style.display='block';
-          } else if(rec>0){
-            nota.innerHTML='⚠️ Registraste un recargo pero el pago no es con datáfono.';
-            nota.style.display='block';
-          } else { nota.style.display='none'; }
+          if(met==='tarjeta'){ nota.innerHTML='💳 Pago con datáfono. El recargo lo cobra el banco, <strong>no es ingreso del negocio</strong>.'; nota.style.display='block'; }
+          else if(rec>0){ nota.innerHTML='⚠️ Registraste un recargo pero el pago no es con datáfono.'; nota.style.display='block'; }
+          else { nota.style.display='none'; }
         }
       };
-      // Al cambiar el método, sugerir el recargo automáticamente
       const selMet=document.getElementById('m-metodo');
       if(selMet) selMet.addEventListener('change',()=>{
         const recEl=document.getElementById('m-recargo');
-        if(recEl && selMet.value==='tarjeta' && pctDatafono>0 && !parseFloat(recEl.value)){
-          recEl.value=Math.round((total+valorDom)*pctDatafono/100);
-        }
+        if(recEl && selMet.value==='tarjeta' && pctDatafono>0 && !parseFloat(recEl.value)){ recEl.value=Math.round((base+valorDom)*pctDatafono/100); }
         if(recEl && selMet.value!=='tarjeta') recEl.value=0;
         recalc();
       });
@@ -2202,40 +2228,32 @@ function cobrarVenta(){
       recalc();
     },
     onGuardar:(d)=>{
-    const metodo=d.metodo||'efectivo';
-    const recibido=parseFloat(d.recibido)||0;
-    const propina=parseFloat(d.propina)||0;
-    const recargo=parseFloat(d.recargo)||0;
-    const ventasArr=misDatos('ventas');
-    // TOTAL COBRADO al cliente = productos + domicilio + propina + recargo
-    // Pero la VENTA REAL del negocio son solo los productos (subtotal)
-    const totalCobrado=total+valorDom+propina+recargo;
-    const numFactura='F-'+String((ventasArr.length+1)).padStart(5,'0');
-    const venta={id:uid(), factura:numFactura, items:_carrito.slice(),
-      subtotal:total,              // venta real del negocio (ya con descuento)
-      subtotalBruto:_carrito.reduce((a,i)=>a+i.precio*i.qty,0), descuento:_descuento, descMotivo:_descMotivo,
-      valorDom, propina, recargo,  // dinero de terceros (no es del negocio)
-      total:totalCobrado,          // lo que pagó el cliente
-      metodo, estado:'pagada', tipo:_ventaTipo, cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now(),
-      obs:_ventaObs, mesa:_ventaTipo==='mesa'?_ventaMesa:'',
-      cliNombre:_ventaCli.nombre, cliTel:_ventaCli.tel, cliDir:_ventaCli.dir, cliBarrio:_ventaCli.barrio, cliCiudad:_ventaCli.ciudad, cliDepto:_ventaCli.depto, transportadora:_ventaCli.transportadora, domiciliario:_ventaCli.domiciliario};
-    if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
-    ventasArr.unshift(venta);
-    guardarMisDatos('ventas',ventasArr);
-    guardarClienteSiAplica(venta);
-    descontarInventarioVenta(venta);
-    sonidoVenta();
-    // Avisar si algún producto quedó con stock bajo
-    revisarStockBajo(venta);
-    cerrarModal();
-    if(metodo==='efectivo' && recibido>totalCobrado){ toast('Vuelto: '+fmtMoney(recibido-totalCobrado),'info'); }
-    else { toast('Venta cobrada: '+fmtMoney(totalCobrado),'success'); }
-    clearOrder();
-    if((neg.funciones||[]).includes('facturas')){
-      confirmarModal('¿Imprimir factura?', ()=>imprimirFactura(venta.id), 'Imprimir');
-    }
-    render();
-  }});
+      const metodo=d.metodo||'efectivo';
+      const recibido=parseFloat(d.recibido)||0;
+      const propina=parseFloat(d.propina)||0;
+      const recargo=parseFloat(d.recargo)||0;
+      const arr=misDatos('ventas');
+      const vv=arr.find(x=>x.id===ventaId);
+      if(!vv){ toast('El pedido ya no existe','error'); cerrarModal(); return; }
+      vv.metodo=metodo; vv.propina=propina; vv.recargo=recargo;
+      vv.total=(vv.subtotal||0)+(vv.valorDom||0)+propina+recargo;
+      vv.estado='pagada';
+      vv.cobrado=now();
+      vv.cobradoPor=STATE.user.nombre;
+      if(!vv.cajaId && caja) vv.cajaId=caja.id;
+      guardarMisDatos('ventas',arr);
+      guardarClienteSiAplica(vv);
+      descontarInventarioVenta(vv);
+      sonidoVenta();
+      revisarStockBajo(vv);
+      cerrarModal();
+      if(metodo==='efectivo' && recibido>vv.total){ toast('Vuelto: '+fmtMoney(recibido-vv.total),'info'); }
+      else { toast('Cobrado: '+fmtMoney(vv.total),'success'); }
+      if((neg.funciones||[]).includes('facturas')){
+        confirmarModal('¿Imprimir factura?', ()=>imprimirFactura(vv.id), 'Imprimir');
+      }
+      render();
+    }});
 }
 // Guarda o actualiza el cliente automáticamente al cobrar (como Portal Imperial)
 function guardarClienteSiAplica(venta){
@@ -2332,11 +2350,39 @@ function pedidos(){
   const caja=misDatos('caja_actual')[0];
   let vs=ventasDeLaJornada(false);
   if(_pedidosBusca){ const q=_pedidosBusca.toLowerCase(); vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.cliTel||'').includes(q)||(v.mesa||'').toLowerCase().includes(q)); }
+  const pendientes=vs.filter(v=>v.estado==='abierta');
+  const cerrados=vs.filter(v=>v.estado!=='abierta');
+  const totalPend=pendientes.reduce((a,v)=>a+(v.total||0),0);
+  const filaPedido=(v,esPend)=>`<tr class="${esPend?'fila-pendiente':''}">
+    <td><strong class="text-gold">${escapeHtml(v.factura||'—')}</strong></td>
+    <td>${tipoLabelU(v.tipo)}</td>
+    <td>${escapeHtml(v.cliNombre||v.mesa||'—')}${v.cliTel?`<br><span class="muted" style="font-size:11px;">${escapeHtml(v.cliTel)}</span>`:''}</td>
+    <td class="font-bold">${fmtMoney(v.total)}</td>
+    <td>${v.estado==='anulada'?'<span class="pill pill-red">Anulada</span>':v.estado==='abierta'?'<span class="pill pill-gold">Por cobrar</span>':'<span class="pill pill-green">Pagada</span>'}</td>
+    <td class="muted" style="font-size:12px;">${fmtDate(v.fecha)}${v.vendedor?`<br><span style="font-size:11px;">por ${escapeHtml(v.vendedor)}</span>`:''}</td>
+    <td class="actions">
+      ${v.estado==='abierta'?`<button class="btn btn-sm btn-gold" onclick="cobrarVenta('${v.id}')">💵 Cobrar</button>`:''}
+      ${(neg.funciones||[]).includes('facturas')&&v.estado==='pagada'?`<button class="btn btn-sm" title="Imprimir" onclick="imprimirFactura('${v.id}')">🖨️</button>`:''}
+      ${v.estado!=='anulada'?`<button class="btn btn-sm btn-danger" title="Anular" onclick="anularVenta('${v.id}')">✕</button>`:''}
+    </td>
+  </tr>`;
   return `
+    ${pendientes.length?`
+    <div class="card card-pendientes">
+      <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+        <span class="card-title" style="margin:0;">⏳ Por cobrar (${pendientes.length})</span>
+        <span class="pill pill-gold" style="font-size:13px;">${fmtMoney(totalPend)}</span>
+      </div>
+      <p class="muted">Pedidos confirmados que todavía no se han cobrado.</p>
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente/Mesa</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
+        <tbody>${pendientes.map(v=>filaPedido(v,true)).join('')}</tbody>
+      </table></div>
+    </div>`:''}
     <div class="card">
-      <div class="flex-between" style="margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <span class="card-title" style="margin:0;">${ic('report')} Pedidos ${caja?'(caja actual)':''}</span>
-        <div style="display:flex;gap:10px;">
+      <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+        <span class="card-title" style="margin:0;">${ic('report')} Pedidos ${caja?'(jornada actual)':'(hoy)'}</span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <input type="text" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pedidosBusca)}" oninput="_pedidosBusca=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
           <button class="btn btn-gold" onclick="irNeg('ventas')">+ Nueva</button>
         </div>
@@ -2344,18 +2390,7 @@ function pedidos(){
       <div class="table-wrap"><table class="tbl">
         <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente/Mesa</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
         <tbody>
-        ${vs.length? vs.slice(0,60).map(v=>`<tr>
-          <td><strong class="text-gold">${escapeHtml(v.factura||'—')}</strong></td>
-          <td>${tipoLabelU(v.tipo)}</td>
-          <td>${escapeHtml(v.cliNombre||v.mesa||'—')}${v.cliTel?`<br><span class="muted" style="font-size:11px;">${escapeHtml(v.cliTel)}</span>`:''}</td>
-          <td class="font-bold">${fmtMoney(v.total)}</td>
-          <td>${v.estado==='anulada'?'<span class="pill pill-red">Anulada</span>':'<span class="pill pill-green">Pagada</span>'}</td>
-          <td class="muted" style="font-size:12px;">${fmtDate(v.fecha)}</td>
-          <td class="actions">
-            ${(neg.funciones||[]).includes('facturas')?`<button class="btn btn-sm" title="Imprimir" onclick="imprimirFactura('${v.id}')">🖨️</button>`:''}
-            ${v.estado!=='anulada'?`<button class="btn btn-sm btn-danger" title="Anular" onclick="anularVenta('${v.id}')">✕</button>`:''}
-          </td>
-        </tr>`).join('') : '<tr><td colspan="7" class="muted">Sin pedidos aún.</td></tr>'}
+        ${cerrados.length? cerrados.slice(0,60).map(v=>filaPedido(v,false)).join('') : `<tr><td colspan="7" class="muted">${pendientes.length?'Todos los pedidos están por cobrar.':'Sin pedidos aún.'}</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
@@ -2526,7 +2561,8 @@ function cerrarCaja(){
     const cierres=misDatos('cierres');
     cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0), esperado, contado, diferencia:dif});
     guardarMisDatos('cierres',cierres);
-    guardarMisDatos('caja_actual',[]);
+    // Cerrar la caja para TODOS los dispositivos (borrado real, no fusión)
+    DB.set('data_'+STATE.negocio.id+'_caja_actual',[]);
     cerrarModal();
     toast(dif===0?'Caja cuadrada ✓':dif>0?'Sobró '+fmtMoney(dif):'Faltó '+fmtMoney(Math.abs(dif)), dif===0?'success':'info');
     render();
