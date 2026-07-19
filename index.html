@@ -161,14 +161,11 @@
   .receta-pill{background:rgba(1,195,142,.12);color:var(--gold-l);font-size:12px;padding:5px 11px;border-radius:20px;}
 
   /* ===== VENTAS ===== */
-  .venta-layout{display:grid;grid-template-columns:1fr 380px;gap:20px;}
-  @media(max-width:900px){.venta-layout{grid-template-columns:1fr;}}
   .prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;}
   .prod-btn{background:var(--bg2);border:1px solid var(--line2);border-radius:14px;padding:16px 12px;cursor:pointer;display:flex;flex-direction:column;gap:7px;text-align:left;transition:.15s;}
   .prod-btn:hover{background:rgba(1,195,142,.06);transform:translateY(-3px);box-shadow:var(--shadow);border-color:rgba(1,195,142,.3);}
   .prod-nombre{font-size:14px;font-weight:600;}
   .prod-precio{font-size:16px;font-weight:800;color:var(--gold);}
-  .carrito-card{align-self:start;position:sticky;top:90px;}
   .carrito-item{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line2);}
   .ci-info{flex:1;display:flex;flex-direction:column;}
   .ci-info .muted{font-size:12px;}
@@ -253,7 +250,8 @@
   .item-img{width:100%;height:80px;background-size:cover;background-position:center;border-radius:10px;margin-bottom:2px;}
   .item-name{font-size:13px;font-weight:600;color:var(--txt);line-height:1.25;}
   .item-price{font-size:15px;font-weight:800;color:var(--gold);}
-  .carrito-card{align-self:start;position:sticky;top:16px;}
+  .carrito-card{align-self:start;position:sticky;top:16px;max-height:calc(100vh - 40px);overflow-y:auto;display:flex;flex-direction:column;}
+  .carrito-card .order-items{flex:1;min-height:60px;}
   .tipo-toggle{display:flex;gap:6px;margin-bottom:10px;}
   .tipo-toggle .btn{flex:1;}
   .mini-input{width:100%;padding:10px 12px;background:var(--panel2);border:1px solid var(--line2);border-radius:9px;color:var(--txt);font-size:13px;margin-bottom:8px;box-sizing:border-box;}
@@ -322,8 +320,8 @@
   <div id="modal-container"></div>
   <div id="toast" class="toast"></div>
   <!-- Firebase (se activa cuando conectes la nube; por ahora funciona en modo local) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js" onerror="window._noFB=1"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js" onerror="window._noFB=1"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="logo.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
