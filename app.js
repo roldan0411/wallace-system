@@ -10,6 +10,7 @@
 // Escribe siempre en local (rápido) y, si Firebase está configurado, también en la nube.
 // Al arrancar carga de la nube para sincronizar entre dispositivos.
 let FB = null; // referencia a Firebase Realtime Database si está disponible
+let FB_ESTADO = 'off'; // 'ok' = guardando bien | 'error' = rechaza | 'off' = sin nube
 const CACHE = {}; // espejo en memoria
 let _ultimoCambioLocal=0; // momento del último cambio hecho por este dispositivo
 
@@ -21,8 +22,20 @@ const DB = {
   set(k,val){
     CACHE[k]=val;
     try{ localStorage.setItem('posu_'+k, JSON.stringify(val)); }catch(e){}
-    // Sincronizar a la nube si Firebase está activo
-    if(FB){ try{ _ultimoCambioLocal=Date.now(); FB.ref('posu/'+k).set(val); }catch(e){} }
+    // Sincronizar a la nube. Si falla, AVISAR: antes el error se tragaba en
+    // silencio y el usuario creía estar sincronizado sin estarlo.
+    if(FB){
+      _ultimoCambioLocal=Date.now();
+      FB.ref('posu/'+k).set(val)
+        .then(()=>{ FB_ESTADO='ok'; })
+        .catch(err=>{
+          FB_ESTADO='error';
+          console.error('FIREBASE NO GUARDÓ:', k, err && err.message);
+          if(typeof toast==='function') toast('⚠️ No se pudo sincronizar. Revisa las reglas de Firebase.','error');
+        });
+    } else {
+      FB_ESTADO='off';
+    }
   },
 };
 
@@ -74,14 +87,25 @@ function cargarDeLaNube(callback){
   if(!FB){ callback(); return; }
   let escuchando=false;
   const activarEscucha=()=>{ if(!escuchando){ escuchando=true; escucharCambios(); } };
+  // Prueba real: ¿Firebase nos deja ESCRIBIR? Si las reglas están cerradas,
+  // todo parece funcionar pero nada se comparte entre dispositivos.
+  FB.ref('posu/_prueba').set({t:Date.now()})
+    .then(()=>{ FB_ESTADO='ok'; })
+    .catch(err=>{
+      FB_ESTADO='error';
+      console.error('FIREBASE RECHAZA ESCRITURA:', err && err.message);
+      setTimeout(()=>{ if(typeof toast==='function') toast('⚠️ La base de datos no acepta cambios. Los pedidos NO se están compartiendo.','error'); },1500);
+    });
   FB.ref('posu').once('value').then(snap=>{
     const data=snap.val()||{};
-    Object.keys(data).forEach(k=>{ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} });
+    Object.keys(data).forEach(k=>{ if(k!=='_prueba'){ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} } });
     callback();
     activarEscucha();
-  }).catch(()=>{ callback(); activarEscucha(); });
-  // Si la nube tarda, igual dejamos el oído puesto: sin esto, el dispositivo
-  // se quedaba sin recibir NADA de los demás durante toda la sesión.
+  }).catch(err=>{
+    FB_ESTADO='error';
+    console.error('FIREBASE NO DEJA LEER:', err && err.message);
+    callback(); activarEscucha();
+  });
   setTimeout(activarEscucha, 3000);
 }
 // Escucha cambios de otros dispositivos y actualiza la pantalla.
@@ -140,6 +164,40 @@ function escucharCambios(){
       if(!estaOcupado()) render();
     }
   });
+}
+// Diagnóstico de sincronización: dice exactamente qué está fallando
+function diagnosticoNube(){
+  const lineas=[];
+  const cfg=window.FIREBASE_CONFIG||{};
+  lineas.push(['Configuración', cfg.databaseURL?'✅ '+cfg.databaseURL:'❌ falta databaseURL']);
+  lineas.push(['Librería Firebase', (typeof firebase!=='undefined'&&firebase.initializeApp)?'✅ cargada':'❌ NO cargó']);
+  lineas.push(['Conexión', FB?'✅ conectado':'❌ sin conexión']);
+  lineas.push(['Permiso de escritura', FB_ESTADO==='ok'?'✅ funciona':FB_ESTADO==='error'?'❌ RECHAZADO (reglas cerradas)':'⏳ sin probar']);
+  const neg=STATE.negocio;
+  if(neg){
+    lineas.push(['Negocio', neg.nombre+' ('+neg.id+')']);
+    lineas.push(['Sucursal', usaSucursales(neg)?sucursalActual():'sin sucursales']);
+    lineas.push(['Clave de pedidos', claveTabla(neg.id,'ventas')]);
+    lineas.push(['Pedidos guardados', String(misDatos('ventas').length)]);
+    const caja=misDatos('caja_actual')[0];
+    lineas.push(['Caja', caja?'abierta por '+(caja.cajero||'?'):'cerrada']);
+  }
+  abrirModal({titulo:'Diagnóstico de sincronización', textoBoton:'Cerrar', campos:[],
+    extraHTML:`<div class="diag-box">
+      ${lineas.map(([k,v])=>`<div class="diag-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v))}</strong></div>`).join('')}
+      ${FB_ESTADO==='error'?`<div class="diag-ayuda">
+        <strong>⚠️ La base de datos está rechazando los cambios.</strong><br>
+        Por eso cada empleado ve solo sus propios pedidos. Entra a
+        <strong>Firebase → Realtime Database → Reglas</strong> y déjalas así:<br>
+        <code>{ "rules": { ".read": true, ".write": true } }</code><br>
+        Las reglas de "modo prueba" caducan a los 30 días: esa suele ser la causa.
+      </div>`:''}
+      ${FB_ESTADO==='ok'?`<div class="diag-ayuda" style="border-color:var(--gold);">
+        ✅ La nube funciona. Si un empleado no ve los pedidos, que pulse
+        <strong>🔄 Actualizar</strong> en Pedidos y confirme que su puntito esté verde.
+      </div>`:''}
+    </div>`,
+    onGuardar:()=>cerrarModal()});
 }
 function esListaConId(arr){ return arr.length===0 || (typeof arr[0]==='object' && arr[0] && arr[0].id!==undefined); }
 
@@ -2352,10 +2410,12 @@ function confirmarPedido(){
   const total=Math.max(0, subtotalBruto-_descuento);
   const valorDom=(_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0;
   const ventasArr=misDatos('ventas');
-  // Número de factura: tomar el mayor existente + 1 (evita repetidos cuando
-  // dos personas confirman al mismo tiempo desde equipos distintos)
+  // Número de factura: mirar TODAS las ventas del negocio (todas las sucursales
+  // y lo que haya llegado de la nube) para no repetir número entre equipos.
   let mayor=0;
-  ventasArr.forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; });
+  const revisar=(arr)=>{ (arr||[]).forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; }); };
+  revisar(ventasArr);
+  revisar(datosTodasSucursales('ventas'));
   const numFactura='F-'+String(mayor+1).padStart(5,'0');
   const venta={id:uid(), factura:numFactura, items:_carrito.slice(),
     subtotal:total, subtotalBruto, descuento:_descuento, descMotivo:_descMotivo,
@@ -3033,7 +3093,7 @@ function vistaNegocio(){
           <div class="avatar">${inicial}</div>
           <div class="user-info">
             <div class="n">${escapeHtml(STATE.user.nombre)}</div>
-            <div class="r">${FB?'<span class="sync-dot"></span> Sincronizado':'<span class="sync-dot off"></span> Sin conexión'}</div>
+            <div class="r" onclick="diagnosticoNube()" style="cursor:pointer;" title="Ver diagnóstico de sincronización">${FB_ESTADO==='ok'?'<span class="sync-dot"></span> Sincronizado':FB_ESTADO==='error'?'<span class="sync-dot err"></span> Error de nube':'<span class="sync-dot off"></span> Sin conexión'}</div>
           </div>
           <button class="btn btn-ghost btn-sm" onclick="logout()" title="Salir">${ic('logout')}</button>
         </div>
