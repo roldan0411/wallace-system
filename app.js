@@ -407,6 +407,21 @@ function misDatos(tabla){ return STATE.negocio ? datosDe(STATE.negocio.id, tabla
 // Guarda fusionando por ID: si otro dispositivo agregó algo al mismo tiempo, NO se pierde.
 // Las tablas de un solo registro (caja_actual) se guardan directo.
 const TABLAS_DIRECTAS=['caja_actual'];
+// Ventas de la jornada actual, sin importar en qué dispositivo se hicieron.
+// Antes se filtraba solo por cajaId y cada equipo tenía su propia caja,
+// así que cada quien veía únicamente sus propios pedidos.
+function ventasDeLaJornada(soloPagadas){
+  const caja=misDatos('caja_actual')[0];
+  let vs=misDatos('ventas');
+  if(caja && caja.apertura){
+    const desde=new Date(caja.apertura).getTime();
+    vs=vs.filter(v=>v.cajaId===caja.id || new Date(v.fecha||0).getTime()>=desde);
+  } else {
+    const hoy=today();
+    vs=vs.filter(v=>(v.fecha||'').startsWith(hoy));
+  }
+  return soloPagadas ? vs.filter(v=>v.estado==='pagada') : vs;
+}
 function guardarMisDatos(tabla, arr){
   if(!STATE.negocio) return;
   const clave='data_'+STATE.negocio.id+'_'+tabla;
@@ -2315,9 +2330,7 @@ let _pedidosBusca='';
 function pedidos(){
   const neg=STATE.negocio;
   const caja=misDatos('caja_actual')[0];
-  let vs=misDatos('ventas');
-  // Mostrar los de la caja actual si hay caja abierta
-  if(caja) vs=vs.filter(v=>v.cajaId===caja.id || !v.cajaId);
+  let vs=ventasDeLaJornada(false);
   if(_pedidosBusca){ const q=_pedidosBusca.toLowerCase(); vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.cliTel||'').includes(q)||(v.mesa||'').toLowerCase().includes(q)); }
   return `
     <div class="card">
@@ -2390,7 +2403,7 @@ function caja(){
       <button class="btn btn-gold btn-block" onclick="abrirCaja()">Abrir caja</button>
     </div>`;
   }
-  const ventasCaja=misDatos('ventas').filter(v=>v.cajaId===cajaAct.id && v.estado==='pagada');
+  const ventasCaja=ventasDeLaJornada(true);
   // Ventas por método (solo la venta real de productos, sin domicilio)
   const porMetodo={efectivo:0,banco:0,tarjeta:0};
   ventasCaja.forEach(v=>{ const real=v.subtotal!==undefined?v.subtotal:v.total; if(porMetodo[v.metodo]!==undefined) porMetodo[v.metodo]+=real; });
@@ -2467,6 +2480,9 @@ function caja(){
 }
 function abrirCaja(){
   const base=parseFloat(document.getElementById('caja-base').value)||0;
+  // Si otro dispositivo ya abrió caja, no crear una nueva (se perderían los pedidos)
+  const yaAbierta=misDatos('caja_actual')[0];
+  if(yaAbierta){ toast('Ya hay una caja abierta por '+(yaAbierta.cajero||'otro usuario'),'info'); render(); return; }
   guardarMisDatos('caja_actual',[{id:uid(), base, apertura:now(), cajero:STATE.user.nombre, movimientos:[]}]);
   toast('Caja abierta','success'); render();
 }
@@ -2486,7 +2502,7 @@ function movCaja(tipo){
 }
 function cerrarCaja(){
   const cajaAct=misDatos('caja_actual')[0]; if(!cajaAct) return;
-  const ventasCaja=misDatos('ventas').filter(v=>v.cajaId===cajaAct.id && v.estado==='pagada');
+  const ventasCaja=ventasDeLaJornada(true);
   const efVentas=ventasCaja.filter(v=>v.metodo==='efectivo');
   const noEfVentas=ventasCaja.filter(v=>v.metodo!=='efectivo');
   const efectivoVentas=efVentas.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
@@ -2844,7 +2860,7 @@ function dashboardNeg(){
   const caja=misDatos('caja_actual')[0];
   // Ventas de hoy = jornada (caja abierta) o día calendario
   let hoy, tituloHoy='Ventas de Hoy';
-  if(caja){ hoy=vs.filter(v=>v.cajaId===caja.id); tituloHoy='Ventas de la Jornada'; }
+  if(caja){ hoy=ventasDeLaJornada(true); tituloHoy='Ventas de la Jornada'; }
   else { hoy=vs.filter(v=>(v.fecha||'').startsWith(t)); }
   const totalHoy=hoy.reduce((a,v)=>a+v.total,0);
   // Semana y mes
