@@ -134,11 +134,30 @@ function escucharCambios(){
     if(hayCambio && STATE.user && typeof render==='function'){
       // No refrescar si hay un modal abierto (para no interrumpir al usuario)
       const modal=document.getElementById('modal-container');
-      if(!modal || !modal.classList.contains('activo')) render();
+      // No refrescar si el usuario está trabajando: modal abierto, carrito con
+      // productos, o escribiendo datos del cliente. Así no se le borra el pedido
+      // a medias cuando llegan cambios de otro dispositivo.
+      if(!estaOcupado()) render();
     }
   });
 }
 function esListaConId(arr){ return arr.length===0 || (typeof arr[0]==='object' && arr[0] && arr[0].id!==undefined); }
+
+// ¿El usuario está en medio de algo? Si sí, no le refrescamos la pantalla.
+function estaOcupado(){
+  // 1) Modal abierto (cobro, edición, etc.)
+  const modal=document.getElementById('modal-container');
+  if(modal && modal.classList.contains('activo')) return true;
+  // 2) Armando un pedido en Nueva Venta
+  if(STATE.pageNeg==='ventas' && typeof _carrito!=='undefined' && _carrito.length) return true;
+  // 3) Escribiendo en algún campo (que no sea un buscador)
+  const act=document.activeElement;
+  if(act && (act.tagName==='INPUT'||act.tagName==='TEXTAREA'||act.tagName==='SELECT')){
+    const ph=(act.placeholder||'');
+    if(!ph.includes('Buscar')&&!ph.includes('🔍')) return true;
+  }
+  return false;
+}
 
 // Fuerza traer todo de la nube ahora mismo (botón "Actualizar")
 function refrescarDeLaNube(){
@@ -428,6 +447,18 @@ function login(usuario, pass){
     if(!neg){ return {ok:false, msg:'El negocio no existe.'}; }
     if(!neg.activo){ return {ok:false, msg:'Este negocio está suspendido. Contacte al administrador del sistema.'}; }
     STATE.user = u; STATE.esSuperAdmin = false; STATE.negocio = neg;
+    // Elegir sucursal: la última que usó, o la primera a la que tenga permiso
+    if(neg.sucursales && neg.sucursales.length>1){
+      let guardada=null;
+      try{ guardada=localStorage.getItem('posu_sucursal_'+neg.id); }catch(e){}
+      const permitidas = (u.sucursales && u.sucursales.length)
+        ? neg.sucursales.filter(s=>u.sucursales.includes(s.id))
+        : neg.sucursales;
+      const valida = permitidas.find(s=>s.id===guardada);
+      STATE.sucursal = valida ? valida.id : (permitidas[0]||neg.sucursales[0]).id;
+    } else {
+      STATE.sucursal='principal';
+    }
     return {ok:true, tipo:'negocio'};
   }
   return {ok:false, msg:'Usuario o contraseña incorrectos.'};
@@ -437,9 +468,61 @@ function logout(){ STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false
 // ---------- Helpers de datos POR NEGOCIO (aislamiento) ----------
 // Todos los datos operativos se guardan por negocio: la clave incluye el negocioId.
 function datosDe(negocioId, tabla){ return DB.get('data_'+negocioId+'_'+tabla) || []; }
+
+// ============================================================
+//  SUCURSALES (puntos de venta)
+// ============================================================
+// Cada sucursal maneja SU caja, SUS pedidos y SUS movimientos de caja.
+// Lo que es del negocio completo (catálogo, clientes, gastos del jefe,
+// contabilidad) se comparte entre todas.
+const TABLAS_POR_SUCURSAL=['ventas','caja_actual','cierres','movimientos','citas'];
+function sucursalesDe(neg){
+  if(!neg) return [];
+  if(neg.sucursales && neg.sucursales.length) return neg.sucursales;
+  return [{id:'principal', nombre:'Principal'}];   // negocio de un solo punto
+}
+function usaSucursales(neg){ return !!(neg && neg.sucursales && neg.sucursales.length>1); }
+// ¿Este usuario puede entrar a esta sucursal? (el super-admin lo define al crear el usuario)
+function puedeVerSucursal(sucId){
+  const u=STATE.user;
+  if(!u) return false;
+  if(u.esSupervisor || u.rol==='admin') return true;      // supervisión y admin ven todas
+  if(!u.sucursales || !u.sucursales.length) return true;  // sin restricción = todas
+  return u.sucursales.includes(sucId);
+}
+// Sucursal en la que está trabajando ahora el usuario
+function sucursalActual(){
+  const neg=STATE.negocio;
+  if(!usaSucursales(neg)) return 'principal';
+  return STATE.sucursal || (sucursalesDe(neg)[0]||{}).id || 'principal';
+}
+// Arma la clave de guardado: las tablas de operación llevan la sucursal
+function claveTabla(negocioId, tabla){
+  const base='data_'+negocioId+'_'+tabla;
+  if(!usaSucursales(STATE.negocio)) return base;
+  if(!TABLAS_POR_SUCURSAL.includes(tabla)) return base;   // compartida
+  return base+'__'+sucursalActual();
+}
+// Datos de una sucursal concreta (para consolidados del admin)
+function datosDeSucursal(negocioId, tabla, sucId){
+  if(!TABLAS_POR_SUCURSAL.includes(tabla)) return DB.get('data_'+negocioId+'_'+tabla)||[];
+  return DB.get('data_'+negocioId+'_'+tabla+'__'+sucId)||[];
+}
+// Junta una tabla de TODAS las sucursales (para contabilidad y reportes)
+function datosTodasSucursales(tabla){
+  const neg=STATE.negocio; if(!neg) return [];
+  if(!usaSucursales(neg)) return datosDe(neg.id,tabla);
+  if(!TABLAS_POR_SUCURSAL.includes(tabla)) return datosDe(neg.id,tabla);
+  let todo=[];
+  sucursalesDe(neg).forEach(s=>{
+    const arr=datosDeSucursal(neg.id,tabla,s.id)||[];
+    arr.forEach(x=>{ todo.push(Object.assign({},x,{_sucursal:s.id, _sucursalNombre:s.nombre})); });
+  });
+  return todo;
+}
 function guardarDatosDe(negocioId, tabla, arr){ DB.set('data_'+negocioId+'_'+tabla, arr); }
 // Atajos para el negocio actual
-function misDatos(tabla){ return STATE.negocio ? datosDe(STATE.negocio.id, tabla) : []; }
+function misDatos(tabla){ return STATE.negocio ? (DB.get(claveTabla(STATE.negocio.id,tabla))||[]) : []; }
 // Guarda fusionando por ID: si otro dispositivo agregó algo al mismo tiempo, NO se pierde.
 // Las tablas de un solo registro (caja_actual) se guardan directo.
 // caja_actual ya NO va directo: si cada dispositivo la sobrescribía,
@@ -462,7 +545,7 @@ function ventasDeLaJornada(soloPagadas){
 }
 function guardarMisDatos(tabla, arr){
   if(!STATE.negocio) return;
-  const clave='data_'+STATE.negocio.id+'_'+tabla;
+  const clave=claveTabla(STATE.negocio.id, tabla);
   if(TABLAS_DIRECTAS.includes(tabla)){ DB.set(clave, arr); return; }
   const fechas={ventas:'fecha', cierres:'cierre', movimientos:'fecha', gastos_negocio:'fecha', citas:'fechaHora'};
   guardarFusionado(clave, arr, fechas[tabla]||'creado');
@@ -470,7 +553,7 @@ function guardarMisDatos(tabla, arr){
 // Elimina un registro sin arrastrar los demás (seguro entre dispositivos)
 function eliminarMisDatos(tabla, id){
   if(!STATE.negocio) return;
-  borrarFusionado('data_'+STATE.negocio.id+'_'+tabla, id);
+  borrarFusionado(claveTabla(STATE.negocio.id, tabla), id);
 }
 
 // ============================================================
@@ -690,6 +773,19 @@ function pantallaConfigNegocio(id){
       <div class="form-row"><label>Recargo del datáfono (%)</label><input id="c-pctdatafono" type="number" step="0.1" value="${neg.pctDatafono||0}" placeholder="Ej: 4"></div>
 
       <hr class="sep">
+      <div class="card-title">Sucursales / Puntos de venta</div>
+      <p class="muted" style="margin-bottom:12px;">Si el cliente tiene varios locales, cada uno maneja su <strong>caja, pedidos y cierres por separado</strong>. El catálogo, los clientes, los gastos del jefe y la contabilidad se comparten y se consolidan.</p>
+      <div id="sucursales-lista">
+        ${(neg.sucursales||[]).map((s,i)=>`<div class="suc-row">
+          <input type="text" class="c-sucursal" data-id="${escapeHtml(s.id)}" value="${escapeHtml(s.nombre)}" placeholder="Nombre del local">
+          <input type="text" class="c-sucursal-dir" value="${escapeHtml(s.dir||'')}" placeholder="Dirección (opcional)">
+          <button class="btn btn-sm btn-danger" onclick="quitarSucursal(${i},'${neg.id}')">×</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn btn-sm" style="margin-top:8px;" onclick="agregarSucursal('${neg.id}')">+ Agregar sucursal</button>
+      ${!(neg.sucursales||[]).length?'<p class="muted" style="font-size:12px;margin-top:8px;">Sin sucursales: el negocio funciona como un solo punto de venta.</p>':''}
+
+      <hr class="sep">
       <div class="card-title">Tipo de factura</div>
       <p class="muted" style="margin-bottom:10px;">Elige cómo se imprime la factura de este negocio.</p>
       <div class="form-row"><label>Tamaño / formato de factura</label>
@@ -711,6 +807,42 @@ function pantallaConfigNegocio(id){
     </div>
   </div>`;
 }
+// --- Sucursales (las administra el super-admin) ---
+function agregarSucursal(negId){
+  abrirModal({titulo:'Nueva sucursal', textoBoton:'Agregar', campos:[
+    {id:'nombre', label:'Nombre del local', requerido:true, placeholder:'Ej: Sede Cabecera'},
+    {id:'dir', label:'Direccion (opcional)'}
+  ], onGuardar:(d)=>{
+    const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
+    const i=negocios.findIndex(n=>n.id===negId); if(i<0) return;
+    if(!negocios[i].sucursales) negocios[i].sucursales=[];
+    // Si es la primera, crear tambien la Principal para no perder lo ya cargado
+    if(!negocios[i].sucursales.length){
+      negocios[i].sucursales.push({id:'principal', nombre:'Principal', dir:negocios[i].dir||''});
+    }
+    negocios[i].sucursales.push({id:uid(), nombre:d.nombre, dir:d.dir||''});
+    DB.set('negocios',negocios);
+    cerrarModal(); toast('Sucursal agregada','success'); render();
+  }});
+}
+function quitarSucursal(idx, negId){
+  const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
+  const i=negocios.findIndex(n=>n.id===negId); if(i<0) return;
+  const suc=(negocios[i].sucursales||[])[idx]; if(!suc) return;
+  confirmarModal('Quitar la sucursal "'+suc.nombre+'"? Sus pedidos y cierres quedaran guardados pero ya no se veran.',()=>{
+    negocios[i].sucursales.splice(idx,1);
+    if(negocios[i].sucursales.length<=1) negocios[i].sucursales=[];
+    DB.set('negocios',negocios);
+    toast('Sucursal quitada','info'); render();
+  },'Quitar');
+}
+function cambiarSucursal(sucId){
+  STATE.sucursal=sucId;
+  try{ localStorage.setItem('posu_sucursal_'+STATE.negocio.id, sucId); }catch(e){}
+  const s=sucursalesDe(STATE.negocio).find(x=>x.id===sucId);
+  toast('Trabajando en: '+(s?s.nombre:sucId),'success');
+  render();
+}
 function guardarConfigNegocio(id){
   // Leer una copia FRESCA para no arrastrar referencias compartidas
   const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
@@ -728,6 +860,17 @@ function guardarConfigNegocio(id){
   neg.plan=document.getElementById('c-plan').value;
   neg.tipoFactura=document.getElementById('c-factura').value;
   neg.pctDatafono=parseFloat(document.getElementById('c-pctdatafono').value)||0;
+  // Nombres de sucursales editados en el formulario
+  const inputsSuc=document.querySelectorAll('.c-sucursal');
+  const inputsDir=document.querySelectorAll('.c-sucursal-dir');
+  if(inputsSuc.length && neg.sucursales){
+    inputsSuc.forEach((inp,i)=>{
+      if(neg.sucursales[i]){
+        neg.sucursales[i].nombre=(inp.value||'').trim()||neg.sucursales[i].nombre;
+        if(inputsDir[i]) neg.sucursales[i].dir=(inputsDir[i].value||'').trim();
+      }
+    });
+  }
   neg.precioMes=parseInt(document.getElementById('c-precio').value)||0;
   neg.palabraProducto=(document.getElementById('c-palabra1').value||'').trim()||'Producto';
   neg.palabraProductos=(document.getElementById('c-palabra2').value||'').trim()||'Productos';
@@ -767,6 +910,7 @@ function entrarComoNegocio(id){
   STATE.user={nombre:'Supervisor (Super-Admin)', rol:'admin', negocioId:id, esSupervisor:true};
   STATE.esSuperAdmin=false;
   STATE.modoSupervision=true;
+  STATE.sucursal=(sucursalesDe(neg)[0]||{id:'principal'}).id;
   STATE.pageNeg='dashboard';
   aplicarTema(neg);
   toast('Entrando a '+neg.nombre+' como supervisor','info');
@@ -846,6 +990,11 @@ function editarUsuarioSuper(negId, userId){
     {id:'pass', label:'Contraseña', valor:u?u.pass:'', requerido:true},
     {id:'rol', label:'Rol', tipo:'select', opciones:rolesOpts, valor:u?u.rol:'cajero'}
   ], extraHTML:`
+    ${(neg.sucursales&&neg.sucursales.length>1)?`<div class="m-row"><label>Sucursales a las que puede entrar (si no marcas ninguna, entra a todas)</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+        ${neg.sucursales.map(s=>`<label class="check" style="font-size:12px;padding:7px 9px;"><input type="checkbox" class="u-sucursal" value="${escapeHtml(s.id)}" ${u&&u.sucursales&&u.sucursales.includes(s.id)?'checked':''}> 📍 ${escapeHtml(s.nombre)}</label>`).join('')}
+      </div>
+    </div>`:''}
     <div class="m-row"><label>Pantallas habilitadas (opcional — si no marcas nada, usa las de su rol)</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
         ${PANTALLAS_USUARIO.map(([pid,plabel])=>`<label class="check" style="font-size:12px;padding:7px 9px;"><input type="checkbox" class="u-pantalla" value="${pid}" ${u&&u.pantallas&&u.pantallas.includes(pid)?'checked':''}> ${plabel}</label>`).join('')}
@@ -857,9 +1006,10 @@ function editarUsuarioSuper(negId, userId){
     const existe=(DB.get('usuarios')||[]).find(x=>x.usuario===d.usuario && (!u||x.id!==u.id)) || (DB.get('superadmins')||[]).some(s=>s.usuario===d.usuario);
     if(existe){ toast('Ese usuario ya existe','error'); return; }
     const pantallas=Array.from(document.querySelectorAll('.u-pantalla:checked')).map(c=>c.value);
+    const sucursales=Array.from(document.querySelectorAll('.u-sucursal:checked')).map(c=>c.value);
     const usuarios=DB.get('usuarios')||[];
-    if(u){ Object.assign(u,{nombre:d.nombre,usuario:d.usuario,pass:d.pass,rol:d.rol,pantallas}); }
-    else { usuarios.push({id:uid(), negocioId:negId, nombre:d.nombre, usuario:d.usuario, pass:d.pass, rol:d.rol, pantallas, activo:true, creado:now()}); }
+    if(u){ Object.assign(u,{nombre:d.nombre,usuario:d.usuario,pass:d.pass,rol:d.rol,pantallas,sucursales}); }
+    else { usuarios.push({id:uid(), negocioId:negId, nombre:d.nombre, usuario:d.usuario, pass:d.pass, rol:d.rol, pantallas, sucursales, activo:true, creado:now()}); }
     DB.set('usuarios',usuarios);
     cerrarModal(); toast('Usuario guardado','success'); render();
   }});
@@ -1669,7 +1819,7 @@ function contable(){
   // Mes anterior para comparativo
   const dPrev=new Date(mes+'-15'); dPrev.setMonth(dPrev.getMonth()-1);
   const mesPrev=dPrev.toISOString().substring(0,7);
-  const todasV=misDatos('ventas').filter(v=>v.estado==='pagada');
+  const todasV=datosTodasSucursales('ventas').filter(v=>v.estado==='pagada');
   const ventasArr=todasV.filter(v=>(v.fecha||'').substring(0,7)===mes);
   const ventasPrev=todasV.filter(v=>(v.fecha||'').substring(0,7)===mesPrev);
   const totalVentas=ventasArr.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
@@ -1685,7 +1835,7 @@ function contable(){
   const gastos=misDatos('gastos_negocio').filter(g=>(g.fecha||'').substring(0,7)===mes);
   const totalGastos=gastos.reduce((a,g)=>a+g.valor,0);
   // Gastos de caja (movimientos de los cierres del mes)
-  const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
+  const cierres=datosTodasSucursales('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
   let gastosCaja=0, retirosCaja=0;
   cierres.forEach(c=>{ (c.movimientos||[]).forEach(m=>{ if(m.tipo==='gasto')gastosCaja+=m.valor; if(m.tipo==='retiro')retirosCaja+=m.valor; }); });
   const totalEgresos=totalGastos+gastosCaja;
@@ -2599,7 +2749,7 @@ function cerrarCaja(){
     cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0), esperado, contado, diferencia:dif});
     guardarMisDatos('cierres',cierres);
     // Cerrar la caja para TODOS los dispositivos (borrado real, no fusión)
-    DB.set('data_'+STATE.negocio.id+'_caja_actual',[]);
+    DB.set(claveTabla(STATE.negocio.id,'caja_actual'),[]);
     cerrarModal();
     toast(dif===0?'Caja cuadrada ✓':dif>0?'Sobró '+fmtMoney(dif):'Faltó '+fmtMoney(Math.abs(dif)), dif===0?'success':'info');
     render();
@@ -2881,7 +3031,12 @@ function vistaNegocio(){
       </div>`:''}
       <div class="topbar">
         <h1><button class="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button> ${escapeHtml(titulo)}</h1>
-        <div class="tb-right"><span class="clock" id="clock"></span></div>
+        <div class="tb-right">
+          ${usaSucursales(STATE.negocio)?`<select class="suc-select" onchange="cambiarSucursal(this.value)" title="Sucursal en la que estás trabajando">
+            ${sucursalesDe(STATE.negocio).filter(s=>puedeVerSucursal(s.id)).map(s=>`<option value="${escapeHtml(s.id)}" ${s.id===sucursalActual()?'selected':''}>📍 ${escapeHtml(s.nombre)}</option>`).join('')}
+          </select>`:''}
+          <span class="clock" id="clock"></span>
+        </div>
       </div>
       <div class="content">${contenido}</div>
     </div>
