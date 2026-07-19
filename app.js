@@ -26,6 +26,38 @@ const DB = {
   },
 };
 
+// ============================================================
+//  GUARDADO SEGURO (evita que dos dispositivos se borren datos)
+// ============================================================
+// Cuando dos personas guardan casi al mismo tiempo, el último sobrescribía al otro
+// y se perdían pedidos. Esto fusiona por ID: nada se pierde.
+function guardarFusionado(clave, arrayLocal, campoFecha){
+  const porId={};
+  // 1) Lo que ya hay (incluye lo que llegó de la nube por el listener)
+  (CACHE[clave]||[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+  // 2) Los cambios locales encima (lo más reciente gana), marcando cuándo se editó
+  (arrayLocal||[]).forEach(x=>{
+    if(!x||!x.id) return;
+    const anterior=porId[x.id];
+    // Si cambió respecto a lo que había, marcar la hora de edición
+    if(!anterior || JSON.stringify(anterior)!==JSON.stringify(x)){ x.editado=new Date().toISOString(); }
+    porId[x.id]=x;
+  });
+  let fusionado=Object.values(porId);
+  // Ordenar por fecha si la tiene (lo más nuevo primero)
+  const campo=campoFecha||'fecha';
+  if(fusionado.length && fusionado[0][campo]) fusionado.sort((a,b)=>new Date(b[campo]||0)-new Date(a[campo]||0));
+  DB.set(clave,fusionado);
+  return fusionado;
+}
+// Borra UN solo registro sin arrastrar ni borrar los demás
+function borrarFusionado(clave, id){
+  const porId={};
+  (CACHE[clave]||[]).forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+  delete porId[id];
+  DB.set(clave,Object.values(porId));
+}
+
 // Inicializa Firebase si hay configuración válida
 function initFirebase(){
   try{
@@ -48,20 +80,48 @@ function cargarDeLaNube(callback){
     escucharCambios();
   }).catch(()=>callback());
 }
-// Escucha cambios de otros dispositivos y actualiza la pantalla
+// Escucha cambios de otros dispositivos y actualiza la pantalla.
+// IMPORTANTE: nunca descarta datos de la nube; los FUSIONA con lo local por id,
+// así nunca se pierde un pedido aunque dos personas guarden al mismo tiempo.
 function escucharCambios(){
   if(!FB) return;
   FB.ref('posu').on('value', snap=>{
-    // Evitar refrescar por nuestros propios cambios recién hechos
-    if(Date.now()-_ultimoCambioLocal < 1500) return;
     const data=snap.val()||{};
     let hayCambio=false;
     Object.keys(data).forEach(k=>{
-      const nuevo=JSON.stringify(data[k]);
-      const viejo=JSON.stringify(CACHE[k]);
-      if(nuevo!==viejo){ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} hayCambio=true; }
+      const remoto=data[k];
+      const local=CACHE[k];
+      // Si ambos son listas de registros con id, fusionamos (nada se pierde)
+      if(Array.isArray(remoto) && Array.isArray(local) && esListaConId(remoto)){
+        const porId={};
+        local.forEach(x=>{ if(x&&x.id) porId[x.id]=x; });
+        let cambio=false;
+        remoto.forEach(x=>{
+          if(!x||!x.id) return;
+          const mio=porId[x.id];
+          if(!mio){ porId[x.id]=x; cambio=true; }             // registro nuevo de otro equipo
+          else if(JSON.stringify(mio)!==JSON.stringify(x)){
+            // Gana el más reciente si tiene marca de tiempo
+            const tR=new Date(x.editado||x.fecha||x.creado||0).getTime();
+            const tL=new Date(mio.editado||mio.fecha||mio.creado||0).getTime();
+            if(tR>=tL){ porId[x.id]=x; cambio=true; }
+          }
+        });
+        if(cambio){
+          const fusion=Object.values(porId);
+          CACHE[k]=fusion;
+          try{ localStorage.setItem('posu_'+k, JSON.stringify(fusion)); }catch(e){}
+          hayCambio=true;
+        }
+      } else {
+        // Datos simples (config, caja actual): se toma el de la nube si cambió
+        if(JSON.stringify(remoto)!==JSON.stringify(local)){
+          CACHE[k]=remoto;
+          try{ localStorage.setItem('posu_'+k, JSON.stringify(remoto)); }catch(e){}
+          hayCambio=true;
+        }
+      }
     });
-    // Si cambió algo y estamos en una pantalla, refrescar suavemente
     if(hayCambio && STATE.user && typeof render==='function'){
       // No refrescar si hay un modal abierto (para no interrumpir al usuario)
       const modal=document.getElementById('modal-container');
@@ -69,8 +129,53 @@ function escucharCambios(){
     }
   });
 }
+function esListaConId(arr){ return arr.length===0 || (typeof arr[0]==='object' && arr[0] && arr[0].id!==undefined); }
 
 function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+// ============================================================
+//  SONIDOS (igual que Portal Imperial)
+// ============================================================
+let _audioCtx=null;
+function beep(freq=800,dur=200,vol=0.3){
+  try{ const ctx=new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(),g=ctx.createGain();
+  o.connect(g); g.connect(ctx.destination); o.frequency.value=freq; o.type='square'; g.gain.setValueAtTime(Math.min(1,vol),ctx.currentTime);
+  o.start(); g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+dur/1000); o.stop(ctx.currentTime+dur/1000);
+  }catch(e){}
+}
+// Nota tipo campana: suave y musical
+function campana(freq, t0, dur, vol){
+  try{
+    _audioCtx = _audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=_audioCtx; const t=ctx.currentTime+t0;
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type='triangle'; o.frequency.value=freq;
+    o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0008, t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+    // armónico (brillo de campana)
+    const o2=ctx.createOscillator(), g2=ctx.createGain();
+    o2.type='sine'; o2.frequency.value=freq*2.01;
+    o2.connect(g2); g2.connect(ctx.destination);
+    g2.gain.setValueAtTime(0, t);
+    g2.gain.linearRampToValueAtTime(vol*0.4, t+0.01);
+    g2.gain.exponentialRampToValueAtTime(0.0008, t+dur*0.7);
+    o2.start(t); o2.stop(t+dur*0.7+0.02);
+  }catch(e){}
+}
+function sonidoActivo(){ const n=STATE.negocio; return !n || n.sonidos!==false; }
+function sonidoVenta(){ if(!sonidoActivo())return; campana(1047,0,0.15,0.6); campana(1568,0.09,0.2,0.6); }
+function sonidoPedidoNuevo(){
+  if(!sonidoActivo())return;
+  const V=0.9;
+  const melodia=(t)=>{ campana(1047,t,0.18,V); campana(1319,t+0.10,0.18,V); campana(1568,t+0.20,0.30,V); };
+  melodia(0); melodia(0.42);
+}
+function sonidoListo(){ if(!sonidoActivo())return; campana(1319,0,0.2,0.7); campana(1760,0.12,0.3,0.7); }
+function sonidoError(){ if(!sonidoActivo())return; beep(250,300,0.5); }
+function sonidoAlerta(){ if(!sonidoActivo())return; beep(600,150,0.4); setTimeout(()=>beep(600,150,0.4),200); }
 function now(){ return new Date().toISOString(); }
 function fmtMoney(n){ return '$ '+(n||0).toLocaleString('es-CO'); }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('es-CO')+' '+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); }
@@ -118,7 +223,7 @@ function abrirModal(cfg){
     cfg.onGuardar(datos);
   };
   // Foco al primer campo
-  setTimeout(()=>{ const f=cont.querySelector('input,select,textarea'); if(f)f.focus(); },50);
+  setTimeout(()=>{ const f=cont.querySelector('input,select,textarea'); if(f)f.focus(); if(typeof cfg.onAbrir==='function') cfg.onAbrir(); },50);
 }
 function cerrarModal(){ const c=document.getElementById('modal-container'); if(c){ c.classList.remove('activo'); c.innerHTML=''; } }
 // Confirmación elegante (reemplaza confirm feo)
@@ -157,6 +262,7 @@ const ICONS={
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   building:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="9" x2="9" y2="9"/><line x1="15" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="9" y2="13"/><line x1="15" y1="13" x2="15" y2="13"/><line x1="10" y1="21" x2="14" y2="21"/></svg>',
   history:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><polyline points="12 7 12 12 15 15"/></svg>',
+  calendar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="10" y2="18"/><line x1="14" y1="18" x2="16" y2="18"/></svg>',
 };
 function ic(name){ return ICONS[name]||''; }
 
@@ -169,7 +275,7 @@ const FUNCIONES = [
   {id:'clientes',  label:'Clientes'},
   {id:'mesas',     label:'Mesas (restaurante)'},
   {id:'cocina',    label:'Cocina / KDS'},
-  {id:'citas',     label:'Citas / Turnos (barbería, salón)'},
+  {id:'citas',     label:'Agendar (citas, turnos, entregas)'},
   {id:'variantes', label:'Variantes: talla/color (ropa)'},
   {id:'barras',    label:'Código de barras'},
   {id:'domicilios',label:'Domicilios'},
@@ -298,7 +404,21 @@ function datosDe(negocioId, tabla){ return DB.get('data_'+negocioId+'_'+tabla) |
 function guardarDatosDe(negocioId, tabla, arr){ DB.set('data_'+negocioId+'_'+tabla, arr); }
 // Atajos para el negocio actual
 function misDatos(tabla){ return STATE.negocio ? datosDe(STATE.negocio.id, tabla) : []; }
-function guardarMisDatos(tabla, arr){ if(STATE.negocio) guardarDatosDe(STATE.negocio.id, tabla, arr); }
+// Guarda fusionando por ID: si otro dispositivo agregó algo al mismo tiempo, NO se pierde.
+// Las tablas de un solo registro (caja_actual) se guardan directo.
+const TABLAS_DIRECTAS=['caja_actual'];
+function guardarMisDatos(tabla, arr){
+  if(!STATE.negocio) return;
+  const clave='data_'+STATE.negocio.id+'_'+tabla;
+  if(TABLAS_DIRECTAS.includes(tabla)){ DB.set(clave, arr); return; }
+  const fechas={ventas:'fecha', cierres:'cierre', movimientos:'fecha', gastos_negocio:'fecha', citas:'fechaHora'};
+  guardarFusionado(clave, arr, fechas[tabla]||'creado');
+}
+// Elimina un registro sin arrastrar los demás (seguro entre dispositivos)
+function eliminarMisDatos(tabla, id){
+  if(!STATE.negocio) return;
+  borrarFusionado('data_'+STATE.negocio.id+'_'+tabla, id);
+}
 
 // ============================================================
 //  PANEL DE SUPER-ADMIN
@@ -323,7 +443,7 @@ function panelSuperAdmin(){
 
   return `
   <div class="topbar" style="position:sticky;">
-    <h1>${ic('shield')} Panel de Super-Admin <span class="pill pill-gold" style="font-size:11px;">Dueño del sistema</span></h1>
+    <h1><span class="sa-emblem">${window.WALLACE_LOGO||''}</span> <span class="sa-brand">Wallace<span>System</span></span> <span class="pill pill-gold" style="font-size:11px;">Panel de Super-Admin</span></h1>
     <div class="tb-right">
       <span class="clock" id="clock"></span>
       <div class="avatar" style="width:34px;height:34px;font-size:13px;">${(STATE.user.nombre||'S').charAt(0)}</div>
@@ -430,8 +550,8 @@ function crearNegocio(){
   }
   const negocios=DB.get('negocios')||[];
   const negId=uid();
-  // Tomar el perfil del tipo de negocio (vocabulario + funciones ya adaptadas)
-  const perfil=PERFILES[tipo]||PERFILES['Otro'];
+  // Tomar el perfil del tipo de negocio (COPIA PROFUNDA para no compartir referencias)
+  const perfil=JSON.parse(JSON.stringify(PERFILES[tipo]||PERFILES['Otro']));
   negocios.push({
     id:negId, nombre, tipo, ciudad, tel, plan, precioMes, activo:true,
     logo:'', colorPrincipal:'#01c38e', colorSecundario:'#132d46', nit:'', dir:'',
@@ -439,6 +559,8 @@ function crearNegocio(){
     palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
     usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina, usaCitas:perfil.usaCitas, usaVariantes:perfil.usaVariantes,
     funciones:perfil.funciones.slice(), tipoFactura:'pos',
+    tiposEntrega: perfil.usaMesas?['mesa','llevar','domicilio']:['llevar','domicilio'],
+    tema:'oscuro', colorFondo:'',
     creado:now()
   });
   DB.set('negocios',negocios);
@@ -495,7 +617,7 @@ function pantallaConfigNegocio(id){
       <div class="func-grid" style="margin-bottom:6px;">
         <label class="check"><input type="checkbox" id="c-mesas" ${neg.usaMesas?'checked':''}> Usa mesas (restaurante)</label>
         <label class="check"><input type="checkbox" id="c-cocina" ${neg.usaCocina?'checked':''}> Usa cocina/preparación</label>
-        <label class="check"><input type="checkbox" id="c-citas" ${neg.usaCitas?'checked':''}> Usa citas/turnos (barbería, salón)</label>
+        <label class="check"><input type="checkbox" id="c-citas" ${neg.usaCitas?'checked':''}> Usa agenda (citas, turnos, entregas)</label>
         <label class="check"><input type="checkbox" id="c-variantes" ${neg.usaVariantes?'checked':''}> Usa tallas/colores (ropa)</label>
       </div>
 
@@ -508,6 +630,11 @@ function pantallaConfigNegocio(id){
         <label class="check"><input type="checkbox" class="c-entrega" value="domicilio" ${(neg.tiposEntrega||[]).includes('domicilio')?'checked':''}> Domicilio local</label>
         <label class="check"><input type="checkbox" class="c-entrega" value="envio" ${(neg.tiposEntrega||[]).includes('envio')?'checked':''}> Envío nacional</label>
       </div>
+
+      <hr class="sep">
+      <div class="card-title">Datáfono</div>
+      <p class="muted" style="margin-bottom:10px;">Si el negocio cobra un recargo por pagar con datáfono, escribe el porcentaje. Se sugerirá automáticamente al cobrar con tarjeta. Ese dinero no cuenta como venta del negocio.</p>
+      <div class="form-row"><label>Recargo del datáfono (%)</label><input id="c-pctdatafono" type="number" step="0.1" value="${neg.pctDatafono||0}" placeholder="Ej: 4"></div>
 
       <hr class="sep">
       <div class="card-title">Tipo de factura</div>
@@ -532,8 +659,11 @@ function pantallaConfigNegocio(id){
   </div>`;
 }
 function guardarConfigNegocio(id){
-  const negocios=DB.get('negocios')||[];
-  const neg=negocios.find(n=>n.id===id); if(!neg) return;
+  // Leer una copia FRESCA para no arrastrar referencias compartidas
+  const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
+  const idx=negocios.findIndex(n=>n.id===id);
+  if(idx<0){ toast('Negocio no encontrado','error'); return; }
+  const neg=negocios[idx];
   neg.nombre=(document.getElementById('c-nombre').value||'').trim()||neg.nombre;
   neg.tipo=document.getElementById('c-tipo').value;
   neg.ciudad=(document.getElementById('c-ciudad').value||'').trim();
@@ -544,6 +674,7 @@ function guardarConfigNegocio(id){
   neg.dir=(document.getElementById('c-dir').value||'').trim();
   neg.plan=document.getElementById('c-plan').value;
   neg.tipoFactura=document.getElementById('c-factura').value;
+  neg.pctDatafono=parseFloat(document.getElementById('c-pctdatafono').value)||0;
   neg.precioMes=parseInt(document.getElementById('c-precio').value)||0;
   neg.palabraProducto=(document.getElementById('c-palabra1').value||'').trim()||'Producto';
   neg.palabraProductos=(document.getElementById('c-palabra2').value||'').trim()||'Productos';
@@ -554,8 +685,11 @@ function guardarConfigNegocio(id){
   neg.tiposEntrega=Array.from(document.querySelectorAll('.c-entrega:checked')).map(c=>c.value);
   if(!neg.tiposEntrega.length) neg.tiposEntrega=['llevar'];
   neg.funciones=Array.from(document.querySelectorAll('.c-func:checked')).map(c=>c.value);
+  negocios[idx]=neg;
   DB.set('negocios',negocios);
-  toast('Configuración guardada','success');
+  // Si el negocio editado es el que estoy viendo, refrescar su copia en memoria
+  if(STATE.negocio && STATE.negocio.id===id) STATE.negocio=JSON.parse(JSON.stringify(neg));
+  toast('Configuración guardada para '+neg.nombre,'success');
   STATE.page=''; render();
 }
 function toggleNegocio(id){
@@ -607,7 +741,7 @@ const ROLES_DISPONIBLES=[
 // Pantallas que puede tener cada usuario (para permisos personalizados)
 const PANTALLAS_USUARIO=[
   ['dashboard','Dashboard'],['ventas','Nueva Venta'],['pedidos','Pedidos'],['catalogo','Catálogo/Inventario'],
-  ['caja','Caja'],['cocina','Cocina'],['citas','Citas'],['clientes','Clientes'],['domicilios','Domicilios'],
+  ['caja','Caja'],['cocina','Cocina'],['citas','Agendar'],['clientes','Clientes'],['domicilios','Domicilios'],
   ['reportes','Reportes'],['contable','Registro Contable'],['gastosneg','Gastos del Negocio']
 ];
 function abrirUsuariosNegocio(id){ STATE.page='usuarios-negocio:'+id; render(); }
@@ -715,7 +849,7 @@ function nuevoDomiciliario(){
   }});
 }
 function toggleDomiciliario(id){ const d=misDatos('domiciliarios'); const x=d.find(y=>y.id===id); if(x){x.activo=!x.activo; guardarMisDatos('domiciliarios',d); render();} }
-function eliminarDomiciliario(id){ confirmarModal('¿Eliminar este domiciliario?',()=>{ guardarMisDatos('domiciliarios',misDatos('domiciliarios').filter(d=>d.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
+function eliminarDomiciliario(id){ confirmarModal('¿Eliminar este domiciliario?',()=>{ eliminarMisDatos('domiciliarios',id); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  USUARIOS DEL NEGOCIO (roles: cajero, mesero, cocina...)
@@ -792,7 +926,15 @@ function configNeg(){
         <input type="color" id="cfg-colorfondo" value="${neg.colorFondo||'#0f1113'}">
       </div>
 
-      <button class="btn btn-gold btn-block" onclick="guardarConfigNeg()">Guardar</button>
+      <hr class="sep">
+      <div class="card-title" style="font-size:14px;">Sonidos y avisos</div>
+      <div class="func-grid" style="margin-bottom:10px;">
+        <label class="check"><input type="checkbox" id="cfg-sonidos" ${STATE.negocio.sonidos!==false?'checked':''}> Sonidos al vender y avisar</label>
+        <label class="check"><input type="checkbox" id="cfg-alertastock" ${STATE.negocio.alertaStock!==false?'checked':''}> Avisar cuando un producto se está agotando</label>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="sonidoVenta()">🔊 Probar sonido</button>
+
+      <button class="btn btn-gold btn-block" style="margin-top:14px;" onclick="guardarConfigNeg()">Guardar</button>
     </div>`;
 }
 function subirLogoNeg(e){
@@ -810,11 +952,15 @@ function previewTema(){
 function guardarConfigNeg(){
   const tema=document.getElementById('cfg-tema').value;
   const colorFondo=document.getElementById('cfg-colorfondo')?document.getElementById('cfg-colorfondo').value:'';
+  const sonEl=document.getElementById('cfg-sonidos');
+  const alertaEl=document.getElementById('cfg-alertastock');
   actualizarNegocioActual({
     tel:(document.getElementById('cfg-tel').value||'').trim(),
     nit:(document.getElementById('cfg-nit').value||'').trim(),
     dir:(document.getElementById('cfg-dir').value||'').trim(),
-    tema, colorFondo
+    tema, colorFondo,
+    sonidos: sonEl?sonEl.checked:true,
+    alertaStock: alertaEl?alertaEl.checked:true
   });
   aplicarTema(STATE.negocio);
   toast('Configuración guardada','success'); render();
@@ -1170,49 +1316,82 @@ function facturaCarta(v,neg){
 // ============================================================
 //  CLIENTES (universal)
 // ============================================================
+let _clientesBusca='';
 function clientes(){
-  const cls=misDatos('clientes');
+  let cls=misDatos('clientes');
+  if(_clientesBusca){ const q=_clientesBusca.toLowerCase(); cls=cls.filter(c=>(c.nombre||'').toLowerCase().includes(q)||(c.tel||'').includes(q)||(c.dir||'').toLowerCase().includes(q)||(c.barrio||'').toLowerCase().includes(q)); }
+  // Ordenar por los que más compran
+  cls=cls.slice().sort((a,b)=>(b.pedidos||0)-(a.pedidos||0));
+  const totalClientes=misDatos('clientes').length;
+  const conCompras=misDatos('clientes').filter(c=>(c.pedidos||0)>0).length;
+  const totalVendido=misDatos('clientes').reduce((a,c)=>a+(c.totalComprado||0),0);
   return `
+    <div class="stats-grid">
+      <div class="stat-card green"><div class="stat-icon">${ic('users')}</div><div class="stat-label">Clientes registrados</div><div class="stat-value">${totalClientes}</div><div class="stat-sub">${conCompras} con compras</div></div>
+      <div class="stat-card gold"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Total comprado</div><div class="stat-value">${fmtMoney(totalVendido)}</div><div class="stat-sub">por todos los clientes</div></div>
+      <div class="stat-card blue"><div class="stat-icon">${ic('report')}</div><div class="stat-label">Cliente top</div><div class="stat-value" style="font-size:17px;">${cls.length?escapeHtml(cls[0].nombre||'—'):'—'}</div><div class="stat-sub">${cls.length?(cls[0].pedidos||0)+' pedido(s)':''}</div></div>
+    </div>
     <div class="card">
-      <div class="inv-head">
-        <div class="card-title">👥 Clientes</div>
-        <button class="btn btn-gold btn-sm" onclick="nuevoCliente()">+ Agregar cliente</button>
+      <div class="inv-head" style="flex-wrap:wrap;gap:10px;">
+        <div class="card-title">${ic('users')} Clientes</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" placeholder="🔍 Buscar nombre, teléfono, barrio..." value="${escapeHtml(_clientesBusca)}" oninput="_clientesBusca=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+          <button class="btn btn-gold btn-sm" onclick="nuevoCliente()">+ Agregar cliente</button>
+        </div>
       </div>
+      <p class="muted" style="margin-bottom:10px;">Los clientes se guardan solos cuando cobras un domicilio o envío con sus datos.</p>
       <div class="table-wrap"><table class="tbl">
-        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Dirección</th><th>Pedidos</th><th>Total comprado</th><th>Último pedido</th><th></th></tr></thead>
         <tbody>
-        ${cls.length? cls.map(c=>`<tr><td><strong>${escapeHtml(c.nombre)}</strong></td><td>${escapeHtml(c.tel||'—')}</td><td>${escapeHtml(c.dir||'—')}</td><td class="actions"><button class="btn btn-sm btn-danger" onclick="eliminarCliente('${c.id}')">×</button></td></tr>`).join('') : '<tr><td colspan="4" class="muted">Sin clientes aún.</td></tr>'}
+        ${cls.length? cls.map(c=>`<tr>
+          <td><strong>${escapeHtml(c.nombre||'—')}</strong></td>
+          <td>${escapeHtml(c.tel||'—')}</td>
+          <td>${escapeHtml(c.dir||'—')}${c.barrio?`<br><span class="muted" style="font-size:11px;">${escapeHtml(c.barrio)}</span>`:''}${c.ciudad?`<br><span class="muted" style="font-size:11px;">${escapeHtml(c.ciudad)}</span>`:''}</td>
+          <td><strong>${c.pedidos||0}</strong></td>
+          <td class="text-gold font-bold">${fmtMoney(c.totalComprado||0)}</td>
+          <td class="muted" style="font-size:12px;">${c.ultimoPedido?fmtDate(c.ultimoPedido):'—'}</td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
+            <button class="btn btn-sm btn-danger" onclick="eliminarCliente('${c.id}')">×</button>
+          </td>
+        </tr>`).join('') : `<tr><td colspan="7" class="muted">${_clientesBusca?'No se encontraron clientes.':'Sin clientes aún. Se guardan solos al cobrar domicilios, o agrégalos manualmente.'}</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
 }
-function nuevoCliente(){
-  abrirModal({titulo:'Nuevo cliente', textoBoton:'Agregar', campos:[
-    {id:'nombre', label:'Nombre', requerido:true},
-    {id:'tel', label:'Teléfono', tipo:'tel'},
-    {id:'dir', label:'Dirección'}
+function nuevoCliente(){ editarCliente(null); }
+function editarCliente(id){
+  const cls=misDatos('clientes');
+  const c = id? cls.find(x=>x.id===id) : null;
+  abrirModal({titulo:(c?'Editar':'Nuevo')+' cliente', textoBoton:'Guardar', campos:[
+    {id:'nombre', label:'Nombre', valor:c?c.nombre:'', requerido:true},
+    {id:'tel', label:'Teléfono', tipo:'tel', valor:c?c.tel:''},
+    {id:'dir', label:'Dirección', valor:c?c.dir:''},
+    {id:'barrio', label:'Barrio', valor:c?c.barrio:''},
+    {id:'ciudad', label:'Ciudad', valor:c?c.ciudad:''}
   ], onGuardar:(d)=>{
-    const cls=misDatos('clientes');
-    cls.push({id:uid(), nombre:d.nombre, tel:d.tel, dir:d.dir, creado:now()});
+    if(c){ Object.assign(c,{nombre:d.nombre,tel:d.tel,dir:d.dir,barrio:d.barrio,ciudad:d.ciudad}); }
+    else { cls.unshift({id:uid(), nombre:d.nombre, tel:d.tel, dir:d.dir, barrio:d.barrio, ciudad:d.ciudad, pedidos:0, totalComprado:0, creado:now()}); }
     guardarMisDatos('clientes',cls);
-    cerrarModal(); toast('Cliente agregado','success'); render();
+    cerrarModal(); toast('Cliente guardado','success'); render();
   }});
 }
-function eliminarCliente(id){ confirmarModal('¿Eliminar este cliente?',()=>{ guardarMisDatos('clientes',misDatos('clientes').filter(c=>c.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
+function eliminarCliente(id){ confirmarModal('¿Eliminar este cliente?',()=>{ eliminarMisDatos('clientes',id); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  CITAS / TURNOS (barbería, salón)
 // ============================================================
 function citas(){
+  const neg=STATE.negocio;
   const cits=misDatos('citas').sort((a,b)=>new Date(a.fechaHora)-new Date(b.fechaHora));
   return `
     <div class="card">
       <div class="inv-head">
-        <div class="card-title">📅 Citas / Turnos</div>
-        <button class="btn btn-gold btn-sm" onclick="nuevaCita()">+ Agendar cita</button>
+        <div class="card-title">${ic('calendar')} Agendar</div>
+        <button class="btn btn-gold btn-sm" onclick="nuevaCita()">+ Nuevo agendamiento</button>
       </div>
       <div class="table-wrap"><table class="tbl">
-        <thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Servicio</th><th>Profesional</th><th>Estado</th><th></th></tr></thead>
+        <thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Detalle</th><th>Encargado</th><th>Estado</th><th></th></tr></thead>
         <tbody>
         ${cits.length? cits.map(c=>`<tr>
           <td>${fmtDate(c.fechaHora)}</td>
@@ -1223,23 +1402,26 @@ function citas(){
           <td class="actions">
             ${c.estado==='pendiente'?`<button class="btn btn-sm btn-green" onclick="marcarCita('${c.id}','atendida')">✓</button><button class="btn btn-sm btn-danger" onclick="marcarCita('${c.id}','cancelada')">×</button>`:''}
           </td>
-        </tr>`).join('') : '<tr><td colspan="6" class="muted">Sin citas agendadas.</td></tr>'}
+        </tr>`).join('') : '<tr><td colspan="6" class="muted">Nada agendado todavía.</td></tr>'}
         </tbody>
       </table></div>
     </div>`;
 }
 function nuevaCita(){
-  abrirModal({titulo:'Agendar cita', textoBoton:'Agendar', campos:[
+  const neg=STATE.negocio;
+  // El "servicio" se adapta: barbería → Corte; tienda → lo que va a entregar/preparar
+  const esServicio=neg.usaCitas && (neg.palabraProducto==='Servicio');
+  abrirModal({titulo:'Nuevo agendamiento', textoBoton:'Agendar', campos:[
     {id:'cliente', label:'Cliente', requerido:true},
     {id:'fecha', label:'Fecha', tipo:'date', valor:today()},
     {id:'hora', label:'Hora', tipo:'time', valor:'10:00'},
-    {id:'servicio', label:'Servicio', valor:'Corte'},
-    {id:'profesional', label:'Profesional'}
+    {id:'servicio', label:esServicio?'Servicio':'Detalle (qué se agenda)', valor:esServicio?'Corte':'', placeholder:esServicio?'Corte, tinte, manicure...':'Ej: 2 collares chicle, entrega de pedido...'},
+    {id:'profesional', label:'Encargado (opcional)'}
   ], onGuardar:(d)=>{
     const cits=misDatos('citas');
     cits.push({id:uid(), cliente:d.cliente, fechaHora:d.fecha+'T'+(d.hora||'10:00')+':00', servicio:d.servicio, profesional:d.profesional, estado:'pendiente', creado:now()});
     guardarMisDatos('citas',cits);
-    cerrarModal(); toast('Cita agendada','success'); render();
+    cerrarModal(); toast('Agendado','success'); render();
   }});
 }
 function marcarCita(id,estado){
@@ -1276,18 +1458,35 @@ function reportesAlt(){
 // ============================================================
 //  GASTOS DEL NEGOCIO (universal)
 // ============================================================
+let _mesGastos=null;
 function gastosneg(){
   const gastos=misDatos('gastos_negocio');
-  const mes=today().substring(0,7);
+  const mes=_mesGastos||today().substring(0,7);
   const delMes=gastos.filter(g=>(g.fecha||'').substring(0,7)===mes);
   const total=delMes.reduce((a,g)=>a+g.valor,0);
   const porConcepto={};
   delMes.forEach(g=>{ porConcepto[g.concepto]=(porConcepto[g.concepto]||0)+g.valor; });
   const conceptosOrd=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
+  // Meses disponibles
+  const mesesSet=new Set([today().substring(0,7)]);
+  gastos.forEach(g=>{ if(g.fecha) mesesSet.add(g.fecha.substring(0,7)); });
+  const meses=[...mesesSet].sort().reverse();
+  window._gastosData={mes, nombreMes:nombreMesLargo(mes), delMes, total, conceptosOrd};
   return `
     <div class="card" style="background:linear-gradient(135deg,rgba(1,195,142,.06),transparent);">
-      <div class="card-title" style="margin:0;">${ic('cash')} Gastos del Negocio</div>
-      <p class="muted">Gastos que se pagan de la cuenta del negocio o del dinero retirado (arriendo, recibos, materia prima...). Son APARTE de la caja diaria. Se guardan por mes.</p>
+      <div class="flex-between" style="flex-wrap:wrap;gap:12px;">
+        <div>
+          <div class="card-title" style="margin:0;">${ic('cash')} Gastos del Negocio</div>
+          <p class="muted">Gastos que se pagan de la cuenta del negocio o del dinero retirado (arriendo, recibos, materia prima...). Son APARTE de la caja diaria. Se guardan por mes.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select onchange="_mesGastos=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+            ${meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${nombreMesLargo(m)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" onclick="exportarGastosExcel()">Excel</button>
+          <button class="btn btn-gold btn-sm" onclick="exportarGastosPDF()">🖨️ PDF / Imprimir</button>
+        </div>
+      </div>
     </div>
     <div class="grid-2">
       <div class="card">
@@ -1321,6 +1520,63 @@ function gastosneg(){
       </table></div>
     </div>`;
 }
+// Exportar los gastos del mes a PDF
+function exportarGastosPDF(){
+  const d=window._gastosData; if(!d){ toast('Abre primero los gastos','error'); return; }
+  const neg=STATE.negocio;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#000;max-width:800px;margin:0 auto;padding:18px;">
+    <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;">
+      ${neg.logo?`<img src="${neg.logo}" style="max-height:70px;margin-bottom:6px;">`:''}
+      <div style="font-size:22px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
+      ${neg.nit?`<div style="font-size:12px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
+      <div style="font-size:17px;font-weight:700;margin-top:6px;">Gastos del Negocio — ${escapeHtml(d.nombreMes)}</div>
+    </div>
+    <div style="text-align:center;margin:16px 0;padding:12px;border:2px solid #000;">
+      <div style="font-size:12px;">TOTAL GASTOS DEL MES</div>
+      <div style="font-size:26px;font-weight:800;">${fmtMoney(d.total)}</div>
+      <div style="font-size:11px;color:#555;">${d.delMes.length} gasto(s) registrado(s)</div>
+    </div>
+    ${d.conceptosOrd.length?`<h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Resumen por concepto</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      ${d.conceptosOrd.map(([c,v])=>`<tr style="border-bottom:1px solid #eee;"><td style="padding:5px;">${escapeHtml(c)}</td><td style="text-align:right;padding:5px;font-weight:600;">${fmtMoney(v)}</td></tr>`).join('')}
+      <tr style="border-top:2px solid #000;"><td style="padding:6px;font-weight:bold;">TOTAL</td><td style="text-align:right;padding:6px;font-weight:bold;">${fmtMoney(d.total)}</td></tr>
+    </table>`:''}
+    <h3 style="font-size:15px;margin-top:18px;border-bottom:1px solid #999;padding-bottom:3px;">Detalle de gastos</h3>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr style="background:#eee;">
+        <th style="padding:6px;text-align:left;">Fecha</th><th style="padding:6px;text-align:left;">Concepto</th>
+        <th style="padding:6px;text-align:left;">N° Factura</th><th style="padding:6px;text-align:left;">Pagado con</th>
+        <th style="padding:6px;text-align:right;">Valor</th>
+      </tr>
+      ${d.delMes.map(g=>`<tr style="border-bottom:1px solid #ddd;">
+        <td style="padding:5px;">${(g.fecha||'').split('T')[0]}</td>
+        <td style="padding:5px;">${escapeHtml(g.concepto)}${g.nota?`<br><span style="font-size:10px;color:#666;">${escapeHtml(g.nota)}</span>`:''}</td>
+        <td style="padding:5px;">${escapeHtml(g.factura||'—')}</td>
+        <td style="padding:5px;">${escapeHtml(g.metodo||'Efectivo')}</td>
+        <td style="padding:5px;text-align:right;font-weight:600;">${fmtMoney(g.valor)}</td>
+      </tr>`).join('')}
+      <tr style="border-top:2px solid #000;"><td colspan="4" style="padding:7px;font-weight:bold;">TOTAL DEL MES</td><td style="padding:7px;text-align:right;font-weight:bold;font-size:14px;">${fmtMoney(d.total)}</td></tr>
+    </table>
+    <div style="margin-top:26px;text-align:center;font-size:10px;color:#666;border-top:1px dashed #999;padding-top:8px;">
+      Generado el ${new Date().toLocaleString('es-CO')} · Software administrativo por WALLACE COMPANY SYSTEM
+    </div>
+  </div>`;
+  const w=window.open('','_blank','width=850,height=680');
+  w.document.write('<html><head><title>Gastos '+d.nombreMes+'</title><meta charset="utf-8"><style>@page{size:letter;margin:12mm;}body{margin:0;}</style></head><body>'+html+'</body></html>');
+  w.document.close(); setTimeout(()=>w.print(),350);
+}
+function exportarGastosExcel(){
+  const d=window._gastosData; if(!d){ toast('Abre primero los gastos','error'); return; }
+  const filas=[
+    ['GASTOS DEL NEGOCIO',d.nombreMes],[''],
+    ['Fecha','Concepto','N° Factura','Pagado con','Nota','Valor'],
+    ...d.delMes.map(g=>[(g.fecha||'').split('T')[0],g.concepto,g.factura||'',g.metodo||'Efectivo',g.nota||'',g.valor]),
+    [''],['TOTAL','','','','',d.total],
+    [''],['POR CONCEPTO',''],
+    ...d.conceptosOrd.map(([c,v])=>[c,'','','','',v])
+  ];
+  descargarCSV(filas,'gastos-'+d.mes+'.csv');
+}
 function guardarGastoNeg(){
   const concepto=(document.getElementById('gn-concepto').value||'').trim();
   const valor=parseFloat(document.getElementById('gn-valor').value)||0;
@@ -1349,15 +1605,16 @@ function nuevoGasto(){
     cerrarModal(); toast('Gasto registrado','success'); render();
   }});
 }
-function eliminarGasto(id){ confirmarModal('¿Eliminar este gasto?',()=>{ guardarMisDatos('gastos_negocio',misDatos('gastos_negocio').filter(g=>g.id!==id)); toast('Eliminado','info'); render(); },'Eliminar'); }
+function eliminarGasto(id){ confirmarModal('¿Eliminar este gasto?',()=>{ eliminarMisDatos('gastos_negocio',id); toast('Eliminado','info'); render(); },'Eliminar'); }
 
 // ============================================================
 //  REGISTRO CONTABLE MENSUAL (universal)
 // ============================================================
+let _mesContable=null;
 function contable(){
-  const mes=today().substring(0,7);
+  const mes=_mesContable||today().substring(0,7);
   // Mes anterior para comparativo
-  const dPrev=new Date(); dPrev.setMonth(dPrev.getMonth()-1);
+  const dPrev=new Date(mes+'-15'); dPrev.setMonth(dPrev.getMonth()-1);
   const mesPrev=dPrev.toISOString().substring(0,7);
   const todasV=misDatos('ventas').filter(v=>v.estado==='pagada');
   const ventasArr=todasV.filter(v=>(v.fecha||'').substring(0,7)===mes);
@@ -1367,28 +1624,50 @@ function contable(){
   const cambioV=totalVentasPrev>0?Math.round((totalVentas-totalVentasPrev)/totalVentasPrev*100):0;
   const porMetodo={efectivo:0,banco:0,tarjeta:0};
   ventasArr.forEach(v=>{ const r=v.subtotal!==undefined?v.subtotal:v.total; if(porMetodo[v.metodo]!==undefined)porMetodo[v.metodo]+=r; });
+  // Dinero de terceros (no es ingreso del negocio)
+  const totalPropinas=ventasArr.reduce((a,v)=>a+(v.propina||0),0);
+  const totalDomicilios=ventasArr.reduce((a,v)=>a+(v.valorDom||0),0);
+  const totalRecargos=ventasArr.reduce((a,v)=>a+(v.recargo||0),0);
   // Gastos del negocio
   const gastos=misDatos('gastos_negocio').filter(g=>(g.fecha||'').substring(0,7)===mes);
   const totalGastos=gastos.reduce((a,g)=>a+g.valor,0);
+  // Gastos de caja (movimientos de los cierres del mes)
+  const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
+  let gastosCaja=0, retirosCaja=0;
+  cierres.forEach(c=>{ (c.movimientos||[]).forEach(m=>{ if(m.tipo==='gasto')gastosCaja+=m.valor; if(m.tipo==='retiro')retirosCaja+=m.valor; }); });
+  const totalEgresos=totalGastos+gastosCaja;
   // Gastos agrupados por concepto
   const porConcepto={};
   gastos.forEach(g=>{ porConcepto[g.concepto]=(porConcepto[g.concepto]||0)+g.valor; });
+  cierres.forEach(c=>{ (c.movimientos||[]).forEach(m=>{ if(m.tipo==='gasto'){ const k='(caja) '+m.concepto; porConcepto[k]=(porConcepto[k]||0)+m.valor; } }); });
   const conceptosOrd=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
-  // Cierres del mes
-  const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
   const sumDif=cierres.reduce((a,c)=>a+(c.diferencia||0),0);
-  const utilidad=totalVentas-totalGastos;
+  const utilidad=totalVentas-totalEgresos;
+  // Meses disponibles para el selector
+  const mesesSet=new Set([today().substring(0,7)]);
+  todasV.forEach(v=>{ if(v.fecha) mesesSet.add(v.fecha.substring(0,7)); });
+  misDatos('gastos_negocio').forEach(g=>{ if(g.fecha) mesesSet.add(g.fecha.substring(0,7)); });
+  const meses=[...mesesSet].sort().reverse();
+  // Guardar los datos para exportar
+  window._contableData={mes, nombreMes:nombreMesLargo(mes), totalVentas, porMetodo, totalGastos, gastosCaja, retirosCaja, totalEgresos, utilidad, conceptosOrd, cierres, sumDif, totalPropinas, totalDomicilios, totalRecargos, cambioV};
   return `
     <div class="card" style="background:linear-gradient(135deg,rgba(1,195,142,.06),transparent);">
-      <div class="flex-between" style="flex-wrap:wrap;gap:10px;">
+      <div class="flex-between" style="flex-wrap:wrap;gap:12px;">
         <div><div class="card-title" style="margin:0;">${ic('report')} Registro Contable Mensual</div>
         <p class="muted">Informe interno de gestión para el dueño. No es tributario ni tiene relación con la DIAN.</p></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select onchange="_mesContable=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+            ${meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${nombreMesLargo(m)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" onclick="exportarContableExcel()">Excel</button>
+          <button class="btn btn-gold btn-sm" onclick="exportarContablePDF()">🖨️ PDF / Imprimir</button>
+        </div>
       </div>
     </div>
     <div class="stats-grid">
       <div class="stat-card green"><div class="stat-label">Ventas del mes</div><div class="stat-value">${fmtMoney(totalVentas)}</div><div class="stat-sub">${cambioV>=0?'▲ +':'▼ '}${cambioV}% vs mes anterior</div></div>
-      <div class="stat-card red"><div class="stat-label">Gastos del mes</div><div class="stat-value">${fmtMoney(totalGastos)}</div><div class="stat-sub">del negocio</div></div>
-      <div class="stat-card gold"><div class="stat-label">Utilidad estimada</div><div class="stat-value">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − gastos</div></div>
+      <div class="stat-card red"><div class="stat-label">Gastos del mes</div><div class="stat-value">${fmtMoney(totalEgresos)}</div><div class="stat-sub">gastos caja + negocio</div></div>
+      <div class="stat-card gold"><div class="stat-label">Utilidad estimada</div><div class="stat-value">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − egresos</div></div>
       <div class="stat-card blue"><div class="stat-label">Cierres del mes</div><div class="stat-value">${cierres.length}</div><div class="stat-sub">${sumDif===0?'cuadrados':sumDif>0?'sobró '+fmtMoney(sumDif):'faltó '+fmtMoney(Math.abs(sumDif))}</div></div>
     </div>
     <div class="grid-2">
@@ -1402,43 +1681,218 @@ function contable(){
       <div class="card">
         <div class="card-title">${ic('cash')} Egresos por concepto (lo que se gastó)</div>
         ${conceptosOrd.length?conceptosOrd.map(([c,v])=>`<div class="resumen-row"><span>${escapeHtml(c)}</span><strong class="text-red">${fmtMoney(v)}</strong></div>`).join(''):'<p class="muted">Sin gastos registrados este mes.</p>'}
-        ${conceptosOrd.length?`<div class="resumen-row big"><span>TOTAL GASTOS</span><strong class="text-red">${fmtMoney(totalGastos)}</strong></div>`:''}
+        ${conceptosOrd.length?`<div class="resumen-row big"><span>TOTAL GASTOS</span><strong class="text-red">${fmtMoney(totalEgresos)}</strong></div>`:''}
       </div>
-    </div>`;
+    </div>
+    ${(totalPropinas+totalDomicilios+totalRecargos)>0?`
+    <div class="card">
+      <div class="card-title">${ic('users')} Dinero de terceros (no es ingreso del negocio)</div>
+      <div class="grid-2">
+        <div>
+          ${totalPropinas>0?`<div class="resumen-row"><span>Propinas (de los meseros)</span><strong class="text-green">${fmtMoney(totalPropinas)}</strong></div>`:''}
+          ${totalDomicilios>0?`<div class="resumen-row"><span>Domicilios (de los mensajeros)</span><strong class="text-green">${fmtMoney(totalDomicilios)}</strong></div>`:''}
+        </div>
+        <div>
+          ${totalRecargos>0?`<div class="resumen-row"><span>Recargos datáfono</span><strong class="text-gold">${fmtMoney(totalRecargos)}</strong></div>`:''}
+          ${retirosCaja>0?`<div class="resumen-row"><span>Retiros del dueño (no es gasto)</span><strong class="muted">${fmtMoney(retirosCaja)}</strong></div>`:''}
+        </div>
+      </div>
+    </div>`:''}
+    ${cierres.length?`
+    <div class="card">
+      <div class="card-title">${ic('history')} Cierres de caja del mes</div>
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th>Fecha</th><th>Cajero</th><th>Base</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead>
+        <tbody>
+        ${cierres.map(c=>`<tr>
+          <td>${(c.cierre||'').split('T')[0]}</td>
+          <td>${escapeHtml(c.cajero||'—')}</td>
+          <td>${fmtMoney(c.base||0)}</td>
+          <td>${fmtMoney(c.esperado||0)}</td>
+          <td>${fmtMoney(c.contado||0)}</td>
+          <td class="${(c.diferencia||0)===0?'':(c.diferencia>0?'text-green':'text-red')}">${(c.diferencia||0)===0?'✓ cuadró':fmtMoney(c.diferencia)}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`:''}`;
+}
+function nombreMesLargo(m){
+  if(!m) return '';
+  const [a,mm]=m.split('-');
+  const nombres=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return (nombres[parseInt(mm)-1]||'')+' de '+a;
+}
+// Exportar el registro contable a PDF (usa la impresión del navegador)
+function exportarContablePDF(){
+  const d=window._contableData; if(!d){ toast('Abre primero el informe','error'); return; }
+  const neg=STATE.negocio;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#000;max-width:800px;margin:0 auto;padding:18px;">
+    <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;">
+      ${neg.logo?`<img src="${neg.logo}" style="max-height:70px;margin-bottom:6px;">`:''}
+      <div style="font-size:22px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
+      ${neg.nit?`<div style="font-size:12px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
+      <div style="font-size:17px;font-weight:700;margin-top:6px;">Registro Contable — ${escapeHtml(d.nombreMes)}</div>
+      <div style="font-size:11px;color:#555;">Informe interno de gestión. No es tributario ni tiene relación con la DIAN.</div>
+    </div>
+    <h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Resumen del mes</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:4px;">Ventas del mes</td><td style="text-align:right;font-weight:bold;">${fmtMoney(d.totalVentas)}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Efectivo</td><td style="text-align:right;color:#555;">${fmtMoney(d.porMetodo.efectivo)}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Banco / Transferencia</td><td style="text-align:right;color:#555;">${fmtMoney(d.porMetodo.banco)}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Tarjeta</td><td style="text-align:right;color:#555;">${fmtMoney(d.porMetodo.tarjeta)}</td></tr>
+      <tr><td style="padding:4px;">Gastos de caja</td><td style="text-align:right;">-${fmtMoney(d.gastosCaja)}</td></tr>
+      <tr><td style="padding:4px;">Gastos del negocio</td><td style="text-align:right;">-${fmtMoney(d.totalGastos)}</td></tr>
+      <tr><td style="padding:4px;font-weight:bold;">Total egresos</td><td style="text-align:right;font-weight:bold;color:#a00;">-${fmtMoney(d.totalEgresos)}</td></tr>
+      <tr style="border-top:2px solid #000;"><td style="padding:7px 4px;font-weight:bold;font-size:15px;">UTILIDAD ESTIMADA</td><td style="text-align:right;font-weight:bold;font-size:15px;">${fmtMoney(d.utilidad)}</td></tr>
+      ${d.retirosCaja>0?`<tr><td style="padding:4px;color:#555;">Retiros del dueño (no es gasto)</td><td style="text-align:right;color:#555;">${fmtMoney(d.retirosCaja)}</td></tr>`:''}
+    </table>
+    ${d.conceptosOrd.length?`<h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Egresos por concepto</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      ${d.conceptosOrd.map(([c,v])=>`<tr><td style="padding:4px;">${escapeHtml(c)}</td><td style="text-align:right;">${fmtMoney(v)}</td></tr>`).join('')}
+      <tr style="border-top:1px solid #000;"><td style="padding:5px 4px;font-weight:bold;">TOTAL</td><td style="text-align:right;font-weight:bold;">${fmtMoney(d.totalEgresos)}</td></tr>
+    </table>`:''}
+    ${(d.totalPropinas+d.totalDomicilios+d.totalRecargos)>0?`<h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Dinero de terceros (no es ingreso)</h3>
+    <table style="width:100%;font-size:13px;">
+      ${d.totalPropinas>0?`<tr><td style="padding:4px;">Propinas</td><td style="text-align:right;">${fmtMoney(d.totalPropinas)}</td></tr>`:''}
+      ${d.totalDomicilios>0?`<tr><td style="padding:4px;">Domicilios</td><td style="text-align:right;">${fmtMoney(d.totalDomicilios)}</td></tr>`:''}
+      ${d.totalRecargos>0?`<tr><td style="padding:4px;">Recargos datáfono</td><td style="text-align:right;">${fmtMoney(d.totalRecargos)}</td></tr>`:''}
+    </table>`:''}
+    ${d.cierres.length?`<h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Cierres de caja (${d.cierres.length})</h3>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr style="background:#eee;"><th style="padding:5px;text-align:left;">Fecha</th><th style="padding:5px;text-align:left;">Cajero</th><th style="padding:5px;text-align:right;">Esperado</th><th style="padding:5px;text-align:right;">Contado</th><th style="padding:5px;text-align:right;">Dif.</th></tr>
+      ${d.cierres.map(c=>`<tr style="border-bottom:1px solid #ddd;"><td style="padding:4px;">${(c.cierre||'').split('T')[0]}</td><td style="padding:4px;">${escapeHtml(c.cajero||'')}</td><td style="padding:4px;text-align:right;">${fmtMoney(c.esperado||0)}</td><td style="padding:4px;text-align:right;">${fmtMoney(c.contado||0)}</td><td style="padding:4px;text-align:right;">${(c.diferencia||0)===0?'✓':fmtMoney(c.diferencia)}</td></tr>`).join('')}
+    </table>`:''}
+    <div style="margin-top:26px;text-align:center;font-size:10px;color:#666;border-top:1px dashed #999;padding-top:8px;">
+      Generado el ${new Date().toLocaleString('es-CO')} · Software administrativo por WALLACE COMPANY SYSTEM
+    </div>
+  </div>`;
+  const w=window.open('','_blank','width=850,height=680');
+  w.document.write('<html><head><title>Registro Contable '+d.nombreMes+'</title><meta charset="utf-8"><style>@page{size:letter;margin:12mm;}body{margin:0;}</style></head><body>'+html+'</body></html>');
+  w.document.close(); setTimeout(()=>w.print(),350);
+}
+// Exportar el registro contable a Excel (CSV que Excel abre)
+function exportarContableExcel(){
+  const d=window._contableData; if(!d){ toast('Abre primero el informe','error'); return; }
+  const filas=[
+    ['REGISTRO CONTABLE',d.nombreMes],[''],
+    ['Concepto','Valor'],
+    ['Ventas del mes',d.totalVentas],
+    ['  Efectivo',d.porMetodo.efectivo],
+    ['  Banco',d.porMetodo.banco],
+    ['  Tarjeta',d.porMetodo.tarjeta],
+    ['Gastos de caja',-d.gastosCaja],
+    ['Gastos del negocio',-d.totalGastos],
+    ['Total egresos',-d.totalEgresos],
+    ['UTILIDAD ESTIMADA',d.utilidad],
+    [''],['EGRESOS POR CONCEPTO',''],
+    ...d.conceptosOrd.map(([c,v])=>[c,v]),
+    [''],['DINERO DE TERCEROS',''],
+    ['Propinas',d.totalPropinas],['Domicilios',d.totalDomicilios],['Recargos',d.totalRecargos]
+  ];
+  descargarCSV(filas,'contable-'+d.mes+'.csv');
+}
+// Descarga un CSV a partir de filas
+function descargarCSV(filas,nombreArchivo){
+  const csv='\uFEFF'+filas.map(f=>f.map(c=>{
+    const s=String(c==null?'':c);
+    return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  }).join(';')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=nombreArchivo;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Archivo descargado','success');
 }
 
 // ============================================================
 //  CATÁLOGO DE PRODUCTOS/SERVICIOS (universal)
 // ============================================================
+let _catBusca='';
+let _catCategoria='Todas';
 function catalogo(){
   const neg=STATE.negocio;
-  const productos=misDatos('productos');
+  const todos=misDatos('productos');
   const pp=neg.palabraProducto||'Producto';
   const pps=neg.palabraProductos||'Productos';
+  const usaRecetas=(neg.funciones||[]).includes('recetas');
+  const titulo=usaRecetas?'Catálogo de '+pps:'Inventario de '+pps;
+  // Filtrar
+  let productos=todos;
+  if(_catCategoria!=='Todas') productos=productos.filter(p=>(p.categoria||'General')===_catCategoria);
+  if(_catBusca){ const q=_catBusca.toLowerCase(); productos=productos.filter(p=>p.nombre.toLowerCase().includes(q)||(p.categoria||'').toLowerCase().includes(q)); }
+  const cats=['Todas',...new Set(todos.map(p=>p.categoria||'General'))];
+  // Alertas de stock (solo si el producto lleva stock)
+  const conStock=todos.filter(p=>p.stock!=null);
+  const agotados=conStock.filter(p=>p.stock<=0);
+  const bajos=conStock.filter(p=>p.stock>0 && p.stock<=(p.stockMin||0));
+  const valorInventario=conStock.reduce((a,p)=>a+(p.stock*(p.precio||0)),0);
   return `
+    ${conStock.length?`<div class="stats-grid">
+      <div class="stat-card green"><div class="stat-icon">${ic('box')}</div><div class="stat-label">${escapeHtml(pps)} en inventario</div><div class="stat-value">${todos.length}</div><div class="stat-sub">${conStock.reduce((a,p)=>a+p.stock,0)} unidades</div></div>
+      <div class="stat-card gold"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Valor del inventario</div><div class="stat-value">${fmtMoney(valorInventario)}</div><div class="stat-sub">a precio de venta</div></div>
+      <div class="stat-card ${bajos.length?'red':''}"><div class="stat-icon">${ic('report')}</div><div class="stat-label">Quedan pocos</div><div class="stat-value">${bajos.length}</div><div class="stat-sub">por agotarse</div></div>
+      <div class="stat-card ${agotados.length?'red':''}"><div class="stat-icon">${ic('box')}</div><div class="stat-label">Agotados</div><div class="stat-value">${agotados.length}</div><div class="stat-sub">sin unidades</div></div>
+    </div>`:''}
+    ${(agotados.length||bajos.length)?`<div class="card alerta-stock">
+      <div class="card-title" style="font-size:14px;">⚠️ Alertas de inventario</div>
+      ${agotados.length?`<p style="margin-bottom:6px;"><strong class="text-red">AGOTADOS (${agotados.length}):</strong> ${agotados.map(p=>escapeHtml(p.nombre)).join(', ')}</p>`:''}
+      ${bajos.length?`<p><strong class="text-gold">Quedan pocos (${bajos.length}):</strong> ${bajos.map(p=>escapeHtml(p.nombre)+' ('+p.stock+')').join(', ')}</p>`:''}
+    </div>`:''}
     <div class="card">
-      <div class="inv-head">
-        <div class="card-title">🍽️ Catálogo de ${escapeHtml(pps)}</div>
-        <button class="btn btn-gold btn-sm" onclick="abrirNuevoProducto()">+ Agregar ${escapeHtml(pp.toLowerCase())}</button>
+      <div class="inv-head" style="flex-wrap:wrap;gap:10px;">
+        <div class="card-title">${ic('box')} ${escapeHtml(titulo)}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" placeholder="🔍 Buscar ${escapeHtml(pp.toLowerCase())}..." value="${escapeHtml(_catBusca)}" oninput="_catBusca=this.value;render()" style="padding:10px 14px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);">
+          <button class="btn btn-gold btn-sm" onclick="abrirNuevoProducto()">+ Agregar ${escapeHtml(pp.toLowerCase())}</button>
+        </div>
       </div>
+      ${cats.length>1?`<div class="category-tabs">
+        ${cats.map(c=>`<button class="cat-tab ${_catCategoria===c?'active':''}" onclick="_catCategoria='${escapeHtml(c)}';render()">${escapeHtml(c)}${c!=='Todas'?' ('+todos.filter(p=>(p.categoria||'General')===c).length+')':''}</button>`).join('')}
+      </div>`:''}
       ${productos.length?`<div class="catalogo-grid">
-        ${productos.map(p=>`<div class="cat-card ${p.agotado?'agotado':''}">
-          <div class="cat-card-img" style="${p.imagen?`background-image:url('${p.imagen}')`:''}">${!p.imagen?ic('menu'):''}${p.agotado?'<span class="cat-agotado-badge">AGOTADO</span>':''}</div>
+        ${productos.map(p=>{
+          const sinStock=p.stock!=null && p.stock<=0;
+          const pocoStock=p.stock!=null && p.stock>0 && p.stock<=(p.stockMin||0);
+          return `<div class="cat-card ${p.agotado||sinStock?'agotado':''}">
+          <div class="cat-card-img" style="${p.imagen?`background-image:url('${p.imagen}')`:''}">${!p.imagen?ic('box'):''}${p.agotado?'<span class="cat-agotado-badge">AGOTADO</span>':sinStock?'<span class="cat-agotado-badge">SIN STOCK</span>':pocoStock?'<span class="cat-agotado-badge" style="background:var(--gold);color:#0a0d14;">POCOS</span>':''}</div>
           <div class="cat-card-body">
             <div class="cat-card-nombre">${escapeHtml(p.nombre)}</div>
             <div class="cat-card-cat">${escapeHtml(p.categoria||'General')}</div>
             <div class="cat-card-precio">${fmtMoney(p.precio)}</div>
-            ${p.stock!=null?`<div class="cat-card-stock ${p.stock<=(p.stockMin||0)?'bajo':''}">Stock: ${p.stock}${p.stock<=(p.stockMin||0)?' ⚠️':''}</div>`:''}
+            ${p.stock!=null?`<div class="cat-card-stock ${sinStock||pocoStock?'bajo':''}">Stock: ${p.stock}${sinStock?' ⛔':pocoStock?' ⚠️':''}</div>`:''}
             ${neg.usaVariantes&&(p.variantes||[]).length?`<div class="cat-card-var">${p.variantes.map(v=>`<span>${escapeHtml(v)}</span>`).join('')}</div>`:''}
           </div>
           <div class="cat-card-actions">
+            ${p.stock!=null?`<button class="btn btn-sm btn-green" onclick="entradaStock('${p.id}')" title="Agregar stock">+ Stock</button>`:''}
             <button class="btn btn-sm" onclick="editarProducto('${p.id}')">Editar</button>
             <button class="btn btn-sm" onclick="toggleAgotado('${p.id}')">${p.agotado?'Activar':'Agotar'}</button>
             <button class="btn btn-sm btn-danger" onclick="eliminarProducto('${p.id}')">×</button>
           </div>
-        </div>`).join('')}
-      </div>`:`<p class="muted">Sin ${escapeHtml(pps.toLowerCase())}. Agrega el primero.</p>`}
+        </div>`;}).join('')}
+      </div>`:`<p class="muted">${_catBusca||_catCategoria!=='Todas'?'No se encontraron '+escapeHtml(pps.toLowerCase())+'.':'Sin '+escapeHtml(pps.toLowerCase())+'. Agrega el primero.'}</p>`}
     </div>`;
+}
+// Agregar stock a un producto (entrada de mercancía)
+function entradaStock(id){
+  const productos=misDatos('productos');
+  const p=productos.find(x=>x.id===id); if(!p) return;
+  abrirModal({titulo:'Entrada de stock · '+p.nombre, textoBoton:'Agregar', campos:[
+    {id:'cant', label:'¿Cuántas unidades entran?', tipo:'number', requerido:true},
+    {id:'motivo', label:'Motivo', valor:'Compra'}
+  ], extraHTML:`<p class="muted" style="font-size:12px;margin-top:-4px;">Stock actual: <strong>${p.stock||0}</strong></p>`,
+  onGuardar:(d)=>{
+    const cant=parseFloat(d.cant)||0;
+    if(cant<=0){ toast('Cantidad inválida','error'); return; }
+    p.stock=(p.stock||0)+cant;
+    guardarMisDatos('productos',productos);
+    // Dejar constancia del movimiento
+    const movs=misDatos('movimientos');
+    movs.unshift({id:uid(), insumoId:p.id, insumoNombre:p.nombre, tipo:'entrada', cantidad:cant, motivo:d.motivo, por:STATE.user.nombre, fecha:now()});
+    guardarMisDatos('movimientos',movs);
+    cerrarModal(); toast('Stock actualizado: '+p.stock+' unidades','success'); render();
+  }});
 }
 function abrirNuevoProducto(){ editarProducto(null); }
 let _prodImgTmp=null;
@@ -1507,7 +1961,7 @@ function toggleAgotado(id){
 }
 function eliminarProducto(id){
   confirmarModal('¿Eliminar este producto?',()=>{
-    guardarMisDatos('productos', misDatos('productos').filter(p=>p.id!==id));
+    eliminarMisDatos('productos',id);
     toast('Eliminado','info'); render();
   },'Eliminar');
 }
@@ -1522,6 +1976,28 @@ let _ventaBusca = '';
 let _ventaMesa = '';
 let _ventaCli = {nombre:'',tel:'',dir:'',barrio:'',domiciliario:'',valorDom:0};
 let _ventaObs = '';
+let _descuento = 0;
+let _descMotivo = '';
+
+// Aplicar descuento al pedido (por valor o por porcentaje)
+function abrirDescuento(){
+  const bruto=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  abrirModal({titulo:'Aplicar descuento', textoBoton:'Aplicar', campos:[
+    {id:'tipo', label:'¿Cómo es el descuento?', tipo:'select', opciones:[{valor:'valor',label:'Por valor fijo ($)'},{valor:'pct',label:'Por porcentaje (%)'}]},
+    {id:'cantidad', label:'Cantidad', tipo:'number', requerido:true, placeholder:'Ej: 5000 o 10'},
+    {id:'motivo', label:'Motivo (opcional)', placeholder:'Cliente frecuente, promoción...'}
+  ], extraHTML:`<p class="muted" style="font-size:12px;margin-top:-4px;">Subtotal actual: <strong>${fmtMoney(bruto)}</strong></p>`,
+  onGuardar:(d)=>{
+    const cant=parseFloat(d.cantidad)||0;
+    if(cant<=0){ toast('Cantidad inválida','error'); return; }
+    let desc = d.tipo==='pct' ? Math.round(bruto*cant/100) : cant;
+    if(desc>bruto){ toast('El descuento no puede ser mayor al total','error'); return; }
+    _descuento=desc;
+    _descMotivo=d.motivo||(d.tipo==='pct'?cant+'%':'');
+    cerrarModal(); toast('Descuento de '+fmtMoney(desc)+' aplicado','success'); render();
+  }});
+}
+function quitarDescuento(){ _descuento=0; _descMotivo=''; render(); }
 
 function ventas(){
   const neg=STATE.negocio;
@@ -1538,7 +2014,8 @@ function ventas(){
   if(_ventaCat!=='Todas') productos=productos.filter(p=>(p.categoria||'General')===_ventaCat);
   if(_ventaBusca) productos=productos.filter(p=>p.nombre.toLowerCase().includes(_ventaBusca.toLowerCase()));
   const catsAll=['Todas',...new Set(misDatos('productos').filter(p=>!p.agotado).map(p=>p.categoria||'General'))];
-  const total=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  const subtotalBruto=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  const total=Math.max(0, subtotalBruto-_descuento);
   // Tipos de pedido configurados por el super-admin
   const tiposCfg=neg.tiposEntrega&&neg.tiposEntrega.length?neg.tiposEntrega:(neg.usaMesas?['mesa','llevar']:['llevar']);
   const labels={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío nacional'};
@@ -1567,7 +2044,14 @@ function ventas(){
         </div>`).join('') : '<div class="empty-cart">🛒<p>Seleccione productos</p></div>'}
         </div>
         ${_carrito.length?`
-          <div class="carrito-total"><span>TOTAL</span><span>${fmtMoney(total+ (_ventaTipo==='domicilio'?(parseFloat(_ventaCli.valorDom)||0):0))}</span></div>
+          <div class="carrito-desc">
+            ${_descuento>0?`<div class="cd-aplicado">
+              <span>Descuento${_descMotivo?' · '+escapeHtml(_descMotivo):''}</span>
+              <span><strong class="text-red">−${fmtMoney(_descuento)}</strong> <button class="btn btn-sm" onclick="quitarDescuento()">×</button></span>
+            </div>`:`<button class="btn btn-ghost btn-sm btn-block" onclick="abrirDescuento()">% Aplicar descuento</button>`}
+          </div>
+          ${_descuento>0?`<div class="carrito-sub"><span>Subtotal</span><span>${fmtMoney(subtotalBruto)}</span></div>`:''}
+          <div class="carrito-total"><span>TOTAL</span><span>${fmtMoney(total+ ((_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0))}</span></div>
           <button class="btn btn-gold btn-block" onclick="cobrarVenta()">Cobrar</button>
         `:''}
       </div>
@@ -1583,7 +2067,7 @@ function camposTipo(){
     // Envío nacional: más campos (ciudad, departamento, transportadora)
     return `
       <input type="text" class="mini-input" placeholder="Nombre del cliente" value="${escapeHtml(_ventaCli.nombre)}" oninput="_ventaCli.nombre=this.value">
-      <input type="text" class="mini-input" placeholder="Teléfono / WhatsApp" value="${escapeHtml(_ventaCli.tel)}" oninput="_ventaCli.tel=this.value">
+      <input type="text" class="mini-input" placeholder="Teléfono / WhatsApp" value="${escapeHtml(_ventaCli.tel)}" oninput="_ventaCli.tel=this.value" onblur="buscarClientePorTel()">
       <input type="text" class="mini-input" placeholder="Dirección completa" value="${escapeHtml(_ventaCli.dir)}" oninput="_ventaCli.dir=this.value">
       <input type="text" class="mini-input" placeholder="Ciudad" value="${escapeHtml(_ventaCli.ciudad||'')}" oninput="_ventaCli.ciudad=this.value">
       <input type="text" class="mini-input" placeholder="Departamento" value="${escapeHtml(_ventaCli.depto||'')}" oninput="_ventaCli.depto=this.value">
@@ -1594,7 +2078,7 @@ function camposTipo(){
     const doms=misDatos('domiciliarios').filter(d=>d.activo);
     return `
       <input type="text" class="mini-input" placeholder="Nombre del cliente" value="${escapeHtml(_ventaCli.nombre)}" oninput="_ventaCli.nombre=this.value">
-      <input type="text" class="mini-input" placeholder="Teléfono" value="${escapeHtml(_ventaCli.tel)}" oninput="_ventaCli.tel=this.value">
+      <input type="text" class="mini-input" placeholder="Teléfono" value="${escapeHtml(_ventaCli.tel)}" oninput="_ventaCli.tel=this.value" onblur="buscarClientePorTel()">
       <input type="text" class="mini-input" placeholder="Dirección" value="${escapeHtml(_ventaCli.dir)}" oninput="_ventaCli.dir=this.value">
       <input type="text" class="mini-input" placeholder="Barrio" value="${escapeHtml(_ventaCli.barrio)}" oninput="_ventaCli.barrio=this.value">
       <input type="number" class="mini-input" placeholder="Valor del domicilio" value="${_ventaCli.valorDom||''}" oninput="_ventaCli.valorDom=this.value">
@@ -1604,6 +2088,21 @@ function camposTipo(){
   return `<input type="text" class="mini-input" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(_ventaCli.nombre)}" oninput="_ventaCli.nombre=this.value">`;
 }
 function setVentaTipo(t){ _ventaTipo=t; render(); }
+// Al escribir el teléfono, si el cliente ya existe, llena sus datos solo
+function buscarClientePorTel(){
+  const tel=(_ventaCli.tel||'').trim();
+  if(!tel || tel.length<7) return;
+  const c=misDatos('clientes').find(x=>x.tel===tel);
+  if(!c) return;
+  // Solo llenar lo que esté vacío, para no pisar lo que el cajero escribió
+  if(!_ventaCli.nombre) _ventaCli.nombre=c.nombre||'';
+  if(!_ventaCli.dir) _ventaCli.dir=c.dir||'';
+  if(!_ventaCli.barrio) _ventaCli.barrio=c.barrio||'';
+  if(!_ventaCli.ciudad) _ventaCli.ciudad=c.ciudad||'';
+  if(!_ventaCli.depto) _ventaCli.depto=c.depto||'';
+  toast('Cliente encontrado: '+c.nombre+' ('+(c.pedidos||0)+' pedidos)','success');
+  render();
+}
 function filtrarVenta(){
   const neg=STATE.negocio;
   let productos=misDatos('productos').filter(p=>!p.agotado);
@@ -1616,7 +2115,7 @@ function menuCard(p){
   const img=p.imagen?`<div class="item-img" style="background-image:url('${p.imagen}')"></div>`:`<div class="item-ic">${ic('menu')}</div>`;
   return `<div class="menu-item-card" onclick="agregarAlCarrito('${p.id}')">${img}<div class="item-name">${escapeHtml(p.nombre)}</div><div class="item-price">${fmtMoney(p.precio)}</div></div>`;
 }
-function clearOrder(){ _carrito=[]; _ventaObs=''; _ventaCli={nombre:'',tel:'',dir:'',barrio:'',domiciliario:'',valorDom:0}; _ventaMesa=''; render(); }
+function clearOrder(){ _carrito=[]; _ventaObs=''; _descuento=0; _descMotivo=''; _ventaCli={nombre:'',tel:'',dir:'',barrio:'',ciudad:'',depto:'',transportadora:'',domiciliario:'',valorDom:0}; _ventaMesa=''; render(); }
 function agregarAlCarrito(prodId){
   const p=misDatos('productos').find(x=>x.id===prodId); if(!p) return;
   const ex=_carrito.find(i=>i.prodId===prodId);
@@ -1631,27 +2130,91 @@ function cobrarVenta(){
   const caja=misDatos('caja_actual')[0];
   if((neg.funciones||[]).includes('caja') && !caja){ toast('Primero abre la caja','error'); return; }
   const total=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
-  abrirModal({titulo:'Cobrar '+fmtMoney(total), textoBoton:'Confirmar cobro', campos:[
-    {id:'metodo', label:'Método de pago', tipo:'select', opciones:[{valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]},
-    {id:'recibido', label:'¿Con cuánto paga? (opcional, para calcular vuelto)', tipo:'number', placeholder:String(total)}
-  ], onGuardar:(d)=>{
+  const valorDom=(_ventaTipo==='domicilio'||_ventaTipo==='envio')?(parseFloat(_ventaCli.valorDom)||0):0;
+  const usaPropina=neg.usaCocina; // solo restaurantes/cafeterías manejan propina de mesero
+  // Recargo sugerido del datáfono (% que configura el super-admin, por defecto 0)
+  const pctDatafono=neg.pctDatafono||0;
+  const campos=[
+    {id:'metodo', label:'Método de pago', tipo:'select', opciones:[{valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}
+  ];
+  if(usaPropina) campos.push({id:'propina', label:'Propina (para el mesero, no es del negocio)', tipo:'number', valor:'0'});
+  campos.push({id:'recargo', label:'Recargo del datáfono (lo cobra el banco, no es del negocio)', tipo:'number', valor:'0'});
+  campos.push({id:'recibido', label:'¿Con cuánto paga? (opcional, para el vuelto)', tipo:'number', placeholder:String(total+valorDom)});
+  abrirModal({titulo:'Cobrar '+fmtMoney(total+valorDom), textoBoton:'Confirmar cobro',
+    campos,
+    extraHTML:`<div id="cobro-resumen" class="cobro-box">
+      <div class="cb-row"><span>${escapeHtml(neg.palabraProductos||'Productos')}</span><strong>${fmtMoney(total)}</strong></div>
+      ${valorDom>0?`<div class="cb-row"><span>${_ventaTipo==='envio'?'Envío':'Domicilio'}</span><strong>${fmtMoney(valorDom)}</strong></div>`:''}
+      <div class="cb-row" id="cb-propina-row" style="display:none;"><span>Propina</span><strong id="cb-propina">$ 0</strong></div>
+      <div class="cb-row" id="cb-recargo-row" style="display:none;"><span>Recargo datáfono</span><strong id="cb-recargo">$ 0</strong></div>
+      <div class="cb-row cb-total"><span>TOTAL A COBRAR</span><strong id="cb-total">${fmtMoney(total+valorDom)}</strong></div>
+      <div class="cb-nota" id="cb-nota"></div>
+    </div>`,
+    onAbrir:()=>{
+      // Recalcular el total en vivo y sugerir el recargo si paga con datáfono
+      const recalc=()=>{
+        const met=(document.getElementById('m-metodo')||{}).value||'efectivo';
+        const prop=parseFloat((document.getElementById('m-propina')||{}).value)||0;
+        const rec=parseFloat((document.getElementById('m-recargo')||{}).value)||0;
+        const t=total+valorDom+prop+rec;
+        const setTxt=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+        const show=(id,on)=>{ const el=document.getElementById(id); if(el) el.style.display=on?'flex':'none'; };
+        setTxt('cb-propina',fmtMoney(prop)); show('cb-propina-row',prop>0);
+        setTxt('cb-recargo',fmtMoney(rec)); show('cb-recargo-row',rec>0);
+        setTxt('cb-total',fmtMoney(t));
+        const nota=document.getElementById('cb-nota');
+        if(nota){
+          if(met==='tarjeta'){
+            nota.innerHTML='💳 Pago con datáfono. El recargo lo cobra el banco por usar el datáfono, <strong>no es ingreso del negocio</strong>.';
+            nota.style.display='block';
+          } else if(rec>0){
+            nota.innerHTML='⚠️ Registraste un recargo pero el pago no es con datáfono.';
+            nota.style.display='block';
+          } else { nota.style.display='none'; }
+        }
+      };
+      // Al cambiar el método, sugerir el recargo automáticamente
+      const selMet=document.getElementById('m-metodo');
+      if(selMet) selMet.addEventListener('change',()=>{
+        const recEl=document.getElementById('m-recargo');
+        if(recEl && selMet.value==='tarjeta' && pctDatafono>0 && !parseFloat(recEl.value)){
+          recEl.value=Math.round((total+valorDom)*pctDatafono/100);
+        }
+        if(recEl && selMet.value!=='tarjeta') recEl.value=0;
+        recalc();
+      });
+      ['m-propina','m-recargo'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('input',recalc); });
+      recalc();
+    },
+    onGuardar:(d)=>{
     const metodo=d.metodo||'efectivo';
     const recibido=parseFloat(d.recibido)||0;
+    const propina=parseFloat(d.propina)||0;
+    const recargo=parseFloat(d.recargo)||0;
     const ventasArr=misDatos('ventas');
-    const valorDom=_ventaTipo==='domicilio'?(parseFloat(_ventaCli.valorDom)||0):0;
-    // Numeración de factura simple
-    const numFactura='F-'+String((misDatos('ventas').length+1)).padStart(5,'0');
-    const venta={id:uid(), factura:numFactura, items:_carrito.slice(), total:total+valorDom, subtotal:total, valorDom,
+    // TOTAL COBRADO al cliente = productos + domicilio + propina + recargo
+    // Pero la VENTA REAL del negocio son solo los productos (subtotal)
+    const totalCobrado=total+valorDom+propina+recargo;
+    const numFactura='F-'+String((ventasArr.length+1)).padStart(5,'0');
+    const venta={id:uid(), factura:numFactura, items:_carrito.slice(),
+      subtotal:total,              // venta real del negocio (ya con descuento)
+      subtotalBruto:_carrito.reduce((a,i)=>a+i.precio*i.qty,0), descuento:_descuento, descMotivo:_descMotivo,
+      valorDom, propina, recargo,  // dinero de terceros (no es del negocio)
+      total:totalCobrado,          // lo que pagó el cliente
       metodo, estado:'pagada', tipo:_ventaTipo, cajaId:caja?caja.id:null, vendedor:STATE.user.nombre, fecha:now(),
       obs:_ventaObs, mesa:_ventaTipo==='mesa'?_ventaMesa:'',
       cliNombre:_ventaCli.nombre, cliTel:_ventaCli.tel, cliDir:_ventaCli.dir, cliBarrio:_ventaCli.barrio, cliCiudad:_ventaCli.ciudad, cliDepto:_ventaCli.depto, transportadora:_ventaCli.transportadora, domiciliario:_ventaCli.domiciliario};
     if((neg.funciones||[]).includes('cocina') && neg.usaCocina){ venta.estadoCocina='pendiente'; }
     ventasArr.unshift(venta);
     guardarMisDatos('ventas',ventasArr);
+    guardarClienteSiAplica(venta);
     descontarInventarioVenta(venta);
+    sonidoVenta();
+    // Avisar si algún producto quedó con stock bajo
+    revisarStockBajo(venta);
     cerrarModal();
-    if(metodo==='efectivo' && recibido>venta.total){ toast('Vuelto: '+fmtMoney(recibido-venta.total),'info'); }
-    else { toast('Venta cobrada: '+fmtMoney(venta.total),'success'); }
+    if(metodo==='efectivo' && recibido>totalCobrado){ toast('Vuelto: '+fmtMoney(recibido-totalCobrado),'info'); }
+    else { toast('Venta cobrada: '+fmtMoney(totalCobrado),'success'); }
     clearOrder();
     if((neg.funciones||[]).includes('facturas')){
       confirmarModal('¿Imprimir factura?', ()=>imprimirFactura(venta.id), 'Imprimir');
@@ -1659,31 +2222,90 @@ function cobrarVenta(){
     render();
   }});
 }
+// Guarda o actualiza el cliente automáticamente al cobrar (como Portal Imperial)
+function guardarClienteSiAplica(venta){
+  const nombre=(venta.cliNombre||'').trim();
+  const tel=(venta.cliTel||'').trim();
+  if(!nombre && !tel) return; // sin datos (ej: venta de mostrador), no guarda
+  const cls=misDatos('clientes');
+  // Buscar cliente existente: primero por teléfono, luego por nombre
+  let ex=null;
+  if(tel) ex=cls.find(c=>c.tel && c.tel===tel);
+  if(!ex && nombre) ex=cls.find(c=>(c.nombre||'').toLowerCase()===nombre.toLowerCase() && (!c.tel || !tel));
+  if(ex){
+    // Actualizar sin borrar lo que ya había
+    ex.pedidos=(ex.pedidos||0)+1;
+    ex.totalComprado=(ex.totalComprado||0)+(venta.total||0);
+    if(nombre) ex.nombre=nombre;
+    if(tel) ex.tel=tel;
+    if(venta.cliDir) ex.dir=venta.cliDir;
+    if(venta.cliBarrio) ex.barrio=venta.cliBarrio;
+    if(venta.cliCiudad) ex.ciudad=venta.cliCiudad;
+    if(venta.cliDepto) ex.depto=venta.cliDepto;
+    ex.ultimoPedido=now();
+  } else {
+    cls.unshift({id:uid(), nombre, tel, dir:venta.cliDir||'', barrio:venta.cliBarrio||'',
+      ciudad:venta.cliCiudad||'', depto:venta.cliDepto||'',
+      pedidos:1, totalComprado:venta.total||0, creado:now(), ultimoPedido:now()});
+  }
+  guardarMisDatos('clientes',cls);
+}
+// Avisa (con sonido) si algún producto de la venta quedó con stock bajo o agotado
+function revisarStockBajo(venta){
+  const neg=STATE.negocio;
+  if(!(neg.funciones||[]).includes('inventario')) return;
+  const usaRecetas=(neg.funciones||[]).includes('recetas');
+  const avisos=[];
+  if(usaRecetas){
+    const insumos=misDatos('insumos');
+    insumos.forEach(i=>{ if(i.stock<=0) avisos.push(['AGOTADO',i.nombre,i.stock,i.unidad]); else if(i.stock<=(i.minimo||0)) avisos.push(['BAJO',i.nombre,i.stock,i.unidad]); });
+  } else {
+    const productos=misDatos('productos');
+    venta.items.forEach(item=>{
+      const p=productos.find(x=>x.id===item.prodId);
+      if(p && p.stock!=null){
+        if(p.stock<=0) avisos.push(['AGOTADO',p.nombre,p.stock,'und']);
+        else if(p.stock<=(p.stockMin||0)) avisos.push(['BAJO',p.nombre,p.stock,'und']);
+      }
+    });
+  }
+  if(!avisos.length) return;
+  sonidoAlerta();
+  const agotados=avisos.filter(a=>a[0]==='AGOTADO');
+  const bajos=avisos.filter(a=>a[0]==='BAJO');
+  let msg='';
+  if(agotados.length) msg+='⛔ AGOTADO: '+agotados.map(a=>a[1]).join(', ')+'. ';
+  if(bajos.length) msg+='⚠️ Quedan pocos: '+bajos.map(a=>a[1]+' ('+a[2]+')').join(', ');
+  setTimeout(()=>toast(msg,'error'),900);
+}
 function descontarInventarioVenta(venta){
   const neg=STATE.negocio;
   if(!(neg.funciones||[]).includes('inventario')) return;
   const usaRecetas=(neg.funciones||[]).includes('recetas');
   const productos=misDatos('productos');
-  let cambioProd=false;
-  if(usaRecetas){
-    // Restaurante: descuenta insumos según receta
-    const insumos=misDatos('insumos');
-    let cambio=false;
-    venta.items.forEach(item=>{
-      const prod=productos.find(p=>p.id===item.prodId);
-      if(prod && prod.receta && prod.receta.length){
-        prod.receta.forEach(r=>{ const ins=insumos.find(i=>i.id===r.insumoId); if(ins){ ins.stock-=r.cantidad*item.qty; if(ins.stock<0)ins.stock=0; cambio=true; } });
-      }
-    });
-    if(cambio) guardarMisDatos('insumos',insumos);
-  } else {
-    // Tienda: descuenta el stock del propio producto
-    venta.items.forEach(item=>{
-      const prod=productos.find(p=>p.id===item.prodId);
-      if(prod && prod.stock!=null){ prod.stock-=item.qty; if(prod.stock<0)prod.stock=0; cambioProd=true; }
-    });
-    if(cambioProd) guardarMisDatos('productos',productos);
-  }
+  const insumos=usaRecetas?misDatos('insumos'):[];
+  let cambioProd=false, cambioIns=false;
+  // Cada producto se descuenta según lo que tenga:
+  //  - si tiene receta y el negocio usa recetas -> descuenta insumos
+  //  - si tiene stock propio -> descuenta ese stock
+  // Así funciona igual para restaurantes, tiendas y negocios mixtos.
+  venta.items.forEach(item=>{
+    const prod=productos.find(p=>p.id===item.prodId);
+    if(!prod) return;
+    const tieneReceta = usaRecetas && prod.receta && prod.receta.length;
+    if(tieneReceta){
+      prod.receta.forEach(r=>{
+        const ins=insumos.find(i=>i.id===r.insumoId);
+        if(ins){ ins.stock=Math.max(0,(ins.stock||0)-r.cantidad*item.qty); cambioIns=true; }
+      });
+    }
+    if(prod.stock!=null){
+      prod.stock=Math.max(0,prod.stock-item.qty);
+      cambioProd=true;
+    }
+  });
+  if(cambioIns) guardarMisDatos('insumos',insumos);
+  if(cambioProd) guardarMisDatos('productos',productos);
 }
 
 // ============================================================
@@ -1733,9 +2355,20 @@ function anularVenta(id){
     // Devolver inventario
     const neg=STATE.negocio;
     if((neg.funciones||[]).includes('inventario')){
-      const productos=misDatos('productos'); const insumos=misDatos('insumos'); let cambio=false;
-      v.items.forEach(item=>{ const prod=productos.find(p=>p.id===item.prodId); if(prod&&prod.receta){ prod.receta.forEach(r=>{ const ins=insumos.find(i=>i.id===r.insumoId); if(ins){ins.stock+=r.cantidad*item.qty;cambio=true;} }); } });
-      if(cambio) guardarMisDatos('insumos',insumos);
+      const usaRecetas=(neg.funciones||[]).includes('recetas');
+      const productos=misDatos('productos');
+      const insumos=usaRecetas?misDatos('insumos'):[];
+      let cambioIns=false, cambioProd=false;
+      v.items.forEach(item=>{
+        const prod=productos.find(p=>p.id===item.prodId);
+        if(!prod) return;
+        if(usaRecetas && prod.receta && prod.receta.length){
+          prod.receta.forEach(r=>{ const ins=insumos.find(i=>i.id===r.insumoId); if(ins){ ins.stock=(ins.stock||0)+r.cantidad*item.qty; cambioIns=true; } });
+        }
+        if(prod.stock!=null){ prod.stock=(prod.stock||0)+item.qty; cambioProd=true; }
+      });
+      if(cambioIns) guardarMisDatos('insumos',insumos);
+      if(cambioProd) guardarMisDatos('productos',productos);
     }
     guardarMisDatos('ventas',ventasArr);
     toast('Pedido anulado','info'); render();
@@ -1771,13 +2404,26 @@ function caja(){
   const gastos=movs.filter(m=>m.tipo==='gasto').reduce((a,m)=>a+m.valor,0);
   const retiros=movs.filter(m=>m.tipo==='retiro').reduce((a,m)=>a+m.valor,0);
   const entradas=movs.filter(m=>m.tipo==='entrada').reduce((a,m)=>a+m.valor,0);
-  // Domicilios pagados en efectivo del cajón (si el domicilio entró por banco)
-  const domBanco=ventasCaja.filter(v=>v.valorDom>0 && v.metodo!=='efectivo').reduce((a,v)=>a+v.valorDom,0);
-  // Efectivo en caja
-  const efectivoEnCaja=cajaAct.base + porMetodo.efectivo + entradas - gastos - retiros - domBanco;
+  // Dinero de terceros que ENTRÓ al cajón en efectivo (hay que sacarlo: se le paga al mesero/domiciliario)
+  const efVentas=ventasCaja.filter(v=>v.metodo==='efectivo');
+  const propinasEfectivo=efVentas.reduce((a,v)=>a+(v.propina||0),0);
+  const domEfectivo=efVentas.reduce((a,v)=>a+(v.valorDom||0),0);
+  const recargoEfectivo=efVentas.reduce((a,v)=>a+(v.recargo||0),0);
+  // Dinero de terceros que entró por banco/tarjeta pero se paga en efectivo del cajón
+  const noEfVentas=ventasCaja.filter(v=>v.metodo!=='efectivo');
+  const propinasBanco=noEfVentas.reduce((a,v)=>a+(v.propina||0),0);
+  const domBanco=noEfVentas.reduce((a,v)=>a+(v.valorDom||0),0);
+  // Efectivo en el cajón:
+  // base + venta real en efectivo + terceros que entraron en efectivo (propina/domi/recargo)
+  //      + entradas − gastos − retiros
+  //      − terceros que hay que pagar en efectivo (propinas y domicilios que entraron por banco)
+  const efectivoEnCaja = cajaAct.base + porMetodo.efectivo
+    + propinasEfectivo + domEfectivo + recargoEfectivo
+    + entradas - gastos - retiros
+    - propinasBanco - domBanco;
   // Solo restaurantes/negocios con cocina o domicilios ven la sección de "terceros" (propinas, domicilios)
   const usaDom=(neg.funciones||[]).includes('domicilios');
-  const mostrarTerceros = neg.usaCocina || usaDom || recargos>0;
+  const mostrarTerceros = neg.usaCocina || usaDom || recargos>0 || propinas>0;
   return `
     <div class="stats-grid">
       <div class="stat-card green"><div class="stat-icon">${ic('cash')}</div><div class="stat-label">Efectivo</div><div class="stat-value">${fmtMoney(porMetodo.efectivo)}</div></div>
@@ -1805,10 +2451,11 @@ function caja(){
       </div>
       ${mostrarTerceros?`<div class="card">
         <div class="card-title">${ic('users')} No son ingreso del negocio</div>
-        <p class="muted" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
-        ${neg.usaCocina?`<div class="resumen-row"><span>Propinas (del mesero)</span><strong class="text-green">${fmtMoney(propinas)}</strong></div>`:''}
-        ${usaDom?`<div class="resumen-row"><span>Domicilios (del domiciliario)</span><strong class="text-green">${fmtMoney(domicilios)}</strong></div>`:''}
-        <div class="resumen-row"><span>Recargos datáfono</span><strong class="text-gold">${fmtMoney(recargos)}</strong></div>
+        <p class="muted" style="margin-bottom:10px;">Estos valores se cobran al cliente pero pertenecen a terceros. No suman a las ventas reales.</p>
+        ${propinas>0||neg.usaCocina?`<div class="resumen-row"><span>Propinas (del mesero)</span><strong class="text-green">${fmtMoney(propinas)}</strong></div>`:''}
+        ${domicilios>0||usaDom?`<div class="resumen-row"><span>Domicilios (del domiciliario)</span><strong class="text-green">${fmtMoney(domicilios)}</strong></div>`:''}
+        ${recargos>0?`<div class="resumen-row"><span>Recargo datáfono (lo cobra el banco)</span><strong class="text-gold">${fmtMoney(recargos)}</strong></div>`:''}
+        ${recargos>0?`<p class="muted" style="font-size:12px;margin-top:8px;">💳 El recargo del datáfono se le cobra al cliente por usar la tarjeta, pero ese dinero no es del negocio: se lo queda el banco o proveedor del datáfono.</p>`:''}
         ${movs.length?`<div class="card-title" style="font-size:13px;margin-top:16px;">Movimientos del día</div>
           ${movs.map(m=>`<div class="resumen-row"><span>${m.tipo==='gasto'?'Gasto':m.tipo==='retiro'?'Retiro':'Entrada'}: ${escapeHtml(m.concepto||'')}</span><strong class="${m.tipo==='entrada'?'text-green':'text-red'}">${m.tipo==='entrada'?'+':'-'}${fmtMoney(m.valor)}</strong></div>`).join('')}`:''}
       </div>`
@@ -1840,20 +2487,28 @@ function movCaja(tipo){
 function cerrarCaja(){
   const cajaAct=misDatos('caja_actual')[0]; if(!cajaAct) return;
   const ventasCaja=misDatos('ventas').filter(v=>v.cajaId===cajaAct.id && v.estado==='pagada');
-  const efectivoVentas=ventasCaja.filter(v=>v.metodo==='efectivo').reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
+  const efVentas=ventasCaja.filter(v=>v.metodo==='efectivo');
+  const noEfVentas=ventasCaja.filter(v=>v.metodo!=='efectivo');
+  const efectivoVentas=efVentas.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0);
   const movs=cajaAct.movimientos||[];
   const gastos=movs.filter(m=>m.tipo==='gasto').reduce((a,m)=>a+m.valor,0);
   const retiros=movs.filter(m=>m.tipo==='retiro').reduce((a,m)=>a+m.valor,0);
   const entradas=movs.filter(m=>m.tipo==='entrada').reduce((a,m)=>a+m.valor,0);
-  const domBanco=ventasCaja.filter(v=>v.valorDom>0 && v.metodo!=='efectivo').reduce((a,v)=>a+v.valorDom,0);
-  const esperado=cajaAct.base+efectivoVentas+entradas-gastos-retiros-domBanco;
+  // Terceros que entraron en efectivo al cajón
+  const propinasEfectivo=efVentas.reduce((a,v)=>a+(v.propina||0),0);
+  const domEfectivo=efVentas.reduce((a,v)=>a+(v.valorDom||0),0);
+  const recargoEfectivo=efVentas.reduce((a,v)=>a+(v.recargo||0),0);
+  // Terceros que entraron por banco pero se pagan en efectivo
+  const propinasBanco=noEfVentas.reduce((a,v)=>a+(v.propina||0),0);
+  const domBanco=noEfVentas.reduce((a,v)=>a+(v.valorDom||0),0);
+  const esperado=cajaAct.base+efectivoVentas+propinasEfectivo+domEfectivo+recargoEfectivo+entradas-gastos-retiros-propinasBanco-domBanco;
   abrirModal({titulo:'Cerrar caja', textoBoton:'Cerrar caja', campos:[
     {id:'contado', label:'Cuenta el efectivo del cajón. Esperado: '+fmtMoney(esperado), tipo:'number', valor:String(esperado), requerido:true}
   ], onGuardar:(d)=>{
     const contado=parseFloat(d.contado)||0;
     const dif=contado-esperado;
     const cierres=misDatos('cierres');
-    cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+v.total,0), esperado, contado, diferencia:dif});
+    cierres.unshift({id:uid(), ...cajaAct, cierre:now(), totalVentas:ventasCaja.reduce((a,v)=>a+(v.subtotal!==undefined?v.subtotal:v.total),0), esperado, contado, diferencia:dif});
     guardarMisDatos('cierres',cierres);
     guardarMisDatos('caja_actual',[]);
     cerrarModal();
@@ -1957,7 +2612,7 @@ function movimientoInsumo(id,tipo){
 }
 function eliminarInsumo(id){
   confirmarModal('¿Eliminar este insumo?',()=>{
-    guardarMisDatos('insumos', misDatos('insumos').filter(i=>i.id!==id));
+    eliminarMisDatos('insumos',id);
     toast('Eliminado','info'); render();
   },'Eliminar');
 }
@@ -2066,7 +2721,7 @@ function vistaNegocio(){
   nav.push({grupo:'OPERACIONES'});
   if(F.includes('caja')) nav.push({id:'caja',icon:'cash',label:'Caja'});
   if(F.includes('cocina')&&neg.usaCocina) nav.push({id:'cocina',icon:'chef',label:'Cocina'});
-  if(F.includes('citas')&&neg.usaCitas) nav.push({id:'citas',icon:'scissors',label:'Citas'});
+  if(F.includes('citas')&&neg.usaCitas) nav.push({id:'citas',icon:'calendar',label:'Agendar'});
   if(F.includes('domicilios')) nav.push({id:'domicilios',icon:'truck',label:'Domicilios'});
   // Solo restaurantes (con recetas) tienen el inventario de insumos separado
   if(F.includes('inventario') && usaRecetas) nav.push({id:'inventario',icon:'box',label:'Insumos'});
@@ -2231,8 +2886,7 @@ function dashboardNeg(){
 function reportesNeg(){
   const neg=STATE.negocio;
   const vs=misDatos('ventas').filter(v=>v.estado==='pagada');
-  const t=new Date().toISOString().split('T')[0];
-  const hoy=vs.filter(v=>(v.fecha||'').startsWith(t));
+  const t=new Date().toISOString().split('T')[0];  const hoy=vs.filter(v=>(v.fecha||'').startsWith(t));
   const totalHoy=hoy.reduce((a,v)=>a+v.total,0);
   const ticketProm=hoy.length?Math.round(totalHoy/hoy.length):0;
   // Comparativo con mismo día semana pasada
@@ -2258,7 +2912,27 @@ function reportesNeg(){
     meses.push({lbl:d.toLocaleDateString('es-CO',{month:'short'}), tot:vs.filter(v=>(v.fecha||'').substring(0,7)===mk).reduce((a,v)=>a+v.total,0)}); }
   const mxM=Math.max(...meses.map(m=>m.tot),1);
   const usaMeseros=neg.usaCocina;
+  // Datos del mes en curso para exportar
+  const mesActual=t.substring(0,7);
+  const ventasMes=vs.filter(v=>(v.fecha||'').substring(0,7)===mesActual);
+  const totalMes=ventasMes.reduce((a,v)=>a+v.total,0);
+  const metodosMes={efectivo:0,banco:0,tarjeta:0};
+  ventasMes.forEach(v=>{ if(metodosMes[v.metodo]!==undefined) metodosMes[v.metodo]+=v.total; });
+  const itemsMes={};
+  ventasMes.forEach(v=>v.items.forEach(i=>{ itemsMes[i.nombre]=(itemsMes[i.nombre]||0)+i.qty; }));
+  const topMes=Object.entries(itemsMes).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  window._reportesData={nombreMes:nombreMesLargo(mesActual), mes:mesActual, totalHoy, hoy, ticketProm, cambio, ventasHace7, days, meses, totalMes, ventasMes, metodosMes, topMes, propinas, domicilios, recargos};
   return `
+    <div class="card" style="background:linear-gradient(135deg,rgba(1,195,142,.06),transparent);">
+      <div class="flex-between" style="flex-wrap:wrap;gap:12px;">
+        <div><div class="card-title" style="margin:0;">${ic('report')} Reportes de ${escapeHtml(neg.nombre)}</div>
+        <p class="muted">Resumen del día, comparativos y ventas por período.</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm" onclick="exportarReportesExcel()">Excel</button>
+          <button class="btn btn-gold btn-sm" onclick="exportarReportesPDF()">🖨️ PDF / Imprimir</button>
+        </div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">${ic('report')} Resumen del día (hoy)</div>
       <div class="stats-grid">
@@ -2279,7 +2953,69 @@ function reportesNeg(){
       <div class="card"><div class="card-title">${ic('report')} Ventas mensuales (12 meses)</div><div class="bar-chart">${meses.map(m=>`<div class="bar-item"><div class="bar-val">${m.tot>0?(m.tot/1000).toFixed(0)+'k':''}</div><div class="bar-fill" style="height:${Math.max(4,(m.tot/mxM)*130)}px"></div><div class="bar-label">${m.lbl}</div></div>`).join('')}</div></div>
     </div>`;
 }
-
+// Exportar reportes a PDF
+function exportarReportesPDF(){
+  const d=window._reportesData; if(!d){ toast('Abre primero los reportes','error'); return; }
+  const neg=STATE.negocio;
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#000;max-width:800px;margin:0 auto;padding:18px;">
+    <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:10px;">
+      ${neg.logo?`<img src="${neg.logo}" style="max-height:70px;margin-bottom:6px;">`:''}
+      <div style="font-size:22px;font-weight:800;">${escapeHtml(neg.nombre)}</div>
+      ${neg.nit?`<div style="font-size:12px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
+      <div style="font-size:17px;font-weight:700;margin-top:6px;">Reporte de Ventas — ${escapeHtml(d.nombreMes)}</div>
+      <div style="font-size:11px;color:#555;">Generado el ${new Date().toLocaleString('es-CO')}</div>
+    </div>
+    <h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Resumen de hoy</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:4px;">Vendido hoy</td><td style="text-align:right;font-weight:bold;">${fmtMoney(d.totalHoy)}</td></tr>
+      <tr><td style="padding:4px;">Transacciones</td><td style="text-align:right;">${d.hoy.length}</td></tr>
+      <tr><td style="padding:4px;">Ticket promedio</td><td style="text-align:right;">${fmtMoney(d.ticketProm)}</td></tr>
+      <tr><td style="padding:4px;">vs. mismo día semana pasada</td><td style="text-align:right;">${d.cambio>=0?'+':''}${d.cambio}% (${fmtMoney(d.ventasHace7)})</td></tr>
+      ${d.propinas>0?`<tr><td style="padding:4px;">Propinas del día</td><td style="text-align:right;">${fmtMoney(d.propinas)}</td></tr>`:''}
+    </table>
+    <h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Mes de ${escapeHtml(d.nombreMes)}</h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tr><td style="padding:4px;">Total vendido en el mes</td><td style="text-align:right;font-weight:bold;">${fmtMoney(d.totalMes)}</td></tr>
+      <tr><td style="padding:4px;">Número de ventas</td><td style="text-align:right;">${d.ventasMes.length}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Efectivo</td><td style="text-align:right;color:#555;">${fmtMoney(d.metodosMes.efectivo)}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Banco</td><td style="text-align:right;color:#555;">${fmtMoney(d.metodosMes.banco)}</td></tr>
+      <tr><td style="padding:4px;color:#555;">· Tarjeta</td><td style="text-align:right;color:#555;">${fmtMoney(d.metodosMes.tarjeta)}</td></tr>
+    </table>
+    <h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Ventas por día (últimos 7 días)</h3>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr style="background:#eee;"><th style="padding:5px;text-align:left;">Día</th><th style="padding:5px;text-align:right;">Vendido</th></tr>
+      ${d.days.map(x=>`<tr style="border-bottom:1px solid #ddd;"><td style="padding:4px;">${x.lbl}</td><td style="padding:4px;text-align:right;">${fmtMoney(x.tot)}</td></tr>`).join('')}
+    </table>
+    ${d.topMes.length?`<h3 style="font-size:15px;margin-top:16px;border-bottom:1px solid #999;padding-bottom:3px;">Más vendidos del mes</h3>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr style="background:#eee;"><th style="padding:5px;text-align:left;">Producto</th><th style="padding:5px;text-align:right;">Unidades</th></tr>
+      ${d.topMes.map(([n,q])=>`<tr style="border-bottom:1px solid #ddd;"><td style="padding:4px;">${escapeHtml(n)}</td><td style="padding:4px;text-align:right;font-weight:600;">${q}</td></tr>`).join('')}
+    </table>`:''}
+    <div style="margin-top:26px;text-align:center;font-size:10px;color:#666;border-top:1px dashed #999;padding-top:8px;">
+      Software administrativo por WALLACE COMPANY SYSTEM · wallacecompany11@gmail.com
+    </div>
+  </div>`;
+  const w=window.open('','_blank','width=850,height=680');
+  w.document.write('<html><head><title>Reporte '+d.nombreMes+'</title><meta charset="utf-8"><style>@page{size:letter;margin:12mm;}body{margin:0;}</style></head><body>'+html+'</body></html>');
+  w.document.close(); setTimeout(()=>w.print(),350);
+}
+function exportarReportesExcel(){
+  const d=window._reportesData; if(!d){ toast('Abre primero los reportes','error'); return; }
+  const filas=[
+    ['REPORTE DE VENTAS',d.nombreMes],[''],
+    ['RESUMEN DE HOY',''],
+    ['Vendido hoy',d.totalHoy],['Transacciones',d.hoy.length],['Ticket promedio',d.ticketProm],
+    [''],['MES',''],
+    ['Total del mes',d.totalMes],['Ventas del mes',d.ventasMes.length],
+    ['Efectivo',d.metodosMes.efectivo],['Banco',d.metodosMes.banco],['Tarjeta',d.metodosMes.tarjeta],
+    [''],['VENTAS POR DÍA (7 días)',''],
+    ...d.days.map(x=>[x.lbl,x.tot]),
+    [''],['MÁS VENDIDOS DEL MES','Unidades'],
+    ...d.topMes.map(([n,q])=>[n,q])
+  ];
+  descargarCSV(filas,'reportes-'+d.mes+'.csv');
+}
+// ============================================================
 // ============================================================
 //  LOGIN VIEW
 // ============================================================
