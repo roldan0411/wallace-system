@@ -38,7 +38,14 @@ const DB = {
     CACHE[k]=v;
     try{ localStorage.setItem('ws_'+k, JSON.stringify(v)); }catch(e){}
     if(FB_READY && FB){
-      try{ FB.ref('data/'+k).set(v===undefined?null:v); }catch(e){ console.warn('FB set',e); }
+      try{
+        // IMPORTANTE: Firebase RECHAZA objetos con campos undefined adentro.
+        // Por eso las ventas no llegaban a la nube y solo las veía el equipo
+        // que las creó. El viaje por JSON elimina los undefined antes de enviar.
+        const limpio = (v===undefined || v===null) ? null : JSON.parse(JSON.stringify(v));
+        const p = FB.ref('data/'+k).set(limpio);
+        if(p && p.catch) p.catch(e=>{ console.warn('FB set (nube)',k,e&&e.message); mostrarConexion('error'); });
+      }catch(e){ console.warn('FB set',k,e&&e.message); mostrarConexion('error'); }
     }
   }
 };
@@ -527,12 +534,13 @@ function panelSuperAdmin(){
   let ventasHoy=0, ventasTot=0, top={nombre:'—',total:0};
   const hoy=today();
   negocios.forEach(n=>{
-    let vs=[];
-    if(n.sucursales && n.sucursales.length>1){
-      n.sucursales.forEach(s=>{ vs=vs.concat(DB.get('data_'+n.id+'_ventas-'+s.id)||[]); });
-    } else {
-      vs=datosDe(n.id,'ventas');
-    }
+    // Las ventas viven en la clave plana data_<negocio>_ventas (igual que Portal
+    // Imperial). Antes se buscaba en claves por sucursal que nunca se escriben,
+    // por eso el súper admin veía todo en cero.
+    let vs=(datosDe(n.id,'ventas')||[]).slice();
+    (n.sucursales||[]).forEach(s=>{ vs=vs.concat(DB.get('data_'+n.id+'_ventas-'+s.id)||[]); });
+    const _vistos={};
+    vs=vs.filter(v=>{ if(!v||!v.id||_vistos[v.id]) return false; _vistos[v.id]=true; return true; });
     vs=vs.filter(v=>v.estado==='pagada');
     const suma=vs.reduce((a,v)=>a+(v.total||0),0);
     ventasTot+=suma;
@@ -864,10 +872,10 @@ function armarVenta(estado){
     tipo:_vTipo, cajaId:cajaAbierta?cajaAbierta.id:null,
     vendedor:STATE.user.nombre, fecha:now(),
     obs:_vObs, mesa:_vTipo==='mesa'?_vMesa:'',
-    cliNombre:_vCli.nombre, cliTel:_vCli.tel, cliDir:_vCli.dir, cliBarrio:_vCli.barrio,
-    cliCiudad:_vCli.ciudad, cliDepto:_vCli.depto,
-    transportadora:_vCli.transportadora, domiciliario:_vCli.domiciliario,
-    estadoCocina: (neg.usaCocina?'pendiente':undefined)
+    cliNombre:_vCli.nombre||'', cliTel:_vCli.tel||'', cliDir:_vCli.dir||'', cliBarrio:_vCli.barrio||'',
+    cliCiudad:_vCli.ciudad||'', cliDepto:_vCli.depto||'',
+    transportadora:_vCli.transportadora||'', domiciliario:_vCli.domiciliario||'',
+    estadoCocina: (neg.usaCocina?'pendiente':'')
   };
 }
 
@@ -2076,7 +2084,7 @@ function imprimirContable(){
 // ============================================================
 //  CONFIGURACIÓN DEL NEGOCIO (super-admin)
 // ============================================================
-function configNegocio(id){ STATE.page='config:'+id; render(); }
+function configNegocio(id){ window._logoNuevo=undefined; STATE.page='config:'+id; render(); }
 function usuariosNegocio(id){ STATE.page='usuarios:'+id; render(); }
 
 function pantallaConfig(negId){
@@ -2102,8 +2110,25 @@ function pantallaConfig(negId){
         <div class="m-row"><label>Teléfono</label><input id="c-tel" class="campo" value="${escapeHtml(neg.tel||'')}"></div>
         <div class="m-row"><label>Dirección</label><input id="c-dir" class="campo" value="${escapeHtml(neg.dir||'')}"></div>
         <div class="m-row"><label>Ciudad</label><input id="c-ciudad" class="campo" value="${escapeHtml(neg.ciudad||'')}"></div>
+        <div class="m-row"><label>Eslogan (opcional)</label><input id="c-eslogan" class="campo" value="${escapeHtml(neg.eslogan||'')}" placeholder="Ej: Accesorios con estilo"></div>
         <div class="m-row"><label>Plan</label><select id="c-plan" class="campo">${['Básico','Profesional','Premium'].map(p=>`<option ${neg.plan===p?'selected':''}>${p}</option>`).join('')}</select></div>
         <div class="m-row"><label>Precio mensual</label><input id="c-precio" type="number" class="campo" value="${neg.precioMes||0}"></div>
+      </div>
+      <p class="nota">Estos datos salen en el encabezado de todas las facturas del negocio.</p>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('box')} Logo del negocio</span>
+      <p class="gris">Aparece en el menú lateral del sistema y en todas las facturas.</p>
+      <div class="logo-zona">
+        <div class="logo-vista" id="logo-vista">
+          ${neg.logo?`<img src="${neg.logo}" alt="logo">`:`<div class="logo-vacio">Sin logo</div>`}
+        </div>
+        <div class="logo-acc">
+          <input type="file" id="n-logo" accept="image/*" onchange="cargarLogo(this)" style="display:none;">
+          <button class="btn btn-gold" onclick="document.getElementById('n-logo').click()">Subir logo</button>
+          ${neg.logo?`<button class="btn btn-rojo btn-sm" onclick="quitarLogo()">Quitar</button>`:''}
+          <p class="nota">La imagen se reduce sola para no pesar.</p>
+        </div>
       </div>
     </div>
     <div class="tarjeta">
@@ -2172,6 +2197,8 @@ function guardarConfig(negId){
   n.nombre=val('c-nombre').trim()||n.nombre;
   n.tipo=val('c-tipo'); n.nit=val('c-nit').trim(); n.tel=val('c-tel').trim();
   n.dir=val('c-dir').trim(); n.ciudad=val('c-ciudad').trim();
+  n.eslogan=val('c-eslogan').trim();
+  if(window._logoNuevo!==undefined){ n.logo=window._logoNuevo; window._logoNuevo=undefined; }
   n.plan=val('c-plan'); n.precioMes=parseInt(val('c-precio'))||0;
   n.flujoPedido=val('c-flujo');
   n.palabraProducto=val('c-pal1').trim()||'Producto';
