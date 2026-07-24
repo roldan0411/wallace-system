@@ -11,6 +11,7 @@
 // Al arrancar carga de la nube para sincronizar entre dispositivos.
 let FB = null; // referencia a Firebase Realtime Database si está disponible
 let FB_ESTADO = 'off'; // 'ok' = guardando bien | 'error' = rechaza | 'off' = sin nube
+let NUBE_LISTA = false; // true cuando ya sabemos qué hay en la nube
 const CACHE = {}; // espejo en memoria
 let _ultimoCambioLocal=0; // momento del último cambio hecho por este dispositivo
 
@@ -108,6 +109,7 @@ function cargarDeLaNube(callback){
   FB.ref('posu').once('value').then(snap=>{
     const data=snap.val()||{};
     Object.keys(data).forEach(k=>{ CACHE[k]=data[k]; try{ localStorage.setItem('posu_'+k, JSON.stringify(data[k])); }catch(e){} });
+    NUBE_LISTA=true;          // ya sabemos qué hay: seed() puede trabajar seguro
     FB_ESTADO='ok';
     callback();
     activarEscucha();
@@ -474,6 +476,9 @@ const STATE = { user:null, negocio:null, page:'', esSuperAdmin:false };
 
 // ---------- Semilla inicial ----------
 function seed(){
+  // NUNCA sembrar si todavía no sabemos qué hay en la nube: si Firebase tarda,
+  // seed() creaba datos nuevos y los subía, BORRANDO lo de todos los empleados.
+  if(FB && !NUBE_LISTA){ console.warn('seed omitido: la nube aún no respondió'); return; }
   // Super-admin (dueño del sistema)
   if(!DB.get('superadmins')){
     DB.set('superadmins', [
@@ -3403,18 +3408,34 @@ function arrancar(){
   try{ render(); }catch(e){ console.error('render error',e); document.getElementById('app').innerHTML='<div style="padding:40px;color:#fff;text-align:center;">Error al cargar. Recarga la página (Ctrl+Shift+R).</div>'; }
 }
 try{
-  const fbOk = initFirebase(); // conecta a la nube si hay config válida
+  const fbOk = initFirebase();
   if(fbOk){
-    // Con Firebase: intenta cargar de la nube, pero si tarda o falla, arranca igual
+    // Mostrar "conectando" mientras llega la nube. NO arrancamos con datos
+    // vacíos: eso hacía que seed() sobrescribiera el trabajo de todos.
+    const app=document.getElementById('app');
+    if(app) app.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#8b93a3;font-family:system-ui,sans-serif;">'
+      +'<div style="width:52px;height:52px;border:3px solid rgba(1,195,142,.2);border-top-color:#01c38e;border-radius:50%;animation:girar .8s linear infinite;"></div>'
+      +'<div style="margin-top:18px;font-size:14px;">Conectando…</div>'
+      +'<style>@keyframes girar{to{transform:rotate(360deg)}}</style></div>';
     let arrancado=false;
-    const forzar=setTimeout(()=>{ if(!arrancado){ arrancado=true; arrancar(); } }, 2500);
+    // Espera larga (12s). Si de plano no hay internet, arranca en modo local
+    // pero SIN sembrar, para no pisar lo que haya en la nube.
+    const forzar=setTimeout(()=>{
+      if(!arrancado){
+        arrancado=true;
+        console.warn('La nube no respondió: modo local temporal');
+        arrancar();
+      }
+    }, 12000);
     cargarDeLaNube(()=>{ if(!arrancado){ arrancado=true; clearTimeout(forzar); arrancar(); } });
   } else {
-    // Sin Firebase: arranca de una vez en modo local
+    // Sin Firebase configurado: modo local puro, aquí sí se puede sembrar
+    NUBE_LISTA=true;
     arrancar();
   }
 }catch(e){
-  console.error('Error de arranque, usando modo local:',e);
+  console.error('Error de arranque:',e);
+  NUBE_LISTA=true;
   arrancar();
 }
 // Reloj en vivo
