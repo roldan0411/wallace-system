@@ -149,9 +149,31 @@ function cargarDeLaNube(callback){
 // La nube MANDA: lo que llega se acepta (así funciona Portal Imperial).
 function escucharCambios(){
   if(!FB_READY || !FB) return;
-  FB.ref('data').on('child_changed', snap=>{ aplicarCambio(snap.key, snap.val()); });
-  FB.ref('data').on('child_added',   snap=>{ aplicarCambio(snap.key, snap.val()); });
-  FB.ref('data').on('child_removed', snap=>{ aplicarCambio(snap.key, null); });
+  // Escuchar TODO el nodo 'data'. Antes se usaba child_added/child_changed,
+  // que no avisaba de cambios dentro de claves que el dispositivo ya conocía:
+  // por eso un empleado no veía los pedidos de otro.
+  FB.ref('data').on('value', snap=>{
+    const data=snap.val()||{};
+    let cambio=false;
+    Object.keys(data).forEach(k=>{
+      const nuevo=JSON.stringify(data[k]);
+      const viejo=JSON.stringify(CACHE[k]);
+      if(nuevo!==viejo){
+        CACHE[k]=data[k];
+        try{ localStorage.setItem('ws_'+k, JSON.stringify(data[k])); }catch(e){}
+        cambio=true;
+      }
+    });
+    // Detectar claves que se borraron en la nube (ej: caja cerrada)
+    Object.keys(CACHE).forEach(k=>{
+      if(k.indexOf('data_')===0 && data[k]===undefined && CACHE[k]!==null){
+        CACHE[k]=null;
+        try{ localStorage.setItem('ws_'+k, JSON.stringify(null)); }catch(e){}
+        cambio=true;
+      }
+    });
+    if(cambio) refrescarSiSePuede();
+  });
 }
 function aplicarCambio(clave, valor){
   if(!clave) return;
@@ -2300,6 +2322,10 @@ function armarMenu(){
   if(F.indexOf('contable')>-1) ges.push({id:'contable', ic:'report', txt:'Registro Contable'});
   if(F.indexOf('gastosneg')>-1) ges.push({id:'gastosneg', ic:'cash', txt:'Gastos del Negocio'});
   if(ges.length){ items.push({g:'GESTIÓN'}); ges.forEach(g=>items.push(g)); }
+  if(u.rol==='admin' || u.esSupervisor){
+    items.push({g:'CONFIGURACIÓN'});
+    items.push({id:'minegocio', ic:'building', txt:'Mi Negocio'});
+  }
   // Filtrar por rol
   if(u.esSupervisor || u.rol==='admin') return items;
   const permitidas = (u.pantallas && u.pantallas.length) ? u.pantallas : (PANTALLAS_POR_ROL[u.rol]||PANTALLAS_POR_ROL.cajero);
@@ -2314,19 +2340,270 @@ function armarMenu(){
   });
   return salida;
 }
+// ============================================================
+//  MI NEGOCIO (lo edita el propio administrador)
+// ============================================================
+function minegocio(){
+  ESCRIBIENDO=false;
+  const neg=STATE.negocio;
+  return `
+    <div class="tarjeta">
+      <span class="t-tit">${ic('building')} Datos de tu negocio</span>
+      <p class="gris">Esta información sale en las facturas que entregas a tus clientes.</p>
+      <div class="form2" style="margin-top:14px;">
+        <div class="m-row"><label>Nombre del negocio</label><input id="n-nombre" class="campo" value="${escapeHtml(neg.nombre||'')}"></div>
+        <div class="m-row"><label>NIT / Cédula</label><input id="n-nit" class="campo" value="${escapeHtml(neg.nit||'')}" placeholder="Ej: 900123456-7"></div>
+        <div class="m-row"><label>Teléfono</label><input id="n-tel" class="campo" value="${escapeHtml(neg.tel||'')}" placeholder="Ej: 3125214210"></div>
+        <div class="m-row"><label>Dirección</label><input id="n-dir" class="campo" value="${escapeHtml(neg.dir||'')}" placeholder="Ej: Calle 45 #23-11"></div>
+        <div class="m-row"><label>Ciudad</label><input id="n-ciudad" class="campo" value="${escapeHtml(neg.ciudad||'')}"></div>
+        <div class="m-row"><label>Eslogan (opcional)</label><input id="n-eslogan" class="campo" value="${escapeHtml(neg.eslogan||'')}" placeholder="Ej: Accesorios con estilo"></div>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('box')} Logo del negocio</span>
+      <p class="gris">Aparece en el menú lateral y en todas las facturas. Usa una imagen cuadrada.</p>
+      <div class="logo-zona">
+        <div class="logo-vista" id="logo-vista">
+          ${neg.logo?`<img src="${neg.logo}" alt="logo">`:`<div class="logo-vacio">Sin logo</div>`}
+        </div>
+        <div class="logo-acc">
+          <input type="file" id="n-logo" accept="image/*" onchange="cargarLogo(this)" style="display:none;">
+          <button class="btn btn-gold" onclick="document.getElementById('n-logo').click()">Subir logo</button>
+          ${neg.logo?`<button class="btn btn-rojo btn-sm" onclick="quitarLogo()">Quitar</button>`:''}
+          <p class="nota">La imagen se reduce sola para no pesar.</p>
+        </div>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('cog')} Preferencias</span>
+      <div class="form2">
+        <div class="m-row"><label>Tamaño de la factura</label>
+          <select id="n-fact" class="campo">
+            <option value="pos" ${neg.tipoFactura==='pos'?'selected':''}>Tirilla POS (80mm)</option>
+            <option value="media" ${neg.tipoFactura==='media'?'selected':''}>Media hoja</option>
+            <option value="carta" ${neg.tipoFactura==='carta'?'selected':''}>Hoja completa</option>
+          </select></div>
+        <div class="m-row"><label>Recargo del datáfono (%)</label>
+          <input id="n-pct" type="number" step="0.1" class="campo" value="${neg.pctDatafono||0}" placeholder="Ej: 4"></div>
+      </div>
+      <div class="checks">
+        <label class="chk"><input type="checkbox" id="n-sonidos" ${neg.sonidos!==false?'checked':''}> Sonidos al vender</label>
+        <label class="chk"><input type="checkbox" id="n-alerta" ${neg.alertaStock!==false?'checked':''}> Avisar cuando se agote un producto</label>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="sonidoVenta()">🔊 Probar sonido</button>
+    </div>
+    <div class="tarjeta">
+      <button class="btn btn-gold btn-block btn-grande" onclick="guardarMiNegocio()">Guardar cambios</button>
+      <p class="nota centrado" style="margin-top:10px;">Los cambios se ven en todos los equipos al instante.</p>
+    </div>`;
+}
+function cargarLogo(input){
+  const f=input.files && input.files[0];
+  if(!f) return;
+  if(f.size>5*1024*1024){ toast('La imagen es muy pesada (máx 5MB)','error'); return; }
+  const lector=new FileReader();
+  lector.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      // Reducir a 300px de ancho máximo para que no pese
+      const max=300;
+      let w=img.width, h=img.height;
+      if(w>max){ h=Math.round(h*max/w); w=max; }
+      const lienzo=document.createElement('canvas');
+      lienzo.width=w; lienzo.height=h;
+      lienzo.getContext('2d').drawImage(img,0,0,w,h);
+      const dataUrl=lienzo.toDataURL('image/png');
+      const vista=document.getElementById('logo-vista');
+      if(vista) vista.innerHTML='<img src="'+dataUrl+'" alt="logo">';
+      window._logoNuevo=dataUrl;
+      toast('Logo listo. Dale a Guardar cambios.','info');
+    };
+    img.src=e.target.result;
+  };
+  lector.readAsDataURL(f);
+}
+function quitarLogo(){
+  window._logoNuevo='';
+  const vista=document.getElementById('logo-vista');
+  if(vista) vista.innerHTML='<div class="logo-vacio">Sin logo</div>';
+  toast('Logo quitado. Dale a Guardar cambios.','info');
+}
+function guardarMiNegocio(){
+  const val=id=>{ const e=document.getElementById(id); return e?e.value:''; };
+  const chk=id=>{ const e=document.getElementById(id); return e?e.checked:false; };
+  const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
+  const i=negocios.findIndex(n=>n.id===STATE.negocio.id);
+  if(i<0){ toast('No se encontró el negocio','error'); return; }
+  const n=negocios[i];
+  n.nombre=val('n-nombre').trim()||n.nombre;
+  n.nit=val('n-nit').trim();
+  n.tel=val('n-tel').trim();
+  n.dir=val('n-dir').trim();
+  n.ciudad=val('n-ciudad').trim();
+  n.eslogan=val('n-eslogan').trim();
+  n.tipoFactura=val('n-fact');
+  n.pctDatafono=parseFloat(val('n-pct'))||0;
+  n.sonidos=chk('n-sonidos');
+  n.alertaStock=chk('n-alerta');
+  if(window._logoNuevo!==undefined){ n.logo=window._logoNuevo; window._logoNuevo=undefined; }
+  negocios[i]=n;
+  DB.set('negocios',negocios);
+  STATE.negocio=JSON.parse(JSON.stringify(n));
+  toast('Datos guardados','success');
+  render();
+}
+
+// ============================================================
+//  AGENDAR (citas, turnos, entregas)
+// ============================================================
+function citas(){
+  ESCRIBIENDO=false;
+  const neg=STATE.negocio;
+  const lista=misDatos('citas').slice().sort((a,b)=>new Date(a.fechaHora)-new Date(b.fechaHora));
+  const hoy=today();
+  const deHoy=lista.filter(c=>(c.fechaHora||'').startsWith(hoy));
+  const pendientes=lista.filter(c=>c.estado==='pendiente');
+  return `
+    <div class="stats">
+      <div class="stat verde"><div class="stat-lbl">Agendado hoy</div><div class="stat-val">${deHoy.length}</div><div class="stat-sub">para el día de hoy</div></div>
+      <div class="stat gold"><div class="stat-lbl">Pendientes</div><div class="stat-val">${pendientes.length}</div><div class="stat-sub">sin atender</div></div>
+      <div class="stat azul"><div class="stat-lbl">Total agendado</div><div class="stat-val">${lista.length}</div><div class="stat-sub">en el sistema</div></div>
+    </div>
+    <div class="tarjeta">
+      <div class="t-cab">
+        <span class="t-tit">${ic('calendar')} Agendar</span>
+        <button class="btn btn-gold" onclick="nuevaCita()">+ Nuevo agendamiento</button>
+      </div>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Detalle</th><th>Encargado</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>
+        ${lista.length? lista.map(c=>`<tr>
+          <td>${fmtDate(c.fechaHora)}</td>
+          <td><strong>${escapeHtml(c.cliente||'—')}</strong>${c.tel?`<br><span class="gris chico">${escapeHtml(c.tel)}</span>`:''}</td>
+          <td>${escapeHtml(c.detalle||'—')}</td>
+          <td>${escapeHtml(c.encargado||'—')}</td>
+          <td>${c.estado==='atendida'?'<span class="pill pill-verde">Atendida</span>'
+              :c.estado==='cancelada'?'<span class="pill pill-rojo">Cancelada</span>'
+              :'<span class="pill pill-gold">Pendiente</span>'}</td>
+          <td class="acciones">
+            ${c.estado==='pendiente'?`
+              <button class="btn btn-sm btn-verde" onclick="marcarCita('${c.id}','atendida')" title="Marcar atendida">✓</button>
+              <button class="btn btn-sm btn-rojo" onclick="marcarCita('${c.id}','cancelada')" title="Cancelar">✕</button>`:''}
+            <button class="btn btn-sm" onclick="eliminarCita('${c.id}')" title="Eliminar">🗑</button>
+          </td>
+        </tr>`).join('') : '<tr><td colspan="6" class="gris">Nada agendado todavía.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+function nuevaCita(){
+  const neg=STATE.negocio;
+  const esServicio=(neg.palabraProducto||'')==='Servicio';
+  abrirModal({titulo:'Nuevo agendamiento', textoBoton:'Agendar', campos:[
+    {id:'cliente', label:'Cliente', requerido:true},
+    {id:'tel', label:'Teléfono (opcional)'},
+    {id:'fecha', label:'Fecha', tipo:'date', valor:today()},
+    {id:'hora', label:'Hora', tipo:'time', valor:'10:00'},
+    {id:'detalle', label:esServicio?'Servicio':'Detalle (qué se agenda)',
+      valor:esServicio?'Corte':'',
+      placeholder:esServicio?'Corte, tinte, manicure...':'Ej: 2 collares chicle, entrega de pedido...'},
+    {id:'encargado', label:'Encargado (opcional)'}
+  ], onGuardar:(d)=>{
+    const arr=misDatos('citas');
+    arr.push({id:uid(), cliente:d.cliente, tel:d.tel,
+      fechaHora:d.fecha+'T'+(d.hora||'10:00')+':00',
+      detalle:d.detalle, encargado:d.encargado,
+      estado:'pendiente', creado:now(), por:STATE.user.nombre});
+    guardarMisDatos('citas',arr);
+    cerrarModal(); toast('Agendado','success'); render();
+  }});
+}
+function marcarCita(id,estado){
+  const arr=misDatos('citas');
+  const c=arr.find(x=>x.id===id); if(!c) return;
+  c.estado=estado;
+  c.cerrada=now();
+  guardarMisDatos('citas',arr);
+  toast(estado==='atendida'?'Marcado como atendido':'Cancelado','info');
+  render();
+}
+function eliminarCita(id){
+  confirmarModal('¿Eliminar este agendamiento?',()=>{
+    eliminarMisDatos('citas',id); toast('Eliminado','info'); render();
+  },'Eliminar');
+}
+
+// ============================================================
+//  COCINA (pantalla para preparar los pedidos)
+// ============================================================
+function cocina(){
+  ESCRIBIENDO=false;
+  const vs=ventasJornada(false).filter(v=>v.estado!=='anulada' && v.estadoCocina);
+  const pend=vs.filter(v=>v.estadoCocina==='pendiente');
+  const listos=vs.filter(v=>v.estadoCocina==='listo');
+  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
+  const tarjeta=(v,esPend)=>`<div class="tarjeta ${esPend?'tarjeta-pend':''}" style="margin-bottom:14px;">
+    <div class="t-cab">
+      <span class="t-tit">${escapeHtml(v.factura||'')} · ${etiq[v.tipo]||''}${v.mesa?' '+escapeHtml(v.mesa):''}</span>
+      <span class="gris chico">${fmtDate(v.fecha)}</span>
+    </div>
+    ${v.cliNombre?`<p class="gris">Cliente: <strong>${escapeHtml(v.cliNombre)}</strong></p>`:''}
+    <div style="margin:12px 0;">
+      ${(v.items||[]).map(i=>`<div class="linea"><span><strong>${i.qty} ×</strong> ${escapeHtml(i.nombre)}</span></div>`).join('')}
+    </div>
+    ${v.obs?`<div class="alerta" style="padding:10px 13px;border-radius:9px;margin-bottom:10px;"><strong>Nota:</strong> ${escapeHtml(v.obs)}</div>`:''}
+    ${esPend
+      ? `<button class="btn btn-gold btn-block" onclick="marcarCocina('${v.id}','listo')">✓ Marcar como listo</button>`
+      : `<button class="btn btn-ghost btn-block btn-sm" onclick="marcarCocina('${v.id}','pendiente')">← Volver a pendiente</button>`}
+  </div>`;
+  return `
+    <div class="stats">
+      <div class="stat gold"><div class="stat-lbl">En preparación</div><div class="stat-val">${pend.length}</div><div class="stat-sub">pedidos pendientes</div></div>
+      <div class="stat verde"><div class="stat-lbl">Listos</div><div class="stat-val">${listos.length}</div><div class="stat-sub">para entregar</div></div>
+    </div>
+    <div class="grid2">
+      <div>
+        <h3 style="font-size:15px;font-weight:800;margin-bottom:12px;">⏳ En preparación (${pend.length})</h3>
+        ${pend.length? pend.map(v=>tarjeta(v,true)).join('') : '<div class="tarjeta"><p class="gris">Nada pendiente por preparar.</p></div>'}
+      </div>
+      <div>
+        <h3 style="font-size:15px;font-weight:800;margin-bottom:12px;">✅ Listos (${listos.length})</h3>
+        ${listos.length? listos.map(v=>tarjeta(v,false)).join('') : '<div class="tarjeta"><p class="gris">Sin pedidos listos.</p></div>'}
+      </div>
+    </div>`;
+}
+function marcarCocina(id,estado){
+  const arr=misDatos('ventas');
+  const v=arr.find(x=>x.id===id); if(!v) return;
+  v.estadoCocina=estado;
+  if(estado==='listo'){ v.listoEn=now(); sonidoPedido(); }
+  guardarMisDatos('ventas',arr);
+  toast(estado==='listo'?'Pedido listo':'Vuelve a preparación','info');
+  render();
+}
+
+
 function vistaNegocio(){
   const neg=STATE.negocio, u=STATE.user;
   const menu=armarMenu();
   const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
     inventario:'Inventario', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
-    contable:'Registro Contable', gastosneg:'Gastos del Negocio'};
+    contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
+    citas:'Agendar', cocina:'Cocina'};
   const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, caja,
-    clientes, domicilios, reportes, contable, gastosneg};
-  const fn=pantallas[STATE.pageNeg]||inicio;
+    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina};
+  const fn=pantallas[STATE.pageNeg];
   let contenido='';
-  try{ contenido=fn(); }catch(e){ console.error('Error en pantalla',STATE.pageNeg,e);
-    contenido='<div class="tarjeta"><p class="rojo">Ocurrió un error al mostrar esta pantalla.</p><button class="btn" onclick="irA(\'inicio\')">Volver al inicio</button></div>'; }
+  if(!fn){
+    contenido='<div class="tarjeta centro-msg"><div class="msg-ico">🚧</div>'
+      +'<div class="t-tit centrado">Pantalla no disponible</div>'
+      +'<p class="gris">Esta sección todavía no está habilitada para tu negocio.</p>'
+      +'<button class="btn btn-gold" onclick="irA(\'inicio\')">Volver al inicio</button></div>';
+  } else {
+    try{ contenido=fn(); }catch(e){ console.error('Error en pantalla',STATE.pageNeg,e);
+      contenido='<div class="tarjeta"><p class="rojo">Ocurrió un error al mostrar esta pantalla.</p><button class="btn" onclick="irA(\'inicio\')">Volver al inicio</button></div>'; }
+  }
   const ini=(u.nombre||'?').charAt(0).toUpperCase();
 
   return `
