@@ -553,8 +553,8 @@ function panelSuperAdmin(){
   return `
   <div class="topbar">
     <h1><span class="sa-emblema">${window.WALLACE_LOGO||''}</span>
-      <span class="sa-marca">Wallace<span>System</span></span>
-      <span class="pill pill-gold">Super-Admin</span></h1>
+      <span class="sa-marca">Panel de <span>Super-Admin</span></span>
+      <span class="pill pill-oro">Dueño del sistema</span></h1>
     <div class="tb-der">
       <span class="fb-dot off" id="fb-status" title="Conexión"></span>
       <span class="reloj" id="reloj"></span>
@@ -563,15 +563,15 @@ function panelSuperAdmin(){
   </div>
   <div class="contenido">
     <div class="stats">
-      <div class="stat"><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${negocios.length}</div></div>
-      <div class="stat verde"><div class="stat-lbl">Ingreso mensual</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">planes activos</div></div>
-      <div class="stat azul"><div class="stat-lbl">Usuarios</div><div class="stat-val">${usuarios}</div><div class="stat-sub">en el sistema</div></div>
-      <div class="stat rojo"><div class="stat-lbl">Suspendidos</div><div class="stat-val">${negocios.length-activos}</div><div class="stat-sub">sin servicio</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${negocios.length} en total</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso mensual</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
+      <div class="stat naranja"><div class="stat-ico naranja">${ic('history')}</div><div class="stat-lbl">Suspendidos</div><div class="stat-val">${negocios.length-activos}</div><div class="stat-sub">no pagan / pausados</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('users')}</div><div class="stat-lbl">Usuarios totales</div><div class="stat-val">${usuarios}</div><div class="stat-sub">empleados en el sistema</div></div>
     </div>
     <div class="stats">
-      <div class="stat gold"><div class="stat-lbl">Ventas hoy</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">todo el sistema</div></div>
-      <div class="stat verde"><div class="stat-lbl">Ventas históricas</div><div class="stat-val">${fmtMoney(ventasTot)}</div><div class="stat-sub">acumulado</div></div>
-      <div class="stat"><div class="stat-lbl">Negocio top</div><div class="stat-val" style="font-size:17px;">${escapeHtml(top.nombre)}</div><div class="stat-sub">${fmtMoney(top.total)}</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Ventas hoy (todos)</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">movimiento del sistema</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas históricas</div><div class="stat-val">${fmtMoney(ventasTot)}</div><div class="stat-sub">todos los negocios</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('building')}</div><div class="stat-lbl">Negocio con más ventas</div><div class="stat-val" style="font-size:19px;">${escapeHtml(top.nombre)}</div><div class="stat-sub">${fmtMoney(top.total)}</div></div>
     </div>
     <div class="tarjeta">
       <div class="t-cab">
@@ -593,10 +593,10 @@ function panelSuperAdmin(){
           <td>${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
           <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
           <td class="acciones">
-            <button class="btn btn-sm btn-gold" onclick="entrarComoNegocio('${n.id}')">Entrar</button>
+            <button class="btn btn-sm btn-verde" onclick="entrarComoNegocio('${n.id}')">Entrar</button>
             <button class="btn btn-sm" onclick="configNegocio('${n.id}')">Configurar</button>
             <button class="btn btn-sm" onclick="usuariosNegocio('${n.id}')">Usuarios</button>
-            <button class="btn btn-sm ${n.activo?'btn-rojo':'btn-verde'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Suspender':'Activar'}</button>
+            <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Suspender':'Activar'}</button>
           </td>
         </tr>`).join('') : '<tr><td colspan="8" class="gris">No hay negocios. Crea el primero.</td></tr>'}
         </tbody>
