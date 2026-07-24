@@ -130,72 +130,110 @@ function mostrarConexion(estado){
   else { el.className='fb-dot off'; el.title='Sin conexión'; }
 }
 
-// Carga inicial: trae TODO lo que haya en la nube antes de arrancar
+// ============================================================
+//  SINCRONIZACIÓN SEPARADA POR NEGOCIO
+//  · Al arrancar solo se bajan las tablas globales (negocios,
+//    usuarios, superadmins) para poder iniciar sesión.
+//  · Al entrar a un negocio se sincronizan SOLO sus tablas.
+//  · El súper admin sincroniza todo (es el dueño del sistema).
+//  Así el equipo de un cliente nunca descarga los datos de otro.
+// ============================================================
+let _listenersNeg = [];     // refs de las tablas del negocio activo
+let _sincTodoOn = false;    // true si el súper admin escucha todo
+let _globalesOn = false;    // true si ya escuchamos las tablas globales
+
+function _guardarLocal(k,v){
+  CACHE[k]=(v===undefined?null:v);
+  try{ localStorage.setItem('ws_'+k, JSON.stringify(CACHE[k])); }catch(e){}
+}
+function _aceptarDeNube(k,v){
+  const nuevo=JSON.stringify(v===undefined?null:v);
+  const viejo=JSON.stringify(CACHE[k]===undefined?null:CACHE[k]);
+  if(nuevo!==viejo){ _guardarLocal(k,v); refrescarSiSePuede(); }
+}
+function _escucharClave(k){
+  const ref=FB.ref('data/'+k);
+  ref.on('value', s=>_aceptarDeNube(k, s.val()));
+  return ref;
+}
+
+// Carga inicial: SOLO las tablas globales, para poder entrar
 function cargarDeLaNube(callback){
   if(!FB_READY || !FB){ NUBE_LISTA=true; callback(); return; }
-  FB.ref('data').once('value').then(snap=>{
-    const data=snap.val()||{};
-    Object.keys(data).forEach(k=>{
-      CACHE[k]=data[k];
-      try{ localStorage.setItem('ws_'+k, JSON.stringify(data[k])); }catch(e){}
-    });
+  Promise.all(TABLAS_GLOBALES.map(k=>FB.ref('data/'+k).once('value').then(s=>_guardarLocal(k,s.val()))))
+  .then(()=>{
     NUBE_LISTA=true;
     mostrarConexion('ok');
     callback();
-    escucharCambios();
+    escucharGlobales();
   }).catch(err=>{
     console.error('No se pudo leer de la nube:',err && err.message);
     mostrarConexion('error');
     NUBE_LISTA=true;   // permitimos arrancar en local
     callback();
-    escucharCambios();
+    escucharGlobales();
   });
 }
+function escucharGlobales(){
+  if(!FB_READY || !FB || _globalesOn) return;
+  _globalesOn=true;
+  TABLAS_GLOBALES.forEach(k=>_escucharClave(k));
+}
 
-// Escucha en tiempo real. Un listener por cada clave que exista.
-// La nube MANDA: lo que llega se acepta (así funciona Portal Imperial).
-function escucharCambios(){
-  if(!FB_READY || !FB) return;
-  // Escuchar TODO el nodo 'data'. Antes se usaba child_added/child_changed,
-  // que no avisaba de cambios dentro de claves que el dispositivo ya conocía:
-  // por eso un empleado no veía los pedidos de otro.
+// Al entrar a un negocio: bajar y escuchar SOLO sus tablas
+function sincronizarNegocio(negId){
+  if(!FB_READY || !FB || !negId) return;
+  detenerSincNegocio();
+  TABLAS.forEach(t=>{
+    const k=claveDe(negId,t);
+    _listenersNeg.push(_escucharClave(k));
+  });
+}
+function detenerSincNegocio(){
+  _listenersNeg.forEach(ref=>{ try{ ref.off('value'); }catch(e){} });
+  _listenersNeg=[];
+}
+
+// Súper admin: escucha TODO el nodo data (dashboard de todos los negocios)
+function sincronizarTodo(){
+  if(!FB_READY || !FB || _sincTodoOn) return;
+  _sincTodoOn=true;
   FB.ref('data').on('value', snap=>{
     const data=snap.val()||{};
     let cambio=false;
     Object.keys(data).forEach(k=>{
       const nuevo=JSON.stringify(data[k]);
       const viejo=JSON.stringify(CACHE[k]);
-      if(nuevo!==viejo){
-        CACHE[k]=data[k];
-        try{ localStorage.setItem('ws_'+k, JSON.stringify(data[k])); }catch(e){}
-        cambio=true;
-      }
+      if(nuevo!==viejo){ _guardarLocal(k,data[k]); cambio=true; }
     });
-    // Detectar claves que se borraron en la nube (ej: caja cerrada)
     Object.keys(CACHE).forEach(k=>{
       if(k.indexOf('data_')===0 && data[k]===undefined && CACHE[k]!==null){
-        CACHE[k]=null;
-        try{ localStorage.setItem('ws_'+k, JSON.stringify(null)); }catch(e){}
-        cambio=true;
+        _guardarLocal(k,null); cambio=true;
       }
     });
     if(cambio) refrescarSiSePuede();
   });
 }
-function aplicarCambio(clave, valor){
-  if(!clave) return;
-  const esCaja = clave.indexOf('_caja_actual')>-1;
-  // La caja puede quedar vacía legítimamente (cierre): ese cambio SÍ se propaga
-  if(esCaja){
-    CACHE[clave] = (valor===undefined? null : valor);
-    try{ localStorage.setItem('ws_'+clave, JSON.stringify(CACHE[clave])); }catch(e){}
-    refrescarSiSePuede();
-    return;
-  }
-  if(valor===null || valor===undefined) return;
-  CACHE[clave]=valor;
-  try{ localStorage.setItem('ws_'+clave, JSON.stringify(valor)); }catch(e){}
-  refrescarSiSePuede();
+function detenerSincTodo(){
+  if(!_sincTodoOn) return;
+  try{ FB.ref('data').off('value'); }catch(e){}
+  _sincTodoOn=false;
+}
+
+// Privacidad: al entrar un empleado normal, se borran del equipo
+// los datos que hayan quedado de OTROS negocios
+function limpiarDatosAjenos(negId){
+  try{
+    const borrar=[];
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k && k.indexOf('ws_data_')===0 && k.indexOf('ws_data_'+negId+'_')!==0) borrar.push(k);
+    }
+    borrar.forEach(k=>{
+      localStorage.removeItem(k);
+      delete CACHE[k.substring(3)];
+    });
+  }catch(e){}
 }
 // Refresca la pantalla salvo que el usuario esté ocupado
 function refrescarSiSePuede(){
@@ -206,19 +244,24 @@ function refrescarSiSePuede(){
   try{ render(); }catch(e){}
 }
 
-// Botón "Actualizar": fuerza traer todo de la nube
+// Botón "Actualizar": fuerza traer de la nube lo que corresponda
 function refrescarDeLaNube(){
   if(!FB_READY || !FB){ toast('Sin conexión a la nube','error'); return; }
   toast('Actualizando...','info');
-  FB.ref('data').once('value').then(snap=>{
-    const data=snap.val()||{};
-    Object.keys(data).forEach(k=>{
-      CACHE[k]=data[k];
-      try{ localStorage.setItem('ws_'+k, JSON.stringify(data[k])); }catch(e){}
+  let promesa;
+  if(STATE.esSuperAdmin){
+    promesa=FB.ref('data').once('value').then(snap=>{
+      const data=snap.val()||{};
+      Object.keys(data).forEach(k=>_guardarLocal(k,data[k]));
     });
-    toast('Actualizado','success');
-    render();
-  }).catch(()=>toast('No se pudo actualizar','error'));
+  } else if(STATE.negocio){
+    const claves=TABLAS.map(t=>claveDe(STATE.negocio.id,t)).concat(TABLAS_GLOBALES);
+    promesa=Promise.all(claves.map(k=>FB.ref('data/'+k).once('value').then(s=>_guardarLocal(k,s.val()))));
+  } else {
+    promesa=Promise.all(TABLAS_GLOBALES.map(k=>FB.ref('data/'+k).once('value').then(s=>_guardarLocal(k,s.val()))));
+  }
+  promesa.then(()=>{ toast('Actualizado','success'); render(); })
+    .catch(()=>toast('No se pudo actualizar','error'));
 }
 
 // ============================================================
@@ -494,6 +537,15 @@ function hacerLogin(){
   const p=(document.getElementById('l-pass')||{}).value||'';
   const r=login(u.trim(), p);
   if(!r.ok){ toast(r.msg,'error'); sonidoError(); return; }
+  // Arrancar la sincronización que corresponde
+  if(r.tipo==='super'){
+    detenerSincNegocio();
+    sincronizarTodo();
+  } else {
+    detenerSincTodo();
+    limpiarDatosAjenos(STATE.negocio.id);   // privacidad: fuera datos de otros negocios
+    sincronizarNegocio(STATE.negocio.id);
+  }
   render();
 }
 function logout(){
@@ -501,6 +553,8 @@ function logout(){
   STATE.modoSupervision=false; STATE.sucursal=null;
   STATE.page=''; STATE.pageNeg='inicio';
   ESCRIBIENDO=false;
+  detenerSincNegocio();
+  detenerSincTodo();
   render();
 }
 function cambiarSucursal(sucId){
@@ -558,6 +612,7 @@ function panelSuperAdmin(){
     <div class="tb-der">
       <span class="fb-dot off" id="fb-status" title="Conexión"></span>
       <span class="reloj" id="reloj"></span>
+      <button class="btn btn-sm" onclick="descargarRespaldo()">💾 Respaldo</button>
       <button class="btn btn-ghost btn-sm" onclick="logout()">${ic('logout')} Salir</button>
     </div>
   </div>
@@ -603,6 +658,38 @@ function panelSuperAdmin(){
       </table></div>
     </div>
   </div>`;
+}
+
+// ---------- Respaldo (copia de seguridad de TODO el sistema) ----------
+function descargarRespaldo(){
+  toast('Preparando respaldo...','info');
+  const bajar=(data)=>{
+    try{
+      const respaldo={
+        sistema:'Wallace System',
+        fecha:new Date().toISOString(),
+        datos:data
+      };
+      const blob=new Blob([JSON.stringify(respaldo,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      const f=new Date();
+      const nombre='respaldo-wallace-'+f.getFullYear()+'-'
+        +String(f.getMonth()+1).padStart(2,'0')+'-'
+        +String(f.getDate()).padStart(2,'0')+'.json';
+      a.href=url; a.download=nombre;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },500);
+      toast('Respaldo descargado: '+nombre,'success');
+    }catch(e){ console.error(e); toast('No se pudo generar el respaldo','error'); }
+  };
+  if(FB_READY && FB){
+    FB.ref('data').once('value')
+      .then(snap=>bajar(snap.val()||{}))
+      .catch(()=>{ toast('Sin nube: respaldo con datos locales','info'); bajar(JSON.parse(JSON.stringify(CACHE))); });
+  } else {
+    bajar(JSON.parse(JSON.stringify(CACHE)));
+  }
 }
 
 // ---------- Crear negocio ----------
