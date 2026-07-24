@@ -2165,6 +2165,12 @@ function pantallaConfig(negId){
         <label class="chk"><input type="checkbox" id="c-alerta" ${neg.alertaStock!==false?'checked':''}> Avisar stock bajo</label>
       </div>
       <div class="form2" style="margin-top:14px;">
+        <div class="m-row"><label>Apariencia del sistema</label><select id="c-tema" class="campo">
+          <option value="oscuro" ${neg.tema!=='claro'?'selected':''}>Oscuro neón</option>
+          <option value="claro" ${neg.tema==='claro'?'selected':''}>Claro / fondo blanco</option>
+        </select></div>
+        <div class="m-row"><label>Color principal</label>
+          <input id="c-color" type="color" class="campo" style="height:46px;padding:5px;cursor:pointer;" value="${/^#[0-9a-fA-F]{6}$/.test(neg.colorTema||'')?neg.colorTema:'#01c38e'}"></div>
         <div class="m-row"><label>Tamaño de factura</label><select id="c-fact" class="campo">
           <option value="pos" ${neg.tipoFactura==='pos'?'selected':''}>Tirilla POS (80mm)</option>
           <option value="media" ${neg.tipoFactura==='media'?'selected':''}>Media hoja</option>
@@ -2207,6 +2213,9 @@ function guardarConfig(negId){
   n.usaRecetas=chk('c-recetas'); n.usaCitas=chk('c-citas');
   n.sonidos=chk('c-sonidos'); n.alertaStock=chk('c-alerta');
   n.tipoFactura=val('c-fact'); n.pctDatafono=parseFloat(val('c-pct'))||0;
+  n.tema=val('c-tema')||'oscuro';
+  const _colc=val('c-color');
+  n.colorTema=/^#[0-9a-fA-F]{6}$/.test(_colc)?_colc:'#01c38e';
   n.tiposEntrega=Array.prototype.slice.call(document.querySelectorAll('.c-ent:checked')).map(c=>c.value);
   if(!n.tiposEntrega.length) n.tiposEntrega=['llevar'];
   n.funciones=Array.prototype.slice.call(document.querySelectorAll('.c-fun:checked')).map(c=>c.value);
@@ -2404,6 +2413,14 @@ function minegocio(){
     <div class="tarjeta">
       <span class="t-tit">${ic('cog')} Preferencias</span>
       <div class="form2">
+        <div class="m-row"><label>Apariencia del sistema</label>
+          <select id="n-tema" class="campo">
+            <option value="oscuro" ${neg.tema!=='claro'?'selected':''}>Oscuro neón</option>
+            <option value="claro" ${neg.tema==='claro'?'selected':''}>Claro / fondo blanco</option>
+          </select></div>
+        <div class="m-row"><label>Color principal</label>
+          <input id="n-color" type="color" class="campo" style="height:46px;padding:5px;cursor:pointer;" value="${/^#[0-9a-fA-F]{6}$/.test(neg.colorTema||'')?neg.colorTema:'#01c38e'}">
+          <p class="nota">Pinta botones, menú y detalles en todos los equipos. El verde original es #01c38e.</p></div>
         <div class="m-row"><label>Tamaño de la factura</label>
           <select id="n-fact" class="campo">
             <option value="pos" ${neg.tipoFactura==='pos'?'selected':''}>Tirilla POS (80mm)</option>
@@ -2469,6 +2486,9 @@ function guardarMiNegocio(){
   n.ciudad=val('n-ciudad').trim();
   n.eslogan=val('n-eslogan').trim();
   n.tipoFactura=val('n-fact');
+  n.tema=val('n-tema')||'oscuro';
+  const _col=val('n-color');
+  n.colorTema=/^#[0-9a-fA-F]{6}$/.test(_col)?_col:'#01c38e';
   n.pctDatafono=parseFloat(val('n-pct'))||0;
   n.sonidos=chk('n-sonidos');
   n.alertaStock=chk('n-alerta');
@@ -2691,9 +2711,48 @@ function vistaLogin(){
     </div>
   </div>`;
 }
+// ============================================================
+//  TEMA POR NEGOCIO (oscuro neón / claro + color a gusto)
+// ============================================================
+function _hexRgb(hex){
+  hex=(hex||'').replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  const n=parseInt(hex,16);
+  if(isNaN(n)||hex.length!==6) return [1,195,142];
+  return [(n>>16)&255,(n>>8)&255,n&255];
+}
+function _rgbHex(r,g,b){
+  const h=x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0');
+  return '#'+h(r)+h(g)+h(b);
+}
+function _aclarar(hex,p){ const [r,g,b]=_hexRgb(hex); return _rgbHex(r+(255-r)*p, g+(255-g)*p, b+(255-b)*p); }
+function _oscurecer(hex,p){ const [r,g,b]=_hexRgb(hex); return _rgbHex(r*(1-p), g*(1-p), b*(1-p)); }
+function aplicarTema(neg){
+  const b=document.body; if(!b) return;
+  const claro = !!(neg && neg.tema==='claro');
+  b.classList.toggle('tema-claro', claro);
+  const base=(neg && neg.colorTema && /^#[0-9a-fA-F]{6}$/.test(neg.colorTema)) ? neg.colorTema : '#01c38e';
+  const [r,g,bl]=_hexRgb(base);
+  const lum=(0.299*r+0.587*g+0.114*bl)/255;
+  b.style.setProperty('--verde', base);
+  b.style.setProperty('--verde-c', _aclarar(base,.25));
+  b.style.setProperty('--verde-o', _oscurecer(base,.20));
+  b.style.setProperty('--acc-rgb', r+','+g+','+bl);
+  b.style.setProperty('--acc-txt', lum>0.55 ? '#141821' : '#ffffff');
+}
+function quitarTema(){
+  const b=document.body; if(!b) return;
+  b.classList.remove('tema-claro');
+  ['--verde','--verde-c','--verde-o','--acc-rgb','--acc-txt'].forEach(v=>b.style.removeProperty(v));
+}
+
 function render(){
   const app=document.getElementById('app');
   if(!app) return;
+  // El tema del negocio se aplica dentro del negocio; el login y el
+  // panel del súper admin conservan el estilo de la marca Wallace.
+  if(STATE.user && STATE.negocio && !STATE.esSuperAdmin){ aplicarTema(STATE.negocio); }
+  else { quitarTema(); }
   if(!STATE.user){ app.innerHTML=vistaLogin(); return; }
   if(STATE.esSuperAdmin){
     if(STATE.page.indexOf('config:')===0){ app.innerHTML=pantallaConfig(STATE.page.split(':')[1]); return; }
