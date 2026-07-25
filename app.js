@@ -1115,9 +1115,12 @@ function comandaHTML(v){
 }
 function imprimirComanda(v){
   if(!v){ return; }
-  const w=window.open('','_blank','width=380,height=600');
+  const w=window.open('','_blank','width=400,height=680');
   if(!w){ toast('Permite las ventanas emergentes para imprimir','error'); return; }
-  w.document.write('<html><head><title>Comanda '+(v.factura||'')+'</title><meta charset="utf-8"><style>@page{size:80mm auto;margin:0;} body{margin:0;padding:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head><body>'+comandaHTML(v)+'</body></html>');
+  const estilo='@page{size:80mm auto;margin:0;}'
+    +'body{margin:0;padding:4mm 3mm;width:80mm;box-sizing:border-box;'
+    +'-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff;}';
+  w.document.write('<html><head><title>Comanda '+(v.factura||'')+'</title><meta charset="utf-8"><style>'+estilo+'</style></head><body>'+comandaHTML(v)+'</body></html>');
   w.document.close();
   setTimeout(()=>w.print(),400);
 }
