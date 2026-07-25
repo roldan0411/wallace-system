@@ -19,7 +19,7 @@ let NUBE_LISTA = false;    // true cuando ya sabemos qué hay en la nube
 
 // Tablas que viven en la nube. Cada negocio tiene las suyas: data_<negocio>_<tabla>
 const TABLAS = ['usuarios','productos','insumos','ventas','clientes','cierres',
-  'caja_actual','movimientos','domiciliarios','citas','gastos_negocio','config','factura_seq'];
+  'caja_actual','movimientos','domiciliarios','citas','gastos_negocio','config','factura_seq','auditoria'];
 // Tablas globales (no dependen del negocio)
 const TABLAS_GLOBALES = ['negocios','superadmins','usuarios'];
 
@@ -238,7 +238,10 @@ function limpiarDatosAjenos(negId){
 // Refresca la pantalla salvo que el usuario esté ocupado
 function refrescarSiSePuede(){
   if(!STATE.user) return;
-  if(ESCRIBIENDO) return;                      // armando un pedido
+  // Solo se evita refrescar mientras se ARMA una venta (pantalla 'ventas'),
+  // para no borrar el carrito. En Dashboard, Pedidos, Cocina, etc. SIEMPRE
+  // se refresca en vivo aunque ESCRIBIENDO haya quedado en true.
+  if(ESCRIBIENDO && STATE.pageNeg==='ventas') return;
   const modal=document.getElementById('modal-container');
   if(modal && modal.classList.contains('activo')) return;   // modal abierto
   try{ render(); }catch(e){}
@@ -351,6 +354,38 @@ const PANTALLAS_POR_ROL = {
   vendedor:['inicio','ventas','pedidos','catalogo','clientes'],
   dueno:   ['inicio','caja','pedidos','reportes','contable','gastosneg','catalogo']
 };
+
+// ---- Permisos de ACCIÓN (además del rol y de las pantallas) ----
+// El jefe habilita/deshabilita cada acción por empleado. Si un empleado no
+// tiene una lista de permisos propia, se usan los del rol por defecto.
+const ACCIONES = [
+  ['cobrar','Cobrar pedidos'],
+  ['editar','Editar pedidos'],
+  ['anular','Anular facturas'],
+  ['cambiarpago','Cambiar forma de pago'],
+  ['imprimir','Reimprimir factura'],
+  ['comanda','Reimprimir comanda de cocina'],
+  ['eliminar','Eliminar definitivamente'],
+  ['abrircaja','Abrir / cerrar caja'],
+  ['descuento','Aplicar descuentos']
+];
+const PERMISOS_POR_ROL = {
+  admin:   ['cobrar','editar','anular','cambiarpago','imprimir','comanda','eliminar','abrircaja','descuento'],
+  cajero:  ['cobrar','editar','cambiarpago','imprimir','comanda','abrircaja'],
+  mesero:  ['editar','comanda'],
+  cocina:  ['comanda'],
+  vendedor:['cobrar','editar','imprimir','descuento'],
+  dueno:   ['anular','eliminar','imprimir']
+};
+// ¿El usuario actual puede hacer esta acción?
+function tienePermiso(accion){
+  const u=STATE.user;
+  if(!u) return false;
+  if(u.esSupervisor || u.rol==='admin' || u.rol==='superadmin') return true;
+  // Lista propia del empleado (la que asignó el jefe) o la del rol por defecto
+  const lista = (u.permisos && u.permisos.length) ? u.permisos : (PERMISOS_POR_ROL[u.rol]||[]);
+  return lista.indexOf(accion)>-1;
+}
 
 // ============================================================
 //  SUCURSALES
@@ -907,6 +942,7 @@ function cambiarQty(idx,delta){
 function vaciarCarrito(){ _carrito=[]; _desc=0; _descMot=''; render(); }
 function limpiarPedido(){
   _carrito=[]; _vObs=''; _desc=0; _descMot=''; _vMesa='';
+  STATE.editandoVentaId=null;
   _vCli={nombre:'',tel:'',dir:'',barrio:'',ciudad:'',depto:'',transportadora:'',domiciliario:'',valorDom:0};
 }
 function abrirDescuento(){
@@ -948,41 +984,72 @@ function armarVenta(estado){
   const total=Math.max(0,bruto-_desc);
   const valorDom=(_vTipo==='domicilio'||_vTipo==='envio')?(parseFloat(_vCli.valorDom)||0):0;
   const ventas=misDatos('ventas');
-  let mayor=0;
-  ventas.forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; });
+  // Si estamos EDITANDO un pedido, reusamos su id, factura, fecha y caja
+  const orig = STATE.editandoVentaId ? ventas.find(x=>x.id===STATE.editandoVentaId) : null;
+  let factura, id, fecha, cajaId;
+  if(orig){
+    id=orig.id; factura=orig.factura; fecha=orig.fecha; cajaId=orig.cajaId;
+  } else {
+    let mayor=0;
+    ventas.forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; });
+    id=uid(); factura='F-'+String(mayor+1).padStart(5,'0'); fecha=now(); cajaId=cajaAbierta?cajaAbierta.id:null;
+  }
   return {
-    id:uid(), factura:'F-'+String(mayor+1).padStart(5,'0'),
+    id:id, factura:factura,
     items:_carrito.slice(),
     subtotal:total, subtotalBruto:bruto, descuento:_desc, descMotivo:_descMot,
-    valorDom, propina:0, recargo:0, total:total+valorDom,
-    metodo:'', estado:estado,
-    tipo:_vTipo, cajaId:cajaAbierta?cajaAbierta.id:null,
-    vendedor:STATE.user.nombre, fecha:now(),
+    valorDom, propina:orig?(orig.propina||0):0, recargo:orig?(orig.recargo||0):0, total:total+valorDom,
+    metodo:orig?orig.metodo:'', estado: orig?orig.estado:estado,
+    tipo:_vTipo, cajaId:cajaId,
+    vendedor:orig?orig.vendedor:STATE.user.nombre, fecha:fecha,
+    editadoPor: orig?STATE.user.nombre:undefined,
     obs:_vObs, mesa:_vTipo==='mesa'?_vMesa:'',
     cliNombre:_vCli.nombre||'', cliTel:_vCli.tel||'', cliDir:_vCli.dir||'', cliBarrio:_vCli.barrio||'',
     cliCiudad:_vCli.ciudad||'', cliDepto:_vCli.depto||'',
     transportadora:_vCli.transportadora||'', domiciliario:_vCli.domiciliario||'',
-    estadoCocina: (neg.usaCocina?'pendiente':'')
+    estadoCocina: orig?(orig.estadoCocina||''):(neg.usaCocina?'pendiente':'')
   };
+}
+
+// Valida datos mínimos del cliente según el tipo de pedido.
+// Teléfono obligatorio en Llevar y Domicilio (para poder guardar el cliente).
+function validarClientePedido(){
+  const tel=(_vCli.tel||'').trim();
+  if((_vTipo==='llevar'||_vTipo==='domicilio'||_vTipo==='envio')){
+    if(!tel){ toast('El teléfono es obligatorio para '+(_vTipo==='llevar'?'pedidos para llevar':'domicilios')+' (así se guarda el cliente)','error'); return false; }
+    if(tel.replace(/\D/g,'').length<7){ toast('Escribe un teléfono válido','error'); return false; }
+  }
+  if(_vTipo==='domicilio' && !(_vCli.dir||'').trim()){ toast('La dirección es obligatoria para domicilios','error'); return false; }
+  return true;
 }
 
 // ---------- FLUJO A: confirmar ahora, cobrar después ----------
 function confirmarPedido(){
   if(_guardando) return;
   if(!_carrito.length){ toast('Agrega productos primero','error'); return; }
+  if(!validarClientePedido()) return;
   _guardando=true;
   bloquearBoton('btn-confirmar','Guardando…');
   try{
+    const editando=!!STATE.editandoVentaId;
     const venta=armarVenta('abierta');
     const ventas=misDatos('ventas');
-    ventas.unshift(venta);
+    if(editando){
+      const i=ventas.findIndex(x=>x.id===venta.id);
+      if(i>-1) ventas[i]=venta; else ventas.unshift(venta);
+      logAudit('Editó pedido', venta.factura||'');
+    } else {
+      ventas.unshift(venta);
+    }
     guardarMisDatos('ventas',ventas);
     sonidoPedido();
+    // Restaurante: al confirmar un pedido NUEVO, sale la comanda para cocina
+    if(!editando && STATE.negocio.usaCocina){ try{ imprimirComanda(venta); }catch(e){} }
     limpiarPedido();
     ESCRIBIENDO=false;
     STATE.pageNeg='pedidos';
     render();
-    toast('Pedido '+venta.factura+' confirmado','success');
+    toast('Pedido '+venta.factura+(editando?' actualizado':' confirmado'),'success');
   }catch(e){
     console.error(e); toast('Error al guardar','error');
   }finally{ _guardando=false; }
@@ -992,6 +1059,7 @@ function confirmarPedido(){
 function cobrarDirecto(){
   if(_guardando) return;
   if(!_carrito.length){ toast('Agrega productos primero','error'); return; }
+  if(!validarClientePedido()) return;
   const venta=armarVenta('abierta');
   abrirCobro(venta, true);
 }
@@ -1001,6 +1069,56 @@ function bloquearBoton(id,texto){
     const b=document.getElementById(id);
     if(b){ b.disabled=true; b.style.opacity='.55'; b.style.pointerEvents='none'; b.textContent=texto; }
   }catch(e){}
+}
+
+// ============================================================
+//  AUDITORÍA (registro de acciones importantes)
+// ============================================================
+function logAudit(accion, detalle){
+  try{
+    if(!STATE.negocio || !STATE.user) return;
+    const arr=misDatos('auditoria');
+    arr.unshift({id:uid(), usuario:STATE.user.nombre||'—', rol:STATE.user.rol||'',
+      accion:accion||'', detalle:detalle||'', fecha:now()});
+    // Mantener acotado (últimos 800 registros)
+    guardarMisDatos('auditoria', arr.slice(0,800));
+  }catch(e){}
+}
+
+// ============================================================
+//  COMANDA DE COCINA (tiquete de preparación)
+// ============================================================
+function comandaHTML(v){
+  const neg=STATE.negocio||{};
+  const tipo=(v.tipo==='mesa')?('MESA '+(v.mesa||'').toUpperCase())
+    :(v.tipo==='domicilio')?'DOMICILIO':(v.tipo==='envio')?'ENVÍO':'PARA LLEVAR';
+  const items=(v.items||[]).map(i=>`<div style="font-size:22px;font-weight:bold;margin-bottom:8px;line-height:1.2;">
+      ${i.qty} x ${escapeHtml(i.nombre)}${i.obs?`<div style="font-size:14px;font-weight:normal;padding-left:12px;">&gt;&gt; ${escapeHtml(i.obs)}</div>`:''}</div>`).join('');
+  return `<div style="font-family:'Courier New',monospace;color:#000;text-align:center;">
+    <div style="font-size:16px;letter-spacing:2px;font-weight:bold;">*** COCINA ***</div>
+    <div style="font-size:30px;font-weight:bold;margin:6px 0;">${escapeHtml(v.factura||'')}</div>
+    <div style="border:3px solid #000;border-radius:6px;padding:8px;margin:8px 0;font-size:26px;font-weight:bold;">${tipo}</div>
+    ${v.tipo==='domicilio'?`<div style="font-size:15px;font-weight:bold;margin-bottom:6px;line-height:1.5;">
+       ${v.cliNombre?escapeHtml(v.cliNombre)+'<br>':''}${v.cliDir?escapeHtml(v.cliDir):''}${v.cliBarrio?' · '+escapeHtml(v.cliBarrio):''}<br>
+       Tel: ${escapeHtml(v.cliTel||'')}${v.domiciliario?'<br>Mensajero: '+escapeHtml(v.domiciliario):''}</div>`:''}
+    ${v.tipo==='llevar'&&v.cliNombre?`<div style="font-size:17px;margin-bottom:6px;"><strong>${escapeHtml(v.cliNombre)}</strong></div>`:''}
+    <div style="font-size:13px;font-weight:bold;">${fmtDate(v.fecha)}</div>
+  </div>
+  <hr style="border:1px dashed #000;margin:8px 0;">
+  <div style="font-family:'Courier New',monospace;color:#000;">
+    <div style="text-align:center;font-size:13px;font-weight:bold;margin-bottom:6px;">— PEDIDO —</div>
+    ${items}
+    ${v.obs?`<hr style="border:1px dashed #000;margin:8px 0;"><div style="font-size:15px;font-weight:bold;">NOTA: ${escapeHtml(v.obs)}</div>`:''}
+  </div>
+  <div style="text-align:center;font-size:16px;margin-top:10px;">--- &#9986; ---</div>`;
+}
+function imprimirComanda(v){
+  if(!v){ return; }
+  const w=window.open('','_blank','width=380,height=600');
+  if(!w){ toast('Permite las ventanas emergentes para imprimir','error'); return; }
+  w.document.write('<html><head><title>Comanda '+(v.factura||'')+'</title><meta charset="utf-8"><style>@page{size:80mm auto;margin:0;} body{margin:0;padding:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style></head><body>'+comandaHTML(v)+'</body></html>');
+  w.document.close();
+  setTimeout(()=>w.print(),400);
 }
 
 // ============================================================
@@ -1041,19 +1159,24 @@ function pedidos(){
   const totPend=pend.reduce((a,v)=>a+(v.total||0),0);
   const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
 
+  const usaCocina=neg.usaCocina;
   const fila=(v)=>`<tr class="${v.estado==='abierta'?'fila-pend':''}">
-    <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong></td>
+    <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong>${v.editadoPor?`<br><span class="gris chico">editado: ${escapeHtml(v.editadoPor)}</span>`:''}</td>
     <td>${etiq[v.tipo]||'—'}${v.mesa?' '+escapeHtml(v.mesa):''}</td>
     <td>${escapeHtml(v.cliNombre||'—')}${v.cliTel?`<br><span class="gris chico">${escapeHtml(v.cliTel)}</span>`:''}</td>
     <td class="negrita">${fmtMoney(v.total)}</td>
     <td>${v.estado==='anulada'?'<span class="pill pill-rojo">Anulada</span>'
         :v.estado==='abierta'?'<span class="pill pill-gold">Por cobrar</span>'
-        :'<span class="pill pill-verde">Pagada</span>'}</td>
+        :'<span class="pill pill-verde">Pagada</span>'}${v.estado==='pagada'&&v.metodo?`<br><span class="gris chico">${escapeHtml(v.metodo)}</span>`:''}</td>
     <td class="gris chico">${fmtDate(v.fecha)}${v.vendedor?`<br>por ${escapeHtml(v.vendedor)}`:''}</td>
     <td class="acciones">
-      ${v.estado==='abierta'?`<button class="btn btn-sm btn-gold" onclick="cobrarPedido('${v.id}')">💵 Cobrar</button>`:''}
-      ${v.estado==='pagada'?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="Imprimir">🖨️</button>`:''}
-      ${v.estado!=='anulada'?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular">✕</button>`:''}
+      ${v.estado==='abierta'&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-gold" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
+      ${v.estado!=='anulada'&&tienePermiso('editar')?`<button class="btn btn-sm" onclick="editarPedido('${v.id}')" title="Editar pedido">✏️</button>`:''}
+      ${usaCocina&&v.estado!=='anulada'&&tienePermiso('comanda')?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
+      ${v.estado==='pagada'&&tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="Reimprimir factura">🖨️</button>`:''}
+      ${v.estado==='pagada'&&tienePermiso('cambiarpago')?`<button class="btn btn-sm" onclick="cambiarFormaPago('${v.id}')" title="Cambiar forma de pago">💳</button>`:''}
+      ${v.estado!=='anulada'&&tienePermiso('anular')?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular factura">✕</button>`:''}
+      ${tienePermiso('eliminar')?`<button class="btn btn-sm btn-rojo" onclick="eliminarDefinitivo('${v.id}')" title="Eliminar por completo">🗑️</button>`:''}
     </td>
   </tr>`;
 
@@ -1202,9 +1325,75 @@ function anularPedido(id){
     venta.anuladaPor=STATE.user.nombre;
     guardarMisDatos('ventas',ventas);
     if(estabaPagada) devolverStock(venta);
+    logAudit('Anuló pedido', (venta.factura||'')+' · '+fmtMoney(venta.total));
     toast('Pedido anulado','info');
     render();
   },'Sí, anular');
+}
+
+// ---------- EDITAR PEDIDO ----------
+function editarPedido(id){
+  if(!tienePermiso('editar')){ toast('No tienes permiso para editar pedidos','error'); return; }
+  const v=misDatos('ventas').find(x=>x.id===id);
+  if(!v){ toast('Pedido no encontrado','error'); return; }
+  if(v.estado==='anulada'){ toast('No se puede editar un pedido anulado','error'); return; }
+  // Cargar el pedido en el carrito para modificarlo
+  _carrito=(v.items||[]).map(i=>({prodId:i.prodId, nombre:i.nombre, precio:i.precio, qty:i.qty, obs:i.obs||''}));
+  _vTipo=v.tipo||'llevar'; _vMesa=v.mesa||''; _vObs=v.obs||'';
+  _desc=v.descuento||0; _descMot=v.descMot||'';
+  _vCli={nombre:v.cliNombre||'', tel:v.cliTel||'', dir:v.cliDir||'', barrio:v.cliBarrio||'',
+    ciudad:v.cliCiudad||'', depto:v.cliDepto||'', transportadora:v.transportadora||'',
+    domiciliario:v.domiciliario||'', valorDom:v.valorDom||0};
+  STATE.editandoVentaId=id;   // marca que estamos editando, no creando
+  ESCRIBIENDO=true;
+  STATE.pageNeg='ventas';
+  toast('Editando '+(v.factura||'pedido')+'. Guarda para aplicar cambios.','info');
+  render();
+}
+
+// ---------- CAMBIAR FORMA DE PAGO (después de cobrado) ----------
+function cambiarFormaPago(id){
+  if(!tienePermiso('cambiarpago')){ toast('No tienes permiso para cambiar la forma de pago','error'); return; }
+  const v=misDatos('ventas').find(x=>x.id===id);
+  if(!v){ toast('Pedido no encontrado','error'); return; }
+  if(v.estado!=='pagada'){ toast('Solo aplica a pedidos ya cobrados','error'); return; }
+  abrirModal({titulo:'Cambiar forma de pago', textoBoton:'Guardar', campos:[
+    {id:'metodo', label:'Forma de pago', tipo:'select', valor:v.metodo||'efectivo',
+      opciones:[{valor:'efectivo',label:'Efectivo'},{valor:'tarjeta',label:'Tarjeta / Datáfono'},{valor:'banco',label:'Banco / Transferencia'}]}
+  ], extraHTML:`<p class="nota">Total cobrado: <strong>${fmtMoney(v.total)}</strong>. Esto corrige cómo se contabiliza en caja y reportes.</p>`,
+  onGuardar:(d)=>{
+    const ventas=misDatos('ventas');
+    const x=ventas.find(y=>y.id===id);
+    if(!x){ cerrarModal(); return; }
+    const antes=x.metodo;
+    x.metodo=d.metodo;
+    x.pagoEditadoPor=STATE.user.nombre; x.pagoEditadoEn=now();
+    guardarMisDatos('ventas',ventas);
+    logAudit('Cambió forma de pago', (x.factura||'')+': '+antes+' → '+d.metodo);
+    cerrarModal(); toast('Forma de pago actualizada','success'); render();
+  }});
+}
+
+// ---------- REIMPRIMIR COMANDA (cocina) ----------
+function reimprimirComanda(id){
+  if(!tienePermiso('comanda')){ toast('No tienes permiso para imprimir comandas','error'); return; }
+  const v=misDatos('ventas').find(x=>x.id===id);
+  if(!v){ toast('Pedido no encontrado','error'); return; }
+  imprimirComanda(v);
+}
+
+// ---------- ELIMINAR DEFINITIVAMENTE ----------
+function eliminarDefinitivo(id){
+  if(!tienePermiso('eliminar')){ toast('No tienes permiso para eliminar','error'); return; }
+  const v=misDatos('ventas').find(x=>x.id===id);
+  if(!v){ toast('Pedido no encontrado','error'); return; }
+  confirmarModal('⚠️ Eliminar PERMANENTEMENTE '+(v.factura||'este pedido')+' ('+fmtMoney(v.total)+'). Se descuenta de ventas, caja y reportes. No se puede deshacer. ¿Continuar?', ()=>{
+    const estabaPagada=v.estado==='pagada';
+    if(estabaPagada) devolverStock(v);
+    eliminarMisDatos('ventas',id);
+    logAudit('Eliminó definitivamente', (v.factura||'')+' · '+fmtMoney(v.total));
+    toast('Pedido eliminado por completo','error'); render();
+  },'Sí, eliminar');
 }
 
 // ---------- INVENTARIO ----------
@@ -1308,14 +1497,17 @@ function guardarClienteAuto(venta){
 function inicio(){
   const neg=STATE.negocio;
   ESCRIBIENDO=false;
+  // Monto de venta (comida) tolerante: si no hay subtotal, usa total. Antes las
+  // ventas sin 'subtotal' sumaban 0 y el dashboard no mostraba lo cobrado.
+  const montoVenta=v=>(v.subtotal!=null?v.subtotal:(v.total||0));
   const vs=misDatos('ventas').filter(v=>v.estado==='pagada');
   const h=today();
   const hoy=ventasJornada(true);
-  const totHoy=hoy.reduce((a,v)=>a+(v.subtotal||0),0);
+  const totHoy=hoy.reduce((a,v)=>a+montoVenta(v),0);
   // Semana y mes
   const d7=new Date(); d7.setDate(d7.getDate()-7);
-  const sem=vs.filter(v=>new Date(v.fecha)>=d7).reduce((a,v)=>a+(v.subtotal||0),0);
-  const mes=vs.filter(v=>(v.fecha||'').substring(0,7)===h.substring(0,7)).reduce((a,v)=>a+(v.subtotal||0),0);
+  const sem=vs.filter(v=>new Date(v.fecha)>=d7).reduce((a,v)=>a+montoVenta(v),0);
+  const mes=vs.filter(v=>(v.fecha||'').substring(0,7)===h.substring(0,7)).reduce((a,v)=>a+montoVenta(v),0);
   const pend=ventasJornada(false).filter(v=>v.estado==='abierta');
   // Gráfico 7 días
   const dias=[];
@@ -1323,11 +1515,14 @@ function inicio(){
     const d=new Date(); d.setDate(d.getDate()-i);
     const k=d.toISOString().split('T')[0];
     dias.push({lbl:['D','L','M','X','J','V','S'][d.getDay()],
-      tot:vs.filter(v=>(v.fecha||'').startsWith(k)).reduce((a,v)=>a+(v.subtotal||0),0)});
+      tot:vs.filter(v=>(v.fecha||'').startsWith(k)).reduce((a,v)=>a+montoVenta(v),0)});
   }
   const mx=Math.max.apply(null,dias.map(d=>d.tot).concat([1]));
   const metodos={efectivo:0,banco:0,tarjeta:0};
-  hoy.forEach(v=>{ if(metodos[v.metodo]!==undefined) metodos[v.metodo]+=(v.subtotal||0); });
+  hoy.forEach(v=>{ if(metodos[v.metodo]!==undefined) metodos[v.metodo]+=montoVenta(v); });
+  // Últimas ventas (las 10 más recientes, como Portal Imperial)
+  const ultimas=misDatos('ventas').filter(v=>v.estado!=='anulada')
+    .slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0)).slice(0,10);
 
   return `
     <div class="stats">
@@ -1364,8 +1559,24 @@ function inicio(){
           <td><button class="btn btn-sm btn-gold" onclick="cobrarPedido('${v.id}')">Cobrar</button></td>
         </tr>`).join('')}</tbody>
       </table></div>
-    </div>`:''}`;
+    </div>`:''}
+    <div class="tarjeta">
+      <span class="t-tit">${ic('history')} Últimas ventas</span>
+      ${ultimas.length?`<div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente/Mesa</th><th>Método</th><th>Total</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody>${ultimas.map(v=>`<tr>
+          <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong></td>
+          <td>${escapeHtml(tipoVentaLabel(v.tipo))}</td>
+          <td>${escapeHtml(v.cliNombre||v.mesa||'—')}</td>
+          <td class="gris">${escapeHtml(v.estado==='pagada'?(v.metodo||'—'):'—')}</td>
+          <td class="negrita">${fmtMoney(v.total)}</td>
+          <td>${v.estado==='pagada'?'<span class="pill pill-verde">Pagada</span>':v.estado==='abierta'?'<span class="pill pill-gold">Abierta</span>':'<span class="pill pill-rojo">'+escapeHtml(v.estado||'')+'</span>'}</td>
+          <td class="gris chico">${fmtDate(v.fecha)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:'<p class="gris">No hay ventas aún.</p>'}
+    </div>`;
 }
+function tipoVentaLabel(t){ return {mesa:'Mesa',domicilio:'Domicilio',llevar:'Para llevar',rapida:'Directa'}[t]||'Venta'; }
 
 // ============================================================
 //  CAJA
@@ -1930,14 +2141,23 @@ function domicilios(){
   ESCRIBIENDO=false;
   const doms=misDatos('domiciliarios');
   const vs=ventasJornada(true).filter(v=>v.tipo==='domicilio');
+  // Cuadre: por domiciliario, cuánto en domicilios y cómo entró (efectivo vs banco)
+  const totalDom=vs.reduce((a,v)=>a+(v.valorDom||0),0);
+  const domBanco=vs.filter(v=>v.domPorBanco||v.metodo==='banco').reduce((a,v)=>a+(v.valorDom||0),0);
+  const domEfectivo=totalDom-domBanco;
   return `
+    <div class="stats">
+      <div class="stat gold"><div class="stat-ico gold">${ic('truck')}</div><div class="stat-lbl">Domicilios de la jornada</div><div class="stat-val">${vs.length}</div><div class="stat-sub">${fmtMoney(totalDom)} en total</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Cobrados en efectivo</div><div class="stat-val">${fmtMoney(domEfectivo)}</div><div class="stat-sub">los cobra el domiciliario</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('report')}</div><div class="stat-lbl">Entraron por banco</div><div class="stat-val">${fmtMoney(domBanco)}</div><div class="stat-sub">se le pagan al domiciliario</div></div>
+    </div>
     <div class="tarjeta">
       <div class="t-cab">
         <span class="t-tit">${ic('truck')} Domiciliarios</span>
         <button class="btn btn-gold" onclick="editarDomiciliario(null)">+ Agregar</button>
       </div>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Entregas hoy</th><th>Domicilios cobrados</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Entregas</th><th>Domicilios cobrados</th><th></th></tr></thead>
         <tbody>
         ${doms.length? doms.map(d=>{
           const suyos=vs.filter(v=>v.domiciliario===d.nombre);
@@ -1950,6 +2170,20 @@ function domicilios(){
           </tr>`;
         }).join('') : '<tr><td colspan="5" class="gris">Sin domiciliarios.</td></tr>'}
         </tbody>
+      </table></div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('report')} Cuadre de domicilios de la jornada</span>
+      <p class="nota">Detalle de cada domicilio y cómo se cobró. El domicilio en efectivo lo recibe el domiciliario directo; el que entra por banco se le paga del cajón.</p>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Pedido</th><th>Cliente</th><th>Domiciliario</th><th>Valor domicilio</th><th>Cómo entró</th></tr></thead>
+        <tbody>${vs.length? vs.map(v=>`<tr>
+          <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong></td>
+          <td>${escapeHtml(v.cliNombre||'—')}${v.cliDir?`<br><span class="gris chico">${escapeHtml(v.cliDir)}</span>`:''}</td>
+          <td>${escapeHtml(v.domiciliario||'—')}</td>
+          <td class="negrita">${fmtMoney(v.valorDom||0)}</td>
+          <td>${(v.domPorBanco||v.metodo==='banco')?'<span class="pill pill-azul">Banco</span>':'<span class="pill pill-verde">Efectivo</span>'}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="gris">Sin domicilios en esta jornada.</td></tr>'}</tbody>
       </table></div>
     </div>`;
 }
@@ -2613,28 +2847,48 @@ function editarUsuario(negId,userId){
   const neg=(DB.get('negocios')||[]).find(n=>n.id===negId);
   const u=userId?(DB.get('usuarios')||[]).find(x=>x.id===userId):null;
   const sugerido = u?u.usuario:(neg.nombre||'').toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,8);
+  // Pantallas y permisos actuales del usuario (o los del rol por defecto)
+  const pantActuales = (u&&u.pantallas&&u.pantallas.length)?u.pantallas:(PANTALLAS_POR_ROL[(u?u.rol:'cajero')]||[]);
+  const permActuales = (u&&u.permisos&&u.permisos.length)?u.permisos:(PERMISOS_POR_ROL[(u?u.rol:'cajero')]||[]);
+  const TODAS_PANTALLAS=[['inicio','Dashboard'],['ventas','Nueva Venta'],['pedidos','Pedidos'],
+    ['catalogo','Menú / Inventario'],['caja','Caja'],['cocina','Cocina'],['citas','Agendar'],
+    ['domicilios','Domicilios'],['clientes','Clientes'],['reportes','Reportes'],
+    ['contable','Contable'],['gastosneg','Gastos'],['usuarios','Usuarios'],['config','Configuración']];
+  const sucHTML=(neg.sucursales&&neg.sucursales.length>1)?`<div class="m-row">
+      <label>Sucursales a las que puede entrar (vacío = todas)</label>
+      <div class="checks">${neg.sucursales.map(s=>`<label class="chk"><input type="checkbox" class="u-suc" value="${escapeHtml(s.id)}" ${(u&&u.sucursales&&u.sucursales.indexOf(s.id)>-1)?'checked':''}> 📍 ${escapeHtml(s.nombre)}</label>`).join('')}</div>
+    </div>`:'';
+  const permisosHTML=`
+    <div class="cobro-caja" style="margin-top:14px;">
+      <strong>Ventanas que puede ver <span class="gris chico">(según lo que necesite)</span></strong>
+      <div class="checks" style="margin-top:8px;">${TODAS_PANTALLAS.map(p=>`<label class="chk"><input type="checkbox" class="u-pant" value="${p[0]}" ${pantActuales.indexOf(p[0])>-1?'checked':''}> ${escapeHtml(p[1])}</label>`).join('')}</div>
+    </div>
+    <div class="cobro-caja" style="margin-top:12px;">
+      <strong>Acciones que puede hacer</strong>
+      <div class="checks" style="margin-top:8px;">${ACCIONES.map(a=>`<label class="chk"><input type="checkbox" class="u-perm" value="${a[0]}" ${permActuales.indexOf(a[0])>-1?'checked':''}> ${escapeHtml(a[1])}</label>`).join('')}</div>
+      <p class="nota" style="margin-top:8px;">Si el rol es <strong>Administrador</strong>, puede hacer todo sin importar estas casillas.</p>
+    </div>`;
   abrirModal({titulo:(u?'Editar':'Crear')+' usuario', textoBoton:'Guardar', campos:[
     {id:'nombre', label:'Nombre completo', valor:u?u.nombre:'', requerido:true},
     {id:'usuario', label:'Usuario para entrar', valor:sugerido, requerido:true},
     {id:'pass', label:'Contraseña', valor:u?u.pass:'123456', requerido:true},
-    {id:'rol', label:'Rol', tipo:'select', valor:u?u.rol:'cajero',
+    {id:'rol', label:'Rol (define permisos por defecto)', tipo:'select', valor:u?u.rol:'cajero',
       opciones:ROLES.map(r=>({valor:r[0],label:r[1]}))}
-  ], extraHTML:(neg.sucursales&&neg.sucursales.length>1)?`<div class="m-row">
-      <label>Sucursales a las que puede entrar (vacío = todas)</label>
-      <div class="checks">${neg.sucursales.map(s=>`<label class="chk"><input type="checkbox" class="u-suc" value="${escapeHtml(s.id)}" ${(u&&u.sucursales&&u.sucursales.indexOf(s.id)>-1)?'checked':''}> 📍 ${escapeHtml(s.nombre)}</label>`).join('')}</div>
-    </div>`:'',
+  ], extraHTML: sucHTML + permisosHTML,
   onGuardar:(d)=>{
     const existe=(DB.get('usuarios')||[]).find(x=>x.usuario===d.usuario && (!u||x.id!==u.id))
               || (DB.get('superadmins')||[]).some(s=>s.usuario===d.usuario);
     if(existe){ toast('Ese usuario ya existe','error'); return; }
     const sucs=Array.prototype.slice.call(document.querySelectorAll('.u-suc:checked')).map(c=>c.value);
+    const pants=Array.prototype.slice.call(document.querySelectorAll('.u-pant:checked')).map(c=>c.value);
+    const perms=Array.prototype.slice.call(document.querySelectorAll('.u-perm:checked')).map(c=>c.value);
     const usuarios=DB.get('usuarios')||[];
     if(u){
       const x=usuarios.find(y=>y.id===userId);
-      if(x) Object.assign(x,{nombre:d.nombre,usuario:d.usuario,pass:d.pass,rol:d.rol,sucursales:sucs});
+      if(x) Object.assign(x,{nombre:d.nombre,usuario:d.usuario,pass:d.pass,rol:d.rol,sucursales:sucs,pantallas:pants,permisos:perms});
     } else {
       usuarios.push({id:uid(), negocioId:negId, nombre:d.nombre, usuario:d.usuario,
-        pass:d.pass, rol:d.rol, sucursales:sucs, activo:true, creado:now()});
+        pass:d.pass, rol:d.rol, sucursales:sucs, pantallas:pants, permisos:perms, activo:true, creado:now()});
     }
     DB.set('usuarios',usuarios);
     cerrarModal(); toast('Usuario guardado','success'); render();
@@ -2676,14 +2930,17 @@ function armarMenu(){
   const ops=[];
   if(F.indexOf('caja')>-1) ops.push({id:'caja', ic:'cash', txt:'Caja'});
   if(F.indexOf('cocina')>-1 && neg.usaCocina) ops.push({id:'cocina', ic:'chef', txt:'Cocina'});
+  if(F.indexOf('cocina')>-1 && neg.usaCocina) ops.push({id:'tiempos', ic:'history', txt:'Tiempos de Entrega'});
   if(F.indexOf('citas')>-1 && neg.usaCitas) ops.push({id:'citas', ic:'calendar', txt:'Agendar'});
   if(F.indexOf('domicilios')>-1) ops.push({id:'domicilios', ic:'truck', txt:'Domicilios'});
   if(F.indexOf('clientes')>-1) ops.push({id:'clientes', ic:'users', txt:'Clientes'});
   if(ops.length){ items.push({g:'OPERACIONES'}); ops.forEach(o=>items.push(o)); }
   const ges=[];
   if(F.indexOf('reportes')>-1) ges.push({id:'reportes', ic:'report', txt:'Reportes'});
+  if(F.indexOf('pedidos')>-1) ges.push({id:'historial', ic:'history', txt:'Historial'});
   if(F.indexOf('contable')>-1) ges.push({id:'contable', ic:'report', txt:'Registro Contable'});
   if(F.indexOf('gastosneg')>-1) ges.push({id:'gastosneg', ic:'cash', txt:'Gastos del Negocio'});
+  if(u.rol==='admin'||u.esSupervisor) ges.push({id:'auditoria', ic:'history', txt:'Auditoría'});
   if(ges.length){ items.push({g:'GESTIÓN'}); ges.forEach(g=>items.push(g)); }
   if(u.rol==='admin' || u.esSupervisor){
     items.push({g:'CONFIGURACIÓN'});
@@ -2695,7 +2952,10 @@ function armarMenu(){
   const salida=[]; let grupo=null;
   items.forEach(it=>{
     if(it.g){ grupo=it; return; }
-    const id = (it.id==='inventario'||it.id==='insumos')?'catalogo':it.id;
+    let id = (it.id==='inventario'||it.id==='insumos')?'catalogo':it.id;
+    if(it.id==='tiempos') id='cocina';
+    if(it.id==='historial') id='pedidos';
+    if(it.id==='auditoria') id='__solo_admin__';   // ya se filtró arriba por rol
     if(permitidas.indexOf(it.id)>-1 || permitidas.indexOf(id)>-1){
       if(grupo){ salida.push(grupo); grupo=null; }
       salida.push(it);
@@ -2910,52 +3170,213 @@ function eliminarCita(id){
 // ============================================================
 //  COCINA (pantalla para preparar los pedidos)
 // ============================================================
+let _ultimoCountCocina=-1;
 function cocina(){
   ESCRIBIENDO=false;
-  const vs=ventasJornada(false).filter(v=>v.estado!=='anulada' && v.estadoCocina);
-  const pend=vs.filter(v=>v.estadoCocina==='pendiente');
+  const vs=ventasJornada(false).filter(v=>v.estado!=='anulada' && v.estadoCocina
+      && v.estadoCocina!=='entregado')
+    .sort((a,b)=>new Date(a.fecha||0)-new Date(b.fecha||0));
+  // Sonar cuando entra un pedido nuevo (más pendientes que antes)
+  const nPend=vs.filter(v=>v.estadoCocina==='pendiente'||v.estadoCocina==='preparando').length;
+  if(_ultimoCountCocina>=0 && nPend>_ultimoCountCocina){ try{ sonidoPedido(); }catch(e){} }
+  _ultimoCountCocina=nPend;
+  const enPrep=vs.filter(v=>v.estadoCocina==='pendiente'||v.estadoCocina==='preparando');
   const listos=vs.filter(v=>v.estadoCocina==='listo');
   const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
-  const tarjeta=(v,esPend)=>`<div class="tarjeta ${esPend?'tarjeta-pend':''}" style="margin-bottom:14px;">
-    <div class="t-cab">
-      <span class="t-tit">${escapeHtml(v.factura||'')} · ${etiq[v.tipo]||''}${v.mesa?' '+escapeHtml(v.mesa):''}</span>
-      <span class="gris chico">${fmtDate(v.fecha)}</span>
-    </div>
-    ${v.cliNombre?`<p class="gris">Cliente: <strong>${escapeHtml(v.cliNombre)}</strong></p>`:''}
-    <div style="margin:12px 0;">
-      ${(v.items||[]).map(i=>`<div class="linea"><span><strong>${i.qty} ×</strong> ${escapeHtml(i.nombre)}</span></div>`).join('')}
-    </div>
-    ${v.obs?`<div class="alerta" style="padding:10px 13px;border-radius:9px;margin-bottom:10px;"><strong>Nota:</strong> ${escapeHtml(v.obs)}</div>`:''}
-    ${esPend
-      ? `<button class="btn btn-gold btn-block" onclick="marcarCocina('${v.id}','listo')">✓ Marcar como listo</button>`
-      : `<button class="btn btn-ghost btn-block btn-sm" onclick="marcarCocina('${v.id}','pendiente')">← Volver a pendiente</button>`}
-  </div>`;
-  return `
-    <div class="stats">
-      <div class="stat gold"><div class="stat-lbl">En preparación</div><div class="stat-val">${pend.length}</div><div class="stat-sub">pedidos pendientes</div></div>
-      <div class="stat verde"><div class="stat-lbl">Listos</div><div class="stat-val">${listos.length}</div><div class="stat-sub">para entregar</div></div>
-    </div>
-    <div class="grid2">
-      <div>
-        <h3 style="font-size:15px;font-weight:800;margin-bottom:12px;">⏳ En preparación (${pend.length})</h3>
-        ${pend.length? pend.map(v=>tarjeta(v,true)).join('') : '<div class="tarjeta"><p class="gris">Nada pendiente por preparar.</p></div>'}
+  const usaComanda=(STATE.negocio||{}).usaCocina;
+
+  const tarjeta=(v)=>{
+    const min=Math.floor((Date.now()-new Date(v.fecha||Date.now()).getTime())/60000);
+    const cls=min<15?'krono-verde':min<25?'krono-amar':'krono-rojo';
+    const prep=v.estadoCocina==='preparando';
+    return `<div class="kds-card ${cls}">
+      <div class="kds-top">
+        <span class="kds-ref">${escapeHtml(v.factura||'')}</span>
+        <span class="kds-krono">${min} min</span>
       </div>
-      <div>
-        <h3 style="font-size:15px;font-weight:800;margin-bottom:12px;">✅ Listos (${listos.length})</h3>
-        ${listos.length? listos.map(v=>tarjeta(v,false)).join('') : '<div class="tarjeta"><p class="gris">Sin pedidos listos.</p></div>'}
+      <div class="kds-tipo">${etiq[v.tipo]||''}${v.mesa?' · '+escapeHtml(v.mesa):''}${v.cliNombre?' · '+escapeHtml(v.cliNombre):''}</div>
+      ${v.tipo==='domicilio'?`<div class="gris chico" style="margin-bottom:6px;">📍 ${escapeHtml(v.cliDir||'')}${v.cliTel?' · ☎ '+escapeHtml(v.cliTel):''}</div>`:''}
+      <div class="kds-items">
+        ${(v.items||[]).map(i=>`<div class="kds-item"><strong>${i.qty}×</strong> ${escapeHtml(i.nombre)}${i.obs?`<div class="rojo chico">⚠ ${escapeHtml(i.obs)}</div>`:''}</div>`).join('')}
+      </div>
+      ${v.obs?`<div class="kds-nota">${escapeHtml(v.obs)}</div>`:''}
+      <div class="kds-acc">
+        ${!prep&&v.estadoCocina!=='listo'?`<button class="btn btn-sm btn-verde" onclick="marcarCocina('${v.id}','preparando')">👨‍🍳 Preparando</button>`:''}
+        ${v.estadoCocina!=='listo'?`<button class="btn btn-sm btn-gold" onclick="marcarCocina('${v.id}','listo')">✓ Listo</button>`:'<span class="pill pill-verde">✓ Listo</span>'}
+        ${usaComanda?`<button class="btn btn-sm btn-ghost" onclick="imprimirComanda(misDatos('ventas').find(x=>x.id==='${v.id}'))" title="Comanda">🖨️</button>`:''}
       </div>
     </div>`;
+  };
+  return `
+    <div class="stats">
+      <div class="stat gold"><div class="stat-ico gold">${ic('chef')}</div><div class="stat-lbl">En preparación</div><div class="stat-val">${enPrep.length}</div><div class="stat-sub">pedidos en cocina</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('report')}</div><div class="stat-lbl">Listos</div><div class="stat-val">${listos.length}</div><div class="stat-sub">para entregar</div></div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('chef')} En preparación · <span class="gris chico">ordenado por tiempo de espera</span></span>
+      ${enPrep.length?`<div class="kds-grid">${enPrep.map(tarjeta).join('')}</div>`:'<p class="gris">No hay pedidos en cocina.</p>'}
+    </div>
+    ${listos.length?`<div class="tarjeta">
+      <span class="t-tit">✅ Listos para entregar</span>
+      <div class="kds-grid">${listos.map(v=>`<div class="kds-card krono-verde">
+        <div class="kds-top"><span class="kds-ref">${escapeHtml(v.factura||'')}</span><span class="pill pill-verde">Listo</span></div>
+        <div class="kds-tipo">${etiq[v.tipo]||''}${v.mesa?' · '+escapeHtml(v.mesa):''}${v.cliNombre?' · '+escapeHtml(v.cliNombre):''}</div>
+        <div class="kds-acc">
+          <button class="btn btn-sm btn-verde" onclick="marcarCocina('${v.id}','entregado')">✓ Entregado</button>
+          <button class="btn btn-sm btn-ghost" onclick="marcarCocina('${v.id}','pendiente')">← Volver</button>
+        </div>
+      </div>`).join('')}</div>
+    </div>`:''}`;
 }
 function marcarCocina(id,estado){
   const arr=misDatos('ventas');
   const v=arr.find(x=>x.id===id); if(!v) return;
   v.estadoCocina=estado;
-  if(estado==='listo'){ v.listoEn=now(); sonidoPedido(); }
+  if(estado==='preparando' && !v.horaPreparando) v.horaPreparando=now();
+  if(estado==='listo'){ if(!v.horaListo) v.horaListo=now(); sonidoPedido(); }
+  if(estado==='entregado') v.horaEntregado=now();
   guardarMisDatos('ventas',arr);
-  toast(estado==='listo'?'Pedido listo':'Vuelve a preparación','info');
+  toast(estado==='listo'?'Pedido listo para entregar':estado==='entregado'?'Pedido entregado':estado==='preparando'?'En preparación':'Vuelve a pendiente',
+    estado==='listo'?'success':'info');
   render();
 }
 
+
+// ============================================================
+//  TIEMPOS DE ENTREGA (como Portal Imperial)
+// ============================================================
+function tiempos(){
+  ESCRIBIENDO=false;
+  const vs=misDatos('ventas');
+  const conTiempo=vs.filter(v=>v.fecha && v.horaListo)
+    .map(v=>({tipo:v.tipo, min:(new Date(v.horaListo)-new Date(v.fecha))/60000, fecha:v.horaListo, ref:v.factura||'—'}))
+    .filter(x=>x.min>0 && x.min<240)
+    .sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+  const prom=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;
+  const ultimos5=conTiempo.slice(0,5).map(x=>x.min);
+  const ultimos3=conTiempo.slice(0,3).map(x=>x.min);
+  const promVivo=ultimos5.length>=3?prom(ultimos5):(ultimos3.length?prom(ultimos3):0);
+  const promGeneral=prom(conTiempo.map(x=>x.min));
+  const porTipo={};
+  ['mesa','llevar','domicilio'].forEach(t=>{ const a=conTiempo.filter(x=>x.tipo===t).slice(0,5).map(x=>x.min); porTipo[t]={prom:prom(a),n:a.length}; });
+  const base=promVivo||promGeneral;
+  const estimado=base?Math.ceil(base/5)*5:0;
+  const estimadoMax=estimado?estimado+10:0;
+  const enCocina=vs.filter(v=>v.estado!=='anulada'&&v.estadoCocina&&v.estadoCocina!=='listo'&&v.estadoCocina!=='entregado').length;
+  const fmtMin=m=>m>0?(m>=60?Math.floor(m/60)+'h '+Math.round(m%60)+'min':Math.round(m)+' min'):'—';
+  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio'};
+  return `
+    <div class="tarjeta" style="text-align:center;">
+      <span class="t-tit centrado">${ic('history')} Tiempo estimado para el cliente</span>
+      ${estimado?`<div class="stat-grande">${estimado} – ${estimadoMax} min</div>
+        <p class="gris">Basado en los últimos ${Math.min(5,conTiempo.length)} pedidos preparados. Dile este tiempo al cliente.</p>
+        ${enCocina>=4?`<p class="rojo chico" style="margin-top:6px;">⚠ Hay ${enCocina} pedidos en cocina ahora. El tiempo puede ser mayor.</p>`:''}`
+        :`<p class="gris" style="margin-top:10px;">Aún no hay suficientes datos. Se necesitan al menos 3 pedidos marcados como "listo". Llevan ${conTiempo.length}.</p>`}
+    </div>
+    <div class="stats">
+      <div class="stat gold"><div class="stat-lbl">Promedio en vivo</div><div class="stat-val">${fmtMin(promVivo)}</div><div class="stat-sub">últimos ${Math.min(5,conTiempo.length)} pedidos</div></div>
+      <div class="stat verde"><div class="stat-lbl">Promedio histórico</div><div class="stat-val">${fmtMin(promGeneral)}</div><div class="stat-sub">${conTiempo.length} medidos</div></div>
+      <div class="stat azul"><div class="stat-lbl">En cocina ahora</div><div class="stat-val">${enCocina}</div><div class="stat-sub">preparándose</div></div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('report')} Tiempo promedio por tipo</span>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Tipo</th><th>Promedio</th><th>Medidos</th></tr></thead>
+        <tbody>
+          <tr><td>Mesa</td><td class="oro negrita">${fmtMin(porTipo.mesa.prom)}</td><td>${porTipo.mesa.n}</td></tr>
+          <tr><td>Para llevar</td><td class="oro negrita">${fmtMin(porTipo.llevar.prom)}</td><td>${porTipo.llevar.n}</td></tr>
+          <tr><td>Domicilio</td><td class="oro negrita">${fmtMin(porTipo.domicilio.prom)}</td><td>${porTipo.domicilio.n}</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    ${conTiempo.length?`<div class="tarjeta">
+      <span class="t-tit">${ic('history')} Últimos pedidos preparados</span>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Pedido</th><th>Tipo</th><th>Tiempo</th></tr></thead>
+        <tbody>${conTiempo.slice(0,10).map(x=>`<tr><td><strong class="oro">${escapeHtml(x.ref)}</strong></td><td>${etiq[x.tipo]||'—'}</td><td class="negrita ${x.min>25?'rojo':x.min>15?'oro':'verde'}">${fmtMin(x.min)}</td></tr>`).join('')}</tbody>
+      </table></div>
+    </div>`:''}`;
+}
+
+// ============================================================
+//  HISTORIAL (todas las ventas, con filtros)
+// ============================================================
+let _hBusca='', _hFiltro='todas';
+function historial(){
+  ESCRIBIENDO=false;
+  let vs=misDatos('ventas').slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
+  if(_hFiltro==='pagadas') vs=vs.filter(v=>v.estado==='pagada');
+  else if(_hFiltro==='anuladas') vs=vs.filter(v=>v.estado==='anulada');
+  else if(_hFiltro==='abiertas') vs=vs.filter(v=>v.estado==='abierta');
+  if(_hBusca){ const q=_hBusca.toLowerCase();
+    vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.cliTel||'').includes(q)); }
+  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
+  const totalPag=vs.filter(v=>v.estado==='pagada').reduce((a,v)=>a+(v.total||0),0);
+  return `
+    <div class="tarjeta">
+      <div class="t-cab">
+        <span class="t-tit">${ic('history')} Historial de ventas</span>
+        <div class="t-acc">
+          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_hBusca)}" oninput="_hBusca=this.value;render()">
+        </div>
+      </div>
+      <div class="cats">
+        ${[['todas','Todas'],['pagadas','Pagadas'],['abiertas','Por cobrar'],['anuladas','Anuladas']].map(f=>`<button class="cat ${_hFiltro===f[0]?'on':''}" onclick="_hFiltro='${f[0]}';render()">${f[1]}</button>`).join('')}
+      </div>
+      <p class="nota">${vs.length} venta(s) · Total pagado en el filtro: <strong class="oro">${fmtMoney(totalPag)}</strong></p>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Factura</th><th>Tipo</th><th>Cliente</th><th>Método</th><th>Total</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
+        <tbody>${vs.length? vs.slice(0,200).map(v=>`<tr>
+          <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong></td>
+          <td>${etiq[v.tipo]||'—'}</td>
+          <td>${escapeHtml(v.cliNombre||v.mesa||'—')}</td>
+          <td class="gris">${escapeHtml(v.estado==='pagada'?(v.metodo||'—'):'—')}</td>
+          <td class="negrita">${fmtMoney(v.total)}</td>
+          <td>${v.estado==='pagada'?'<span class="pill pill-verde">Pagada</span>':v.estado==='anulada'?'<span class="pill pill-rojo">Anulada</span>':'<span class="pill pill-gold">Por cobrar</span>'}</td>
+          <td class="gris chico">${fmtDate(v.fecha)}</td>
+          <td>${tienePermiso('imprimir')&&v.estado==='pagada'?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="Reimprimir">🖨️</button>`:''}</td>
+        </tr>`).join('') : '<tr><td colspan="8" class="gris">Sin ventas.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// ============================================================
+//  AUDITORÍA (solo admin/supervisor)
+// ============================================================
+let _aFiltro='';
+function auditoria(){
+  ESCRIBIENDO=false;
+  const u=STATE.user;
+  if(!(u.rol==='admin'||u.esSupervisor)){
+    return `<div class="tarjeta"><p class="gris">🔒 Solo el administrador puede ver la auditoría.</p></div>`;
+  }
+  const logs=misDatos('auditoria');
+  const usuarios=Array.from(new Set(logs.map(l=>l.usuario))).sort();
+  const filtrados=_aFiltro?logs.filter(l=>l.usuario===_aFiltro):logs;
+  return `
+    <div class="tarjeta">
+      <div class="t-cab">
+        <span class="t-tit">${ic('history')} Registro de auditoría</span>
+        <div class="t-acc">
+          <select class="busca" onchange="_aFiltro=this.value;render()">
+            <option value="">Todos los usuarios</option>
+            ${usuarios.map(us=>`<option value="${escapeHtml(us)}" ${us===_aFiltro?'selected':''}>${escapeHtml(us)}</option>`).join('')}
+          </select>
+          <span class="pill pill-gold">${filtrados.length} registros</span>
+        </div>
+      </div>
+      <p class="nota">Queda registro de quién anula, edita, cambia pagos o elimina pedidos.</p>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Usuario</th><th>Acción</th><th>Detalle</th><th>Fecha</th></tr></thead>
+        <tbody>${filtrados.length? filtrados.slice(0,300).map(l=>`<tr>
+          <td><strong>${escapeHtml(l.usuario)}</strong>${l.rol?`<br><span class="gris chico">${escapeHtml(l.rol)}</span>`:''}</td>
+          <td>${escapeHtml(l.accion)}</td>
+          <td class="gris chico">${escapeHtml(l.detalle||'—')}</td>
+          <td class="gris chico">${fmtDate(l.fecha)}</td>
+        </tr>`).join('') : '<tr><td colspan="4" class="gris">Sin registros aún.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
 
 function vistaNegocio(){
   const neg=STATE.negocio, u=STATE.user;
@@ -2964,9 +3385,11 @@ function vistaNegocio(){
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
+    tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría',
     citas:'Agendar', cocina:'Cocina'};
   const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
-    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina};
+    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina,
+    tiempos, historial, auditoria};
   const fn=pantallas[STATE.pageNeg];
   let contenido='';
   if(!fn){
@@ -3058,12 +3481,16 @@ function aplicarTema(neg){
   const b=document.body; if(!b) return;
   const claro = !!(neg && neg.tema==='claro');
   b.classList.toggle('tema-claro', claro);
-  const base=(neg && neg.colorTema && /^#[0-9a-fA-F]{6}$/.test(neg.colorTema)) ? neg.colorTema : '#01c38e';
-  const [r,g,bl]=_hexRgb(base);
-  const lum=(0.299*r+0.587*g+0.114*bl)/255;
+  let base=(neg && neg.colorTema && /^#[0-9a-fA-F]{6}$/.test(neg.colorTema)) ? neg.colorTema : '#01c38e';
+  let [r,g,bl]=_hexRgb(base);
+  let lum=(0.299*r+0.587*g+0.114*bl)/255;
+  // Si el color elegido es casi blanco, las letras de acento desaparecen sobre
+  // fondos claros. Lo oscurecemos hasta un nivel legible antes de usarlo.
+  if(lum>0.82){ base=_oscurecer(base,.35); [r,g,bl]=_hexRgb(base); lum=(0.299*r+0.587*g+0.114*bl)/255; }
   b.style.setProperty('--verde', base);
-  b.style.setProperty('--verde-c', _aclarar(base,.25));
-  b.style.setProperty('--verde-o', _oscurecer(base,.20));
+  // --verde-c (acento de texto): en claro va más oscuro; en oscuro, más claro.
+  b.style.setProperty('--verde-c', claro ? _oscurecer(base,.15) : _aclarar(base,.25));
+  b.style.setProperty('--verde-o', _oscurecer(base,.22));
   b.style.setProperty('--acc-rgb', r+','+g+','+bl);
   b.style.setProperty('--acc-txt', lum>0.55 ? '#141821' : '#ffffff');
 }
@@ -3125,3 +3552,9 @@ setInterval(function(){
   const r=document.getElementById('reloj');
   if(r) r.textContent=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 },1000);
+// Refrescar la cocina cada 30s para que el cronómetro avance solo
+setInterval(function(){
+  if(STATE.user && !STATE.esSuperAdmin && STATE.pageNeg==='cocina'){
+    try{ refrescarSiSePuede(); }catch(e){}
+  }
+},30000);
