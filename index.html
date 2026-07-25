@@ -217,6 +217,7 @@
     background:var(--panel2);border:1px solid var(--linea2);}
   .pill-verde{background:rgba(var(--acc-rgb),.14);color:var(--verde-c);border-color:rgba(var(--acc-rgb),.45);box-shadow:0 0 10px rgba(var(--acc-rgb),.18);}
   .pill-rojo{background:rgba(255,92,106,.12);color:var(--rojo);border-color:rgba(255,92,106,.4);box-shadow:0 0 10px rgba(255,92,106,.14);}
+  .pill-azul{background:rgba(76,201,240,.14);color:var(--azul);border-color:rgba(76,201,240,.4);}
   .pill-gold{background:rgba(245,197,24,.13);color:var(--oro-c);border-color:rgba(245,197,24,.45);box-shadow:0 0 10px rgba(245,197,24,.2);}
   .pill-oro{background:linear-gradient(135deg,rgba(245,197,24,.22),rgba(217,168,14,.16));color:var(--oro-c);
     border:1px solid rgba(245,197,24,.5);box-shadow:0 0 12px rgba(245,197,24,.25);}
@@ -300,6 +301,29 @@
   .b-fill{width:100%;background:linear-gradient(180deg,var(--verde-c),var(--verde-o));border-radius:6px 6px 0 0;
     min-height:4px;box-shadow:0 0 12px rgba(var(--acc-rgb),.35);}
   .b-lbl{font-size:10px;color:var(--gris);font-weight:600;}
+
+
+  /* Cocina (KDS) con cronómetro */
+  .kds-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:12px;}
+  .kds-card{background:linear-gradient(170deg,#242a38,#1b202b);border:1px solid var(--linea2);
+    border-top:5px solid var(--gris);border-radius:14px;padding:14px;box-shadow:var(--sombra);}
+  .kds-card.krono-verde{border-top-color:var(--verde);}
+  .kds-card.krono-amar{border-top-color:var(--naranja);}
+  .kds-card.krono-rojo{border-top-color:var(--rojo);box-shadow:0 0 18px rgba(255,92,106,.18),var(--sombra);}
+  .kds-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .kds-ref{font-family:'Montserrat',sans-serif;font-weight:800;font-size:16px;color:var(--verde-c);}
+  .kds-krono{font-family:'Montserrat',sans-serif;font-weight:800;font-size:18px;}
+  .krono-verde .kds-krono{color:var(--verde-c);}
+  .krono-amar .kds-krono{color:var(--naranja);}
+  .krono-rojo .kds-krono{color:var(--rojo);}
+  .kds-tipo{font-size:13px;color:var(--txt2);margin-bottom:8px;font-weight:600;}
+  .kds-items{margin:8px 0;}
+  .kds-item{padding:5px 0;border-bottom:1px solid var(--linea2);font-size:14px;}
+  .kds-item:last-child{border-bottom:none;}
+  .kds-nota{margin-top:8px;padding:7px 11px;background:rgba(255,159,60,.12);border-left:3px solid var(--naranja);
+    border-radius:7px;font-size:12px;color:var(--txt2);}
+  .kds-acc{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+  body.tema-claro .kds-card{background:#ffffff;}
 
   /* Logo del negocio */
   .logo-zona{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-top:14px;}
@@ -402,6 +426,11 @@
   body.tema-claro .c-marca span{color:var(--verde-o);text-shadow:none;}
   body.tema-claro .tabla th{color:var(--verde-o);}
   body.tema-claro .fb-dot.ok{background:var(--verde);}
+
+  body.tema-claro .verde,body.tema-claro .oro{color:var(--verde-o) !important;text-shadow:none;}
+  body.tema-claro .prod-pre,body.tema-claro .total,body.tema-claro .total-linea{color:var(--verde-o) !important;}
+  body.tema-claro .pill-verde{background:rgba(var(--acc-rgb),.14);color:var(--verde-o) !important;border-color:rgba(var(--acc-rgb),.4);}
+  body.tema-claro .stat-val{color:#132d46 !important;}
 
   @media(prefers-reduced-motion:reduce){
     *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
