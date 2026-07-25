@@ -923,6 +923,7 @@ function camposCliente(){
       <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
   }
   return `<input type="text" class="campo" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value">
+    <input type="tel" class="campo" placeholder="Teléfono (obligatorio)" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
     <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
 }
 
