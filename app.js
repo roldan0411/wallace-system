@@ -1214,19 +1214,25 @@ function descontarStock(venta){
   const productos=misDatos('productos');
   const insumos=neg.usaRecetas?misDatos('insumos'):[];
   let cambioP=false, cambioI=false;
+  const agotadosAhora=[];
   (venta.items||[]).forEach(item=>{
     const p=productos.find(x=>x.id===item.prodId);
     if(!p) return;
     if(neg.usaRecetas && p.receta && p.receta.length){
       p.receta.forEach(r=>{
         const ins=insumos.find(i=>i.id===r.insumoId);
-        if(ins){ ins.stock=Math.max(0,(ins.stock||0)-r.cantidad*item.qty); cambioI=true; }
+        if(ins){
+          const antes=ins.stock||0;
+          ins.stock=Math.max(0,antes-r.cantidad*item.qty); cambioI=true;
+          if(antes>0 && ins.stock<=0 && agotadosAhora.indexOf(ins.nombre)<0) agotadosAhora.push(ins.nombre);
+        }
       });
     }
     if(p.stock!=null){ p.stock=Math.max(0,p.stock-item.qty); cambioP=true; }
   });
   if(cambioI) guardarMisDatos('insumos',insumos);
   if(cambioP) guardarMisDatos('productos',productos);
+  if(agotadosAhora.length){ toast('⚠️ Se agotó: '+agotadosAhora.join(', ')+'. Revisa Insumos.','error'); }
 }
 function devolverStock(venta){
   const neg=STATE.negocio;
@@ -1513,13 +1519,55 @@ let _iCat='Todas';
 function inventario(){
   ESCRIBIENDO=false;
   const neg=STATE.negocio;
+  const esResto=!!neg.usaRecetas;
   const todos=misDatos('productos');
-  const pp=neg.palabraProducto||'Producto';
-  const pps=neg.palabraProductos||'Productos';
+  const insumos=esResto?misDatos('insumos'):[];
+  const pp=esResto?'Plato':(neg.palabraProducto||'Producto');
+  const pps=esResto?'Platos':(neg.palabraProductos||'Productos');
   let lista=todos;
   if(_iCat!=='Todas') lista=lista.filter(p=>(p.categoria||'General')===_iCat);
   if(_iBusca){ const q=_iBusca.toLowerCase(); lista=lista.filter(p=>(p.nombre||'').toLowerCase().includes(q)); }
   const cats=['Todas'].concat(Array.from(new Set(todos.map(p=>p.categoria||'General'))));
+
+  // ----- MODO RESTAURANTE: menú de platos (sin stock propio) -----
+  if(esResto){
+    const conReceta=todos.filter(p=>(p.receta||[]).length).length;
+    return `
+      <div class="stats">
+        <div class="stat gold"><div class="stat-ico gold">${ic('chef')}</div><div class="stat-lbl">Platos en el menú</div><div class="stat-val">${todos.length}</div><div class="stat-sub">${cats.length-1} categoría(s)</div></div>
+        <div class="stat verde"><div class="stat-ico verde">${ic('box')}</div><div class="stat-lbl">Con receta</div><div class="stat-val">${conReceta}</div><div class="stat-sub">descuentan insumos</div></div>
+        <div class="stat"><div class="stat-ico">${ic('cart')}</div><div class="stat-lbl">Insumos disponibles</div><div class="stat-val">${insumos.length}</div><div class="stat-sub">para armar recetas</div></div>
+      </div>
+      <div class="tarjeta">
+        <div class="t-cab">
+          <span class="t-tit">${ic('chef')} Menú de platos</span>
+          <div class="t-acc">
+            <input type="text" class="busca" placeholder="🔍 Buscar plato..." value="${escapeHtml(_iBusca)}" oninput="_iBusca=this.value;render()">
+            <button class="btn btn-gold" onclick="editarProducto(null)">+ Agregar plato</button>
+          </div>
+        </div>
+        <p class="nota">Estos platos son los que aparecen en <strong>Nueva Venta</strong>. Cada plato puede tener una receta que descuenta insumos al venderse.</p>
+        ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="cat ${_iCat===c?'on':''}" onclick="_iCat='${escapeHtml(c)}';render()">${escapeHtml(c)}${c!=='Todas'?' ('+todos.filter(p=>(p.categoria||'General')===c).length+')':''}</button>`).join('')}</div>`:''}
+        ${lista.length?`<div class="prods inv">
+          ${lista.map(p=>{
+            const nRec=(p.receta||[]).length;
+            return `<div class="prod">
+              <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('chef')}</div>
+              <div class="prod-nom">${escapeHtml(p.nombre)}</div>
+              <div class="prod-cat">${escapeHtml(p.categoria||'General')}</div>
+              <div class="prod-pre">${fmtMoney(p.precio)}</div>
+              <div class="prod-stock ${nRec?'':'poco'}">${nRec?nRec+' insumo(s)':'Sin receta'}</div>
+              <div class="prod-acc">
+                <button class="btn btn-sm btn-verde" onclick="editarProducto('${p.id}')">Receta</button>
+                <button class="btn btn-sm btn-rojo" onclick="eliminarProducto('${p.id}')">×</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`:`<p class="gris">${_iBusca||_iCat!=='Todas'?'No se encontraron platos.':'Sin platos aún. Agrega el primero con "+ Agregar plato".'}</p>`}
+      </div>`;
+  }
+
+  // ----- MODO NORMAL: inventario por producto (con stock) -----
   const conStock=todos.filter(p=>p.stock!=null);
   const agotados=conStock.filter(p=>p.stock<=0);
   const bajos=conStock.filter(p=>p.stock>0 && p.stock<=(p.stockMin||0));
@@ -1568,30 +1616,100 @@ function inventario(){
     </div>`;
 }
 
+let _recetaTmp=[];   // receta que se está armando en el modal del plato
 function editarProducto(id){
   const productos=misDatos('productos');
   const p=id?productos.find(x=>x.id===id):null;
   const neg=STATE.negocio;
+  const esResto=!!neg.usaRecetas;
   const cats=Array.from(new Set(productos.map(x=>x.categoria||'General')));
-  abrirModal({titulo:(p?'Editar':'Nuevo')+' '+(neg.palabraProducto||'producto').toLowerCase(), textoBoton:'Guardar', campos:[
+  _recetaTmp = p&&p.receta ? JSON.parse(JSON.stringify(p.receta)) : [];
+
+  const campos=[
     {id:'nombre', label:'Nombre', valor:p?p.nombre:'', requerido:true},
-    {id:'precio', label:'Precio', tipo:'number', valor:p?String(p.precio):'', requerido:true},
-    {id:'categoria', label:'Categoría', valor:p?(p.categoria||''):'', placeholder:cats.length?cats.join(', '):'Ej: Bebidas'},
-    {id:'stock', label:'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''},
-    {id:'stockmin', label:'Avisar cuando queden menos de', tipo:'number', valor:p&&p.stockMin!=null?String(p.stockMin):'5'}
-  ], onGuardar:(d)=>{
-    const arr=misDatos('productos');
-    const datos={
-      nombre:d.nombre, precio:parseFloat(d.precio)||0,
-      categoria:(d.categoria||'General').trim()||'General',
-      stock: d.stock===''?null:(parseFloat(d.stock)||0),
-      stockMin: parseFloat(d.stockmin)||0
-    };
-    if(p){ const x=arr.find(y=>y.id===id); if(x) Object.assign(x,datos); }
-    else { arr.unshift(Object.assign({id:uid(), agotado:false, creado:now(), imagen:''}, datos)); }
-    guardarMisDatos('productos',arr);
-    cerrarModal(); toast('Guardado','success'); render();
-  }});
+    {id:'precio', label:'Precio de venta', tipo:'number', valor:p?String(p.precio):'', requerido:true},
+    {id:'categoria', label:'Categoría', valor:p?(p.categoria||''):'', placeholder:cats.length?cats.join(', '):'Ej: Bebidas'}
+  ];
+  // Solo los negocios SIN recetas manejan stock por producto.
+  // En restaurante el plato no tiene stock propio: se controla por sus insumos.
+  if(!esResto){
+    campos.push({id:'stock', label:'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''});
+    campos.push({id:'stockmin', label:'Avisar cuando queden menos de', tipo:'number', valor:p&&p.stockMin!=null?String(p.stockMin):'5'});
+  }
+
+  abrirModal({
+    titulo:(p?'Editar':'Nuevo')+' '+(neg.palabraProducto||'producto').toLowerCase(),
+    textoBoton:'Guardar', campos:campos,
+    extraHTML: esResto ? recetaEditorHTML() : '',
+    onGuardar:(d)=>{
+      const arr=misDatos('productos');
+      const datos={
+        nombre:d.nombre, precio:parseFloat(d.precio)||0,
+        categoria:(d.categoria||'General').trim()||'General'
+      };
+      if(esResto){
+        datos.stock=null;                                  // el plato no lleva stock propio
+        datos.receta=_recetaTmp.filter(r=>r.insumoId && r.cantidad>0);
+      } else {
+        datos.stock = d.stock===''?null:(parseFloat(d.stock)||0);
+        datos.stockMin = parseFloat(d.stockmin)||0;
+      }
+      if(p){ const x=arr.find(y=>y.id===id); if(x) Object.assign(x,datos); }
+      else { arr.unshift(Object.assign({id:uid(), agotado:false, creado:now(), imagen:''}, datos)); }
+      guardarMisDatos('productos',arr);
+      _recetaTmp=[];
+      cerrarModal(); toast('Guardado','success'); render();
+    }});
+}
+
+// --- Editor de receta (se muestra dentro del modal del plato) ---
+function recetaEditorHTML(){
+  const insumos=misDatos('insumos');
+  if(!insumos.length){
+    return `<div class="cobro-caja" style="margin-top:14px;">
+      <strong>Receta</strong>
+      <p class="nota" style="margin-top:8px;">Aún no tienes insumos. Ve a <strong>Insumos</strong> y agrega arroz, pollo, etc. Luego podrás armar la receta de este plato. Sin receta, el plato se vende sin descontar inventario.</p>
+    </div>`;
+  }
+  return `<div class="cobro-caja" style="margin-top:14px;">
+    <strong>Receta <span class="gris chico">(opcional — qué insumos gasta este plato)</span></strong>
+    <div id="receta-lista" style="margin:10px 0;">${recetaFilasHTML()}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="rec-insumo" class="campo" style="flex:2;min-width:130px;margin:0;">
+        ${insumos.map(i=>`<option value="${i.id}">${escapeHtml(i.nombre)}${i.unidad?' ('+escapeHtml(i.unidad)+')':''}</option>`).join('')}
+      </select>
+      <input id="rec-cant" type="number" class="campo" placeholder="Cant." style="flex:1;min-width:70px;margin:0;">
+      <button type="button" class="btn btn-verde btn-sm" onclick="agregarInsumoReceta()">+ Añadir</button>
+    </div>
+  </div>`;
+}
+function recetaFilasHTML(){
+  const insumos=misDatos('insumos');
+  if(!_recetaTmp.length) return '<p class="nota">Sin insumos en la receta. Este plato se venderá sin descontar inventario.</p>';
+  return _recetaTmp.map((r,idx)=>{
+    const ins=insumos.find(i=>i.id===r.insumoId);
+    return `<div class="c-row" style="padding:6px 0;">
+      <span>${ins?escapeHtml(ins.nombre):'(insumo eliminado)'}</span>
+      <span><strong>${r.cantidad}</strong> ${ins?escapeHtml(ins.unidad||''):''}
+        <button type="button" class="mini-x" onclick="quitarInsumoReceta(${idx})">×</button></span>
+    </div>`;
+  }).join('');
+}
+function agregarInsumoReceta(){
+  const sel=document.getElementById('rec-insumo');
+  const cant=parseFloat((document.getElementById('rec-cant')||{}).value)||0;
+  if(!sel||!sel.value){ toast('Elige un insumo','error'); return; }
+  if(cant<=0){ toast('Escribe la cantidad','error'); return; }
+  const ya=_recetaTmp.find(r=>r.insumoId===sel.value);
+  if(ya){ ya.cantidad=cant; } else { _recetaTmp.push({insumoId:sel.value, cantidad:cant}); }
+  const cont=document.getElementById('receta-lista');
+  if(cont) cont.innerHTML=recetaFilasHTML();
+  const ci=document.getElementById('rec-cant'); if(ci) ci.value='';
+}
+function quitarInsumoReceta(idx){
+  _recetaTmp.splice(idx,1);
+  const cont=document.getElementById('receta-lista');
+  if(cont) cont.innerHTML=recetaFilasHTML();
 }
 function eliminarProducto(id){
   const p=misDatos('productos').find(x=>x.id===id);
@@ -1618,6 +1736,120 @@ function entradaStock(id){
       motivo:d.motivo, por:STATE.user.nombre, fecha:now()});
     guardarMisDatos('movimientos',movs);
     cerrarModal(); toast('Stock actualizado','success'); render();
+  }});
+}
+
+// ============================================================
+//  INSUMOS (inventario de compra de un restaurante)
+//  Se descuentan solos por la receta de cada plato.
+// ============================================================
+let _insBusca='';
+function pantallaInsumos(){
+  ESCRIBIENDO=false;
+  const todos=misDatos('insumos');
+  let lista=todos;
+  if(_insBusca){ const q=_insBusca.toLowerCase(); lista=lista.filter(i=>(i.nombre||'').toLowerCase().includes(q)); }
+  const agotados=todos.filter(i=>(i.stock||0)<=0);
+  const bajos=todos.filter(i=>(i.stock||0)>0 && (i.stock||0)<=(i.stockMin||0));
+  const valor=todos.reduce((a,i)=>a+((i.stock||0)*(i.costo||0)),0);
+
+  return `
+    ${todos.length?`<div class="stats">
+      <div class="stat"><div class="stat-ico">${ic('box')}</div><div class="stat-lbl">Insumos</div><div class="stat-val">${todos.length}</div><div class="stat-sub">materias primas</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('cash')}</div><div class="stat-lbl">Valor en bodega</div><div class="stat-val">${fmtMoney(valor)}</div><div class="stat-sub">a costo</div></div>
+      <div class="stat ${bajos.length?'naranja':''}"><div class="stat-ico ${bajos.length?'naranja':''}">${ic('history')}</div><div class="stat-lbl">Quedan pocos</div><div class="stat-val">${bajos.length}</div><div class="stat-sub">por agotarse</div></div>
+      <div class="stat ${agotados.length?'rojo':''}"><div class="stat-ico ${agotados.length?'rojo':''}">${ic('box')}</div><div class="stat-lbl">Agotados</div><div class="stat-val">${agotados.length}</div><div class="stat-sub">sin existencias</div></div>
+    </div>`:''}
+    ${(agotados.length||bajos.length)?`<div class="tarjeta alerta">
+      <span class="t-tit chico">⚠️ Alertas de insumos</span>
+      ${agotados.length?`<p><strong class="rojo">AGOTADOS (${agotados.length}):</strong> ${agotados.map(i=>escapeHtml(i.nombre)).join(', ')}</p>`:''}
+      ${bajos.length?`<p><strong class="oro">Quedan pocos (${bajos.length}):</strong> ${bajos.map(i=>escapeHtml(i.nombre)+' ('+(i.stock||0)+' '+escapeHtml(i.unidad||'')+')').join(', ')}</p>`:''}
+    </div>`:''}
+    <div class="tarjeta">
+      <div class="t-cab">
+        <span class="t-tit">${ic('box')} Insumos e inventario</span>
+        <div class="t-acc">
+          <input type="text" class="busca" placeholder="🔍 Buscar insumo..." value="${escapeHtml(_insBusca)}" oninput="_insBusca=this.value;render()">
+          <button class="btn btn-gold" onclick="editarInsumo(null)">+ Agregar insumo</button>
+        </div>
+      </div>
+      ${lista.length?`<div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Insumo</th><th>Existencias</th><th>Unidad</th><th>Costo unit.</th><th>Avisar bajo</th><th></th></tr></thead>
+        <tbody>${lista.map(i=>{
+          const sin=(i.stock||0)<=0, poco=(i.stock||0)>0 && (i.stock||0)<=(i.stockMin||0);
+          return `<tr>
+            <td class="negrita">${escapeHtml(i.nombre)}</td>
+            <td><span class="${sin?'rojo':poco?'oro':'verde'} negrita">${i.stock||0}</span>${sin?' <span class="pill pill-rojo">Agotado</span>':poco?' <span class="pill pill-gold">Pocos</span>':''}</td>
+            <td class="gris">${escapeHtml(i.unidad||'—')}</td>
+            <td>${fmtMoney(i.costo||0)}</td>
+            <td class="gris">${i.stockMin||0}</td>
+            <td><div class="acciones">
+              <button class="btn btn-sm btn-verde" onclick="entradaInsumo('${i.id}')">+ Entrada</button>
+              <button class="btn btn-sm" onclick="editarInsumo('${i.id}')">Editar</button>
+              <button class="btn btn-sm btn-rojo" onclick="eliminarInsumo('${i.id}')">×</button>
+            </div></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`:`<p class="gris">${_insBusca?'No se encontraron insumos.':'Aún no hay insumos. Agrega el primero (arroz, pollo, aceite…) y luego los asignas a los platos con una receta.'}</p>`}
+    </div>`;
+}
+
+function editarInsumo(id){
+  const arr=misDatos('insumos');
+  const i=id?arr.find(x=>x.id===id):null;
+  abrirModal({titulo:(i?'Editar':'Nuevo')+' insumo', textoBoton:'Guardar', campos:[
+    {id:'nombre', label:'Nombre del insumo', valor:i?i.nombre:'', requerido:true, placeholder:'Ej: Pollo, Arroz, Aceite'},
+    {id:'unidad', label:'Unidad de medida', valor:i?(i.unidad||''):'', placeholder:'g, kg, ml, litro, unidad…'},
+    {id:'stock', label:'Existencias actuales', tipo:'number', valor:i&&i.stock!=null?String(i.stock):'0'},
+    {id:'costo', label:'Costo por unidad (opcional)', tipo:'number', valor:i&&i.costo!=null?String(i.costo):''},
+    {id:'stockmin', label:'Avisar cuando queden menos de', tipo:'number', valor:i&&i.stockMin!=null?String(i.stockMin):'5'}
+  ], onGuardar:(d)=>{
+    const list=misDatos('insumos');
+    const datos={
+      nombre:d.nombre.trim(),
+      unidad:(d.unidad||'').trim(),
+      stock:parseFloat(d.stock)||0,
+      costo:d.costo===''?0:(parseFloat(d.costo)||0),
+      stockMin:parseFloat(d.stockmin)||0
+    };
+    if(i){ const x=list.find(y=>y.id===id); if(x) Object.assign(x,datos); }
+    else { list.unshift(Object.assign({id:uid(), creado:now()}, datos)); }
+    guardarMisDatos('insumos',list);
+    cerrarModal(); toast('Insumo guardado','success'); render();
+  }});
+}
+function eliminarInsumo(id){
+  const i=misDatos('insumos').find(x=>x.id===id);
+  // Avisar si algún plato lo usa en su receta
+  const platos=misDatos('productos').filter(p=>(p.receta||[]).some(r=>r.insumoId===id));
+  const aviso=platos.length?' Lo usan '+platos.length+' plato(s): quedarán sin ese insumo en la receta.':'';
+  confirmarModal('¿Eliminar el insumo "'+(i?i.nombre:'')+'"?'+aviso,()=>{
+    eliminarMisDatos('insumos',id);
+    // Limpiarlo de las recetas
+    const prods=misDatos('productos'); let cambio=false;
+    prods.forEach(p=>{ if(p.receta){ const n=p.receta.length; p.receta=p.receta.filter(r=>r.insumoId!==id); if(p.receta.length!==n) cambio=true; } });
+    if(cambio) guardarMisDatos('productos',prods);
+    toast('Insumo eliminado','info'); render();
+  },'Eliminar');
+}
+function entradaInsumo(id){
+  const arr=misDatos('insumos');
+  const i=arr.find(x=>x.id===id); if(!i) return;
+  abrirModal({titulo:'Entrada de insumo · '+i.nombre, textoBoton:'Agregar', campos:[
+    {id:'cant', label:'¿Cuánto entra? ('+(i.unidad||'unidades')+')', tipo:'number', requerido:true},
+    {id:'motivo', label:'Motivo', valor:'Compra'}
+  ], extraHTML:`<p class="nota">Existencias actuales: <strong>${i.stock||0} ${escapeHtml(i.unidad||'')}</strong></p>`,
+  onGuardar:(d)=>{
+    const cant=parseFloat(d.cant)||0;
+    if(cant<=0){ toast('Cantidad inválida','error'); return; }
+    const list=misDatos('insumos');
+    const x=list.find(y=>y.id===id);
+    if(x){ x.stock=(x.stock||0)+cant; guardarMisDatos('insumos',list); }
+    const movs=misDatos('movimientos');
+    movs.unshift({id:uid(), insumoId:id, nombre:i.nombre, tipo:'entrada-insumo', cantidad:cant,
+      motivo:d.motivo, por:STATE.user.nombre, fecha:now()});
+    guardarMisDatos('movimientos',movs);
+    cerrarModal(); toast('Entrada registrada','success'); render();
   }});
 }
 
@@ -2432,7 +2664,15 @@ function armarMenu(){
   items.push({id:'inicio', ic:'dashboard', txt:'Dashboard'});
   if(F.indexOf('ventas')>-1) items.push({id:'ventas', ic:'cart', txt:'Nueva Venta'});
   items.push({id:'pedidos', ic:'report', txt:'Pedidos'});
-  if(F.indexOf('catalogo')>-1) items.push({id:'inventario', ic:'box', txt:'Inventario'});
+  if(F.indexOf('catalogo')>-1){
+    if(neg.usaRecetas){
+      // Restaurante: el menú de platos y el inventario de insumos son cosas distintas
+      items.push({id:'inventario', ic:'chef', txt:'Menú'});
+      items.push({id:'insumos', ic:'box', txt:'Insumos'});
+    } else {
+      items.push({id:'inventario', ic:'box', txt:'Inventario'});
+    }
+  }
   const ops=[];
   if(F.indexOf('caja')>-1) ops.push({id:'caja', ic:'cash', txt:'Caja'});
   if(F.indexOf('cocina')>-1 && neg.usaCocina) ops.push({id:'cocina', ic:'chef', txt:'Cocina'});
@@ -2455,7 +2695,7 @@ function armarMenu(){
   const salida=[]; let grupo=null;
   items.forEach(it=>{
     if(it.g){ grupo=it; return; }
-    const id = it.id==='inventario'?'catalogo':it.id;
+    const id = (it.id==='inventario'||it.id==='insumos')?'catalogo':it.id;
     if(permitidas.indexOf(it.id)>-1 || permitidas.indexOf(id)>-1){
       if(grupo){ salida.push(grupo); grupo=null; }
       salida.push(it);
@@ -2721,11 +2961,11 @@ function vistaNegocio(){
   const neg=STATE.negocio, u=STATE.user;
   const menu=armarMenu();
   const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
-    inventario:'Inventario', caja:'Caja', cocina:'Cocina', citas:'Agendar',
+    inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
     citas:'Agendar', cocina:'Cocina'};
-  const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, caja,
+  const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
     clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina};
   const fn=pantallas[STATE.pageNeg];
   let contenido='';
