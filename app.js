@@ -985,16 +985,20 @@ function nuevaVenta(){
               <span>${i.qty}</span>
               <button onclick="cambiarQty(${idx},1)">+</button>
             </div>
-            <div class="item-tot">${fmtMoney(i.precio*i.qty)}</div>
+            <div class="item-tot">${neg.esLogistica?(i.qty+' und'):fmtMoney(i.precio*i.qty)}</div>
           </div>`).join('') : '<div class="carrito-vacio">🛒<p>Toca un producto para agregarlo</p></div>'}
         </div>
         ${_carrito.length?`
+          ${neg.esLogistica?`
+            <div class="total"><span>A DESPACHAR</span><span>${_carrito.reduce((a,i)=>a+i.qty,0)} und</span></div>
+          `:`
           ${_desc>0?`<div class="linea"><span>Subtotal</span><span>${fmtMoney(bruto)}</span></div>
             <div class="linea desc"><span>Descuento${_descMot?' · '+escapeHtml(_descMot):''}</span>
               <span>−${fmtMoney(_desc)} <button class="mini-x" onclick="quitarDescuento()">×</button></span></div>`
            :`<button class="btn btn-ghost btn-block btn-sm" onclick="abrirDescuento()">% Aplicar descuento</button>`}
           ${valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:''}
           <div class="total"><span>TOTAL</span><span>${fmtMoney(total+valorDom)}</span></div>
+          `}
           <button class="btn btn-gold btn-block btn-grande" id="btn-confirmar" onclick="${neg.esLogistica?'registrarSalida()':(dosPasos?'confirmarPedido()':'cobrarDirecto()')}">
             ${neg.esLogistica?'📦 Registrar salida':(dosPasos?'✓ Confirmar pedido':'💵 Cobrar ahora')}
           </button>
@@ -2638,8 +2642,44 @@ function datosCliente(v){
 function tipoTexto(t){ return {mesa:'Mesa',domicilio:'Domicilio',llevar:'Para llevar',envio:'Envío nacional'}[t]||'Venta'; }
 
 function facturaPOS(v,neg){
-  const sub=v.subtotalBruto!==undefined?v.subtotalBruto:(v.subtotal||0);
   const cli=datosCliente(v);
+  // ---- MODO LOGÍSTICA: remisión de entrega, sin valores ni cobro ----
+  if(neg.esLogistica || v.esSalida){
+    return `<div style="font-family:Arial,sans-serif;color:#000;width:72mm;padding:4mm;margin:0 auto;font-weight:500;">
+      <div style="text-align:center;padding-bottom:6px;">
+        ${neg.logo?`<img src="${neg.logo}" style="max-height:110px;max-width:230px;margin-bottom:6px;">`:''}
+        <div style="font-size:28px;font-weight:800;line-height:1.1;">${escapeHtml(neg.nombre)}</div>
+        ${neg.eslogan?`<div style="font-size:14px;font-style:italic;">${escapeHtml(neg.eslogan)}</div>`:''}
+        ${neg.nit?`<div style="font-size:13px;margin-top:3px;">NIT: ${escapeHtml(neg.nit)}</div>`:''}
+        ${neg.dir?`<div style="font-size:13px;">${escapeHtml(neg.dir)}</div>`:''}
+        ${neg.tel?`<div style="font-size:13px;">Tel: ${escapeHtml(neg.tel)}</div>`:''}
+      </div>
+      <div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:6px 0;text-align:center;margin:6px 0;">
+        <div style="font-size:16px;font-weight:bold;">REMISIÓN DE ENTREGA</div>
+        <div style="font-size:15px;font-weight:bold;">N° ${escapeHtml(v.factura||'—')}</div>
+        <div style="font-size:12px;">(No es factura de venta · sin valor comercial)</div>
+      </div>
+      <div style="font-size:14px;line-height:1.6;margin:6px 0;">
+        <div style="display:flex;justify-content:space-between;"><span>Fecha</span><span>${fmtDate(v.fecha)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Despachó</span><span>${escapeHtml(v.vendedor||'')}</span></div>
+        ${cli.map(f=>`<div style="display:flex;justify-content:space-between;gap:6px;"><span>${f[0]}</span><span style="text-align:right;max-width:62%;">${escapeHtml(f[1])}</span></div>`).join('')}
+      </div>
+      <div style="border-top:1px dashed #000;padding-top:5px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:bold;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:5px;"><span>CANTIDAD</span><span>PRODUCTO</span></div>
+        ${(v.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;font-size:15px;padding:4px 0;"><span style="font-weight:bold;min-width:40px;">${i.qty} und</span><span style="flex:1;text-align:right;">${escapeHtml(i.nombre)}</span></div>`).join('')}
+      </div>
+      <div style="border-top:2px solid #000;border-bottom:2px solid #000;margin-top:6px;padding:9px 0;display:flex;justify-content:space-between;font-size:18px;font-weight:800;">
+        <span>TOTAL UNIDADES</span><span>${(v.items||[]).reduce((a,i)=>a+i.qty,0)} und</span>
+      </div>
+      ${v.obs?`<div style="border-top:1px dashed #000;margin-top:8px;padding-top:6px;font-size:12px;"><strong>Obs:</strong> ${escapeHtml(v.obs)}</div>`:''}
+      <div style="margin-top:22px;font-size:13px;">
+        <div style="border-top:1px solid #000;padding-top:4px;text-align:center;">Firma de quien recibe</div>
+      </div>
+      <div style="text-align:center;font-size:10px;margin-top:14px;border-top:1px dashed #000;padding-top:8px;">Software por WALLACE COMPANY SYSTEM<br>wallacecompany11@gmail.com</div>
+    </div>`;
+  }
+  // ---- MODO NORMAL: factura de venta ----
+  const sub=v.subtotalBruto!==undefined?v.subtotalBruto:(v.subtotal||0);
   let extras='';
   if(v.descuento>0) extras+='<div style="display:flex;justify-content:space-between;"><span>Descuento</span><span>-'+fmtMoney(v.descuento)+'</span></div>';
   if(v.valorDom>0) extras+='<div style="display:flex;justify-content:space-between;"><span>'+(v.tipo==='envio'?'Envío':'Domicilio')+'</span><span>'+fmtMoney(v.valorDom)+'</span></div>';
