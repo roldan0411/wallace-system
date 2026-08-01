@@ -334,6 +334,14 @@ const PERFILES = {
     tiposEntrega:['llevar','domicilio','envio'],
     funciones:['ventas','catalogo','caja','facturas','clientes','domicilios','inventario','reportes','contable','gastosneg']
   },
+  'Logística / Bodega':{
+    palabraProducto:'Producto', palabraProductos:'Productos',
+    usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
+    usaCaja:false, esLogistica:true,   // no maneja dinero: entradas y salidas de mercancía
+    flujoPedido:'directo',
+    tiposEntrega:['entrega','despacho'],
+    funciones:['ventas','catalogo','clientes','domicilios','inventario','reportes']
+  },
   'Otro':{
     palabraProducto:'Producto', palabraProductos:'Productos',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
@@ -760,6 +768,7 @@ function nuevoNegocio(){
       palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
       usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina,
       usaRecetas:perfil.usaRecetas, usaCitas:perfil.usaCitas,
+      usaCaja: perfil.usaCaja!==false, esLogistica: !!perfil.esLogistica,
       flujoPedido:flujo,
       tiposEntrega:perfil.tiposEntrega.slice(),
       funciones:perfil.funciones.slice(),
@@ -885,8 +894,8 @@ function nuevaVenta(){
            :`<button class="btn btn-ghost btn-block btn-sm" onclick="abrirDescuento()">% Aplicar descuento</button>`}
           ${valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:''}
           <div class="total"><span>TOTAL</span><span>${fmtMoney(total+valorDom)}</span></div>
-          <button class="btn btn-gold btn-block btn-grande" id="btn-confirmar" onclick="${dosPasos?'confirmarPedido()':'cobrarDirecto()'}">
-            ${dosPasos?'✓ Confirmar pedido':'💵 Cobrar ahora'}
+          <button class="btn btn-gold btn-block btn-grande" id="btn-confirmar" onclick="${neg.esLogistica?'registrarSalida()':(dosPasos?'confirmarPedido()':'cobrarDirecto()')}">
+            ${neg.esLogistica?'📦 Registrar salida':(dosPasos?'✓ Confirmar pedido':'💵 Cobrar ahora')}
           </button>
         `:''}
       </div>
@@ -928,8 +937,27 @@ function camposCliente(){
 }
 
 function agregarAlCarrito(id){
+  const neg=STATE.negocio;
   const p=misDatos('productos').find(x=>x.id===id); if(!p) return;
-  if(p.stock!=null && p.stock<=0){ toast('Sin stock: '+p.nombre,'error'); sonidoError(); return; }
+  // Producto con stock propio (tienda): no dejar pedir si no hay
+  if(p.stock!=null && p.stock<=0){ toast('Sin existencias: '+p.nombre,'error'); sonidoError(); return; }
+  // Plato de restaurante: revisar los insumos de su receta
+  if(neg.usaRecetas && p.receta && p.receta.length){
+    const insumos=misDatos('insumos');
+    const yaEnCarrito=(_carrito.find(i=>i.prodId===id)||{}).qty||0;
+    const faltantes=[];
+    p.receta.forEach(r=>{
+      const ins=insumos.find(x=>x.id===r.insumoId);
+      if(ins){
+        const necesita=r.cantidad*(yaEnCarrito+1);
+        if((ins.stock||0)<necesita) faltantes.push(ins.nombre+(ins.stock<=0?' (agotado)':' (solo quedan '+ins.stock+' '+(ins.unidad||'')+')'));
+      }
+    });
+    if(faltantes.length){
+      toast('⛔ No se puede pedir '+p.nombre+': falta '+faltantes.join(', '),'error');
+      sonidoError(); return;
+    }
+  }
   const ex=_carrito.find(i=>i.prodId===id);
   if(ex) ex.qty++; else _carrito.push({prodId:id, nombre:p.nombre, precio:p.precio, qty:1});
   render();
@@ -1022,6 +1050,35 @@ function validarClientePedido(){
   }
   if(_vTipo==='domicilio' && !(_vCli.dir||'').trim()){ toast('La dirección es obligatoria para domicilios','error'); return false; }
   return true;
+}
+
+// ---------- LOGÍSTICA: registrar salida/entrega de mercancía (sin dinero) ----------
+function registrarSalida(){
+  if(_guardando) return;
+  if(!_carrito.length){ toast('Agrega productos primero','error'); return; }
+  if(!validarClientePedido()) return;
+  _guardando=true;
+  bloquearBoton('btn-confirmar','Guardando…');
+  try{
+    const venta=armarVenta('pagada');   // en logística la "salida" queda cerrada de una
+    venta.esSalida=true; venta.metodo='—';
+    venta.cobrado=now(); venta.cobradoPor=STATE.user.nombre;
+    const ventas=misDatos('ventas');
+    ventas.unshift(venta);
+    guardarMisDatos('ventas',ventas);
+    guardarClienteAuto(venta);
+    descontarStock(venta);
+    logAudit('Registró salida', (venta.factura||'')+' · '+(venta.cliNombre||''));
+    sonidoPedido();
+    avisarStockBajo(venta);
+    limpiarPedido(); ESCRIBIENDO=false;
+    STATE.pageNeg='pedidos'; render();
+    toast('Salida '+venta.factura+' registrada','success');
+    if((STATE.negocio.funciones||[]).indexOf('facturas')>-1 || true){
+      setTimeout(()=>confirmarModal('¿Imprimir remisión de entrega?',()=>imprimirFactura(venta.id),'Imprimir'),400);
+    }
+  }catch(e){ console.error(e); toast('Error al registrar salida','error'); }
+  finally{ _guardando=false; }
 }
 
 // ---------- FLUJO A: confirmar ahora, cobrar después ----------
@@ -1232,7 +1289,6 @@ function abrirCobro(v, esNuevo){
     {valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}];
   if(usaPropina) campos.push({id:'propina', label:'Propina (del mesero, no es del negocio)', tipo:'number', valor:'0'});
   campos.push({id:'recargo', label:'Recargo del datáfono (lo cobra el banco)', tipo:'number', valor:'0'});
-  campos.push({id:'recibido', label:'¿Con cuánto paga? (para el vuelto)', tipo:'number', placeholder:String(base+dom)});
 
   abrirModal({titulo:'Cobrar '+(v.factura||'')+' · '+fmtMoney(base+dom), textoBoton:'Confirmar cobro',
     campos,
@@ -1277,7 +1333,6 @@ function abrirCobro(v, esNuevo){
       _guardando=true;
       try{
         const metodo=d.metodo||'efectivo';
-        const recibido=parseFloat(d.recibido)||0;
         const propina=parseFloat(d.propina)||0;
         const recargo=parseFloat(d.recargo)||0;
         const ventas=misDatos('ventas');
@@ -1301,8 +1356,7 @@ function abrirCobro(v, esNuevo){
         avisarStockBajo(venta);
         if(esNuevo){ limpiarPedido(); ESCRIBIENDO=false; }
         cerrarModal();
-        if(metodo==='efectivo' && recibido>venta.total) toast('Vuelto: '+fmtMoney(recibido-venta.total),'info');
-        else toast('Cobrado: '+fmtMoney(venta.total),'success');
+        toast('Cobrado: '+fmtMoney(venta.total),'success');
         if((neg.funciones||[]).indexOf('facturas')>-1){
           const fid=venta.id;
           setTimeout(()=>confirmarModal('¿Imprimir factura?',()=>imprimirFactura(fid),'Imprimir'),400);
@@ -1452,22 +1506,39 @@ function avisarStockBajo(venta){
   if((neg.funciones||[]).indexOf('inventario')<0) return;
   if(neg.alertaStock===false) return;
   const productos=misDatos('productos');
-  const avisos=[];
+  const insumos=neg.usaRecetas?misDatos('insumos'):[];
+  const agotado=[], bajo=[];
+  const revisar=(nombre,stock,min,unidad)=>{
+    if(stock<=0) agotado.push(nombre);
+    else if(stock<=(min||0)) bajo.push(nombre+' ('+stock+(unidad?' '+unidad:'')+')');
+  };
   (venta.items||[]).forEach(item=>{
     const p=productos.find(x=>x.id===item.prodId);
-    if(p && p.stock!=null){
-      if(p.stock<=0) avisos.push(['AGOTADO',p.nombre]);
-      else if(p.stock<=(p.stockMin||0)) avisos.push(['BAJO',p.nombre+' ('+p.stock+')']);
+    if(!p) return;
+    if(p.stock!=null) revisar(p.nombre, p.stock, p.stockMin);
+    if(neg.usaRecetas && p.receta){
+      p.receta.forEach(r=>{ const ins=insumos.find(x=>x.id===r.insumoId); if(ins) revisar(ins.nombre, ins.stock||0, ins.stockMin, ins.unidad); });
     }
   });
-  if(!avisos.length) return;
+  // Quitar repetidos
+  const ag=Array.from(new Set(agotado)), bj=Array.from(new Set(bajo));
+  if(!ag.length && !bj.length) return;
   sonidoAlerta();
-  const ag=avisos.filter(a=>a[0]==='AGOTADO').map(a=>a[1]);
-  const bj=avisos.filter(a=>a[0]==='BAJO').map(a=>a[1]);
-  let m='';
-  if(ag.length) m+='⛔ AGOTADO: '+ag.join(', ')+'. ';
-  if(bj.length) m+='⚠️ Quedan pocos: '+bj.join(', ');
-  setTimeout(()=>toast(m,'error'),900);
+  // ALERTA REAL: modal que obliga a enterarse, no un aviso que se va solo
+  const cuerpo=`
+    ${ag.length?`<div class="alerta" style="border-radius:10px;padding:12px 15px;margin-bottom:10px;">
+      <strong class="rojo" style="font-size:15px;">⛔ SE AGOTARON</strong>
+      <p style="margin-top:6px;line-height:1.7;">${ag.map(x=>escapeHtml(x)).join('<br>')}</p>
+      <p class="nota" style="margin-top:8px;">No se podrán vender hasta que registres una entrada en ${neg.usaRecetas?'Insumos':'Inventario'}.</p>
+    </div>`:''}
+    ${bj.length?`<div class="tarjeta-pend" style="border-radius:10px;padding:12px 15px;">
+      <strong class="oro" style="font-size:15px;">⚠️ QUEDAN POCOS</strong>
+      <p style="margin-top:6px;line-height:1.7;">${bj.map(x=>escapeHtml(x)).join('<br>')}</p>
+    </div>`:''}`;
+  setTimeout(()=>{
+    abrirModal({titulo:'🔔 Alerta de inventario', textoBoton:'Entendido', campos:[],
+      extraHTML:cuerpo, onGuardar:()=>cerrarModal()});
+  },700);
 }
 // ---------- CLIENTES AUTOMÁTICOS ----------
 function guardarClienteAuto(venta){
