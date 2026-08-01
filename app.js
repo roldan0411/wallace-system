@@ -3672,7 +3672,7 @@ function vistaLogin(){
         <input id="l-user" class="campo" placeholder="usuario" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
       <div class="m-row"><label>Contraseña</label>
         <input id="l-pass" type="password" class="campo" placeholder="••••••" onkeydown="if(event.key==='Enter')hacerLogin()"></div>
-      <button class="btn btn-gold btn-block btn-grande" onclick="hacerLogin()">Entrar</button>
+      <button class="login-btn" onclick="hacerLogin()">Entrar</button>
       <div class="login-pie">WALLACE COMPANY SYSTEM</div>
     </div>
   </div>`;
