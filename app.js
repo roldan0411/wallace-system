@@ -697,6 +697,7 @@ function panelSuperAdmin(){
             <button class="btn btn-sm" onclick="configNegocio('${n.id}')">Configurar</button>
             <button class="btn btn-sm" onclick="usuariosNegocio('${n.id}')">Usuarios</button>
             <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Suspender':'Activar'}</button>
+            ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm btn-rojo" onclick="eliminarNegocio('${n.id}')" title="Eliminar empresa">🗑️</button>`:''}
           </td>
         </tr>`).join('') : '<tr><td colspan="8" class="gris">No hay negocios. Crea el primero.</td></tr>'}
         </tbody>
@@ -893,6 +894,42 @@ function toggleNegocio(id){
   DB.set('negocios',negocios);
   toast(n.activo?'Negocio activado':'Negocio suspendido','info');
   render();
+}
+function eliminarNegocio(id){
+  if(STATE.user.rolSuper!=='dueno'){ toast('Solo el dueño del sistema puede eliminar empresas','error'); return; }
+  const negocios=DB.get('negocios')||[];
+  const n=negocios.find(x=>x.id===id); if(!n) return;
+  const nUsuarios=(DB.get('usuarios')||[]).filter(u=>u.negocioId===id).length;
+  // Primera confirmación
+  confirmarModal(
+    '⚠️ Vas a ELIMINAR la empresa "'+escapeHtml(n.nombre)+'".\n\nSe borrarán TODOS sus datos: '+nUsuarios+' usuario(s), productos, ventas, inventario, caja e historial. Esto NO se puede deshacer.\n\n¿Continuar?',
+  ()=>{
+    // Segunda confirmación: escribir el nombre
+    abrirModal({titulo:'Confirmar eliminación', textoBoton:'Eliminar definitivamente', campos:[
+      {id:'conf', label:'Escribe el nombre exacto de la empresa para confirmar', valor:'', requerido:true, placeholder:n.nombre}
+    ], extraHTML:`<p class="nota rojo">Empresa a eliminar: <strong>${escapeHtml(n.nombre)}</strong></p>`,
+    onGuardar:(d)=>{
+      if((d.conf||'').trim()!==n.nombre){ toast('El nombre no coincide. No se eliminó nada.','error'); return; }
+      // Borrar la empresa
+      DB.set('negocios', (DB.get('negocios')||[]).filter(x=>x.id!==id));
+      // Borrar sus usuarios
+      DB.set('usuarios', (DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
+      // Borrar TODAS sus tablas de datos (data_<id>_*)
+      TABLAS.forEach(t=>{
+        const clave='data_'+id+'_'+t;
+        DB.set(clave, null);
+        try{ localStorage.removeItem('ws_'+clave); }catch(e){}
+        delete CACHE[clave];
+      });
+      // Borrar también claves por sucursal si existieran
+      try{
+        Object.keys(CACHE).forEach(k=>{ if(k.indexOf('data_'+id+'_')===0){ DB.set(k,null); delete CACHE[k]; try{localStorage.removeItem('ws_'+k);}catch(e){} } });
+      }catch(e){}
+      cerrarModal();
+      toast('Empresa "'+n.nombre+'" eliminada por completo','error');
+      render();
+    }});
+  },'Sí, continuar');
 }
 function entrarComoNegocio(id){
   const neg=(DB.get('negocios')||[]).find(n=>n.id===id); if(!neg) return;
