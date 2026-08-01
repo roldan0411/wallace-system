@@ -43,18 +43,21 @@
 
   /* Login */
   .login-fondo{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
-    background:radial-gradient(760px 500px at 50% 18%,rgba(var(--acc-rgb),.14),transparent 62%),
-               linear-gradient(160deg,#171b26,#101318 65%);}
-  .login-caja{background:linear-gradient(170deg,#20263300,#00000000),linear-gradient(170deg,#232937,#191e28);border:1px solid var(--linea);border-radius:20px;
+    background:radial-gradient(680px 460px at 22% 20%,rgba(74,229,167,.16),transparent 60%),
+               radial-gradient(620px 520px at 82% 30%,rgba(41,111,235,.15),transparent 60%),
+               radial-gradient(700px 600px at 60% 100%,rgba(106,57,170,.16),transparent 62%),
+               radial-gradient(560px 420px at 50% 0%,rgba(1,195,142,.14),transparent 60%),
+               linear-gradient(160deg,#0f1b1e,#0c1424 60%,#12101f 100%);}
+  .login-caja{background:linear-gradient(170deg,#1a2830,#141d28);border:1px solid rgba(74,229,167,.28);border-radius:20px;
     padding:36px 30px;width:100%;max-width:380px;
-    box-shadow:0 0 0 1px rgba(var(--acc-rgb),.08),0 0 42px rgba(var(--acc-rgb),.16),0 26px 70px rgba(0,0,0,.65);}
+    box-shadow:0 0 0 1px rgba(74,229,167,.10),0 0 46px rgba(41,111,235,.16),0 0 70px rgba(106,57,170,.12),0 26px 70px rgba(0,0,0,.65);}
   .login-emblema{width:92px;height:92px;margin:0 auto 16px;border-radius:22px;overflow:hidden;
-    box-shadow:0 0 30px rgba(var(--acc-rgb),.5),0 10px 30px rgba(0,0,0,.5);}
+    box-shadow:0 0 30px rgba(1,195,142,.55),0 0 50px rgba(41,111,235,.22),0 10px 30px rgba(0,0,0,.5);}
   .login-emblema svg{width:100%;height:100%;display:block;}
-  .login-marca{font-family:'Montserrat',sans-serif;font-size:30px;font-weight:900;text-align:center;letter-spacing:-.5px;}
-  .login-marca span{color:var(--verde-c);text-shadow:var(--glow-txt);}
-  .login-sub{text-align:center;color:var(--gris);font-size:13px;margin:6px 0 22px;letter-spacing:.4px;}
-  .login-pie{text-align:center;font-size:10px;color:var(--gris);letter-spacing:1.6px;margin-top:20px;padding-top:16px;border-top:1px solid var(--linea2);}
+  .login-marca{font-family:'Montserrat',sans-serif;font-size:30px;font-weight:900;text-align:center;letter-spacing:-.5px;color:#eafcf5;}
+  .login-marca span{color:#2ee6ab;text-shadow:0 0 14px rgba(46,230,171,.55);}
+  .login-sub{text-align:center;color:#8fb0c4;font-size:13px;margin:6px 0 22px;letter-spacing:.4px;}
+  .login-pie{text-align:center;font-size:10px;color:#4a7fd4;letter-spacing:1.6px;margin-top:20px;padding-top:16px;border-top:1px solid rgba(74,229,167,.15);}
 
   /* Estructura */
   .app-grid{display:grid;grid-template-columns:260px 1fr;min-height:100vh;}
@@ -431,6 +434,24 @@
   body.tema-claro .prod-pre,body.tema-claro .total,body.tema-claro .total-linea{color:var(--verde-o) !important;}
   body.tema-claro .pill-verde{background:rgba(var(--acc-rgb),.14);color:var(--verde-o) !important;border-color:rgba(var(--acc-rgb),.4);}
   body.tema-claro .stat-val{color:#132d46 !important;}
+
+
+  /* ===== Botones siempre legibles (arregla letra blanca invisible) ===== */
+  .btn-verde{color:#062318 !important;}          /* verde claro -> texto oscuro */
+  .btn-gold{color:#231a00 !important;}
+  .btn-naranja{color:#2b1500 !important;}
+  .btn-rojo{color:#fff !important;}
+  .cat.on,.tipo.on{color:#062318 !important;}
+  body.tema-claro .btn{background:#eef1f6;color:#1a1e29 !important;border:1px solid rgba(19,45,70,.12);}
+  body.tema-claro .btn:hover{background:#e2e7ef;}
+  body.tema-claro .btn-ghost{background:transparent;color:#1a1e29 !important;}
+  body.tema-claro .btn-sm{color:#1a1e29;}
+  body.tema-claro .btn-verde{color:#062318 !important;}
+  body.tema-claro .btn-gold{color:#231a00 !important;}
+  body.tema-claro .btn-naranja{color:#2b1500 !important;}
+  body.tema-claro .btn-rojo{color:#fff !important;}
+  /* avatar / iniciales del menú: texto legible sobre el color */
+  .side-ini,.avatar{color:#062318 !important;}
 
   @media(prefers-reduced-motion:reduce){
     *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
