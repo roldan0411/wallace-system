@@ -1398,7 +1398,7 @@ function pedidos(){
       ${v.estado==='abierta'&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-gold" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
       ${v.estado!=='anulada'&&tienePermiso('editar')?`<button class="btn btn-sm" onclick="editarPedido('${v.id}')" title="Editar pedido">✏️</button>`:''}
       ${usaCocina&&v.estado!=='anulada'&&tienePermiso('comanda')?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
-      ${v.estado==='pagada'&&tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="Reimprimir factura">🖨️</button>`:''}
+      ${v.estado!=='anulada'&&tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${v.estado==='pagada'?'Reimprimir factura':'Imprimir cuenta (cobro pendiente)'}">🖨️</button>`:''}
       ${v.estado==='pagada'&&tienePermiso('cambiarpago')?`<button class="btn btn-sm" onclick="cambiarFormaPago('${v.id}')" title="Cambiar forma de pago">💳</button>`:''}
       ${v.estado!=='anulada'&&tienePermiso('anular')?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular factura">✕</button>`:''}
       ${tienePermiso('eliminar')?`<button class="btn btn-sm btn-rojo" onclick="eliminarDefinitivo('${v.id}')" title="Eliminar por completo">🗑️</button>`:''}
@@ -2889,9 +2889,10 @@ function facturaPOS(v,neg){
     <div style="border-top:2px solid #000;border-bottom:2px solid #000;margin-top:6px;padding:9px 0;display:flex;justify-content:space-between;font-size:21px;font-weight:800;">
       <span>TOTAL</span><span>${fmtMoney(v.total)}</span>
     </div>
-    <div style="text-align:center;font-size:13px;margin-top:6px;">Pago: <strong>${escapeHtml((v.metodo||'').toUpperCase())}</strong></div>
+    <div style="text-align:center;font-size:13px;margin-top:6px;">Pago: <strong>${v.estado==='pagada'?escapeHtml((v.metodo||'').toUpperCase()):'—'}</strong></div>
+    ${v.estado!=='pagada'?`<div style="border:3px solid #000;border-radius:6px;margin-top:8px;padding:8px;text-align:center;font-size:17px;font-weight:800;">*** COBRO PENDIENTE ***<div style="font-size:12px;font-weight:600;margin-top:3px;">Esta cuenta aún no ha sido pagada</div></div>`:''}
     ${v.obs?`<div style="border-top:1px dashed #000;margin-top:8px;padding-top:6px;font-size:12px;"><strong>Obs:</strong> ${escapeHtml(v.obs)}</div>`:''}
-    <div style="text-align:center;margin-top:14px;font-size:16px;font-weight:800;">¡GRACIAS POR SU COMPRA!</div>
+    <div style="text-align:center;margin-top:14px;font-size:16px;font-weight:800;">${v.estado==='pagada'?'¡GRACIAS POR SU COMPRA!':'CUENTA DE COBRO'}</div>
     <div style="text-align:center;font-size:10px;margin-top:10px;border-top:1px dashed #000;padding-top:8px;">Software por WALLACE COMPANY SYSTEM<br>wallacecompany11@gmail.com</div>
   </div>`;
 }
@@ -3323,6 +3324,7 @@ function armarMenu(){
   if(F.indexOf('citas')>-1 && neg.usaCitas) ops.push({id:'citas', ic:'calendar', txt:'Agendar'});
   if(F.indexOf('domicilios')>-1) ops.push({id:'domicilios', ic:'truck', txt:'Domicilios'});
   if(F.indexOf('clientes')>-1) ops.push({id:'clientes', ic:'users', txt:'Clientes'});
+  if(F.indexOf('pedidos')>-1) ops.push({id:'reimpresiones', ic:'history', txt:'Reimpresiones'});
   if(ops.length){ items.push({g:'OPERACIONES'}); ops.forEach(o=>items.push(o)); }
   const ges=[];
   if(F.indexOf('reportes')>-1) ges.push({id:'reportes', ic:'report', txt:'Reportes'});
@@ -3344,6 +3346,7 @@ function armarMenu(){
     let id = (it.id==='inventario'||it.id==='insumos')?'catalogo':it.id;
     if(it.id==='tiempos') id='cocina';
     if(it.id==='historial') id='pedidos';
+    if(it.id==='reimpresiones') id='pedidos';
     if(it.id==='auditoria') id='__solo_admin__';   // ya se filtró arriba por rol
     if(permitidas.indexOf(it.id)>-1 || permitidas.indexOf(id)>-1){
       if(grupo){ salida.push(grupo); grupo=null; }
@@ -3632,6 +3635,44 @@ function marcarCocina(id,estado){
 
 
 // ============================================================
+//  REIMPRESIONES (Centro de Impresión)
+// ============================================================
+let _reimpBusca='';
+function reimpresiones(){
+  ESCRIBIENDO=false;
+  const neg=STATE.negocio;
+  let vs=misDatos('ventas').filter(v=>v.estado!=='anulada')
+    .slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
+  if(_reimpBusca){ const q=_reimpBusca.toLowerCase();
+    vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.mesa||'').toLowerCase().includes(q)); }
+  vs=vs.slice(0,60);
+  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío',rapida:'Directa'};
+  return `
+    <div class="tarjeta">
+      <div class="t-cab">
+        <div><span class="t-tit">🖨️ Centro de Impresión</span>
+          <p class="gris">Reimprime facturas y comandas. Las cuentas sin cobrar salen marcadas como "cobro pendiente".</p></div>
+        <input type="text" class="busca" placeholder="🔍 Factura, cliente, mesa..." value="${escapeHtml(_reimpBusca)}" oninput="_reimpBusca=this.value;render()">
+      </div>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente/Mesa</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Reimprimir</th></tr></thead>
+        <tbody>${vs.length?vs.map(v=>`<tr>
+          <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong></td>
+          <td>${etiq[v.tipo]||'—'}${v.mesa?' '+escapeHtml(v.mesa):''}</td>
+          <td>${escapeHtml(v.cliNombre||v.mesa||'—')}</td>
+          <td class="negrita">${fmtMoney(v.total)}</td>
+          <td>${v.estado==='pagada'?'<span class="pill pill-verde">Pagada</span>':'<span class="pill pill-gold">Por cobrar</span>'}</td>
+          <td class="gris chico">${fmtDate(v.fecha)}</td>
+          <td class="acciones">
+            <button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${v.estado==='pagada'?'Factura':'Cuenta (cobro pendiente)'}">${v.estado==='pagada'?'🧾 Factura':'🧾 Cuenta'}</button>
+            ${neg.usaCocina?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
+          </td>
+        </tr>`).join(''):'<tr><td colspan="7" class="gris">No hay pedidos para reimprimir.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// ============================================================
 //  TIEMPOS DE ENTREGA (como Portal Imperial)
 // ============================================================
 function tiempos(){
@@ -3774,11 +3815,11 @@ function vistaNegocio(){
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
-    tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría',
+    tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría', reimpresiones:'Reimpresiones',
     citas:'Agendar', cocina:'Cocina'};
   const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
     clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina,
-    tiempos, historial, auditoria};
+    tiempos, historial, auditoria, reimpresiones};
   const fn=pantallas[STATE.pageNeg];
   let contenido='';
   if(!fn){
