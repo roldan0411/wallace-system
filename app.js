@@ -1055,8 +1055,8 @@ function nuevaVenta(){
             <div class="linea desc"><span>Descuento${_descMot?' · '+escapeHtml(_descMot):''}</span>
               <span>−${fmtMoney(_desc)} <button class="mini-x" onclick="quitarDescuento()">×</button></span></div>`
            :`<button class="btn btn-ghost btn-block btn-sm" onclick="abrirDescuento()">% Aplicar descuento</button>`}
-          ${valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:''}
-          <div class="total"><span>TOTAL</span><span>${fmtMoney(total+valorDom)}</span></div>
+          <div id="linea-dom">${valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:''}</div>
+          <div class="total"><span>TOTAL</span><span id="venta-total">${fmtMoney(total+valorDom)}</span></div>
           `}
           <button class="btn btn-gold btn-block btn-grande" id="btn-confirmar" onclick="${neg.esLogistica?'registrarSalida()':(dosPasos?'confirmarPedido()':'cobrarDirecto()')}">
             ${neg.esLogistica?'📦 Registrar salida':(dosPasos?'✓ Confirmar pedido':'💵 Cobrar ahora')}
@@ -1078,7 +1078,7 @@ function camposCliente(){
       <input type="text" class="campo" placeholder="Teléfono" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
       <input type="text" class="campo" placeholder="Dirección" value="${escapeHtml(c.dir)}" oninput="_vCli.dir=this.value">
       <input type="text" class="campo" placeholder="Barrio" value="${escapeHtml(c.barrio)}" oninput="_vCli.barrio=this.value">
-      <input type="number" class="campo" placeholder="Valor del domicilio" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;render()">
+      <input type="number" class="campo" placeholder="Valor del domicilio" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;actualizarTotalVenta()">
       ${doms.length?`<select class="campo" onchange="_vCli.domiciliario=this.value">
         <option value="">Domiciliario...</option>
         ${doms.map(d=>`<option ${c.domiciliario===d.nombre?'selected':''}>${escapeHtml(d.nombre)}</option>`).join('')}
@@ -1092,12 +1092,24 @@ function camposCliente(){
       <input type="text" class="campo" placeholder="Ciudad" value="${escapeHtml(c.ciudad)}" oninput="_vCli.ciudad=this.value">
       <input type="text" class="campo" placeholder="Departamento" value="${escapeHtml(c.depto)}" oninput="_vCli.depto=this.value">
       <input type="text" class="campo" placeholder="Transportadora" value="${escapeHtml(c.transportadora)}" oninput="_vCli.transportadora=this.value">
-      <input type="number" class="campo" placeholder="Valor del envío" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;render()">
+      <input type="number" class="campo" placeholder="Valor del envío" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;actualizarTotalVenta()">
       <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
   }
   return `<input type="text" class="campo" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value">
     <input type="tel" class="campo" placeholder="Teléfono (obligatorio)" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
     <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
+}
+
+// Actualiza SOLO el total y la línea de domicilio en la pantalla de venta,
+// sin redibujar todo (así no se pierde el foco del campo = no se sale el teclado).
+function actualizarTotalVenta(){
+  const bruto=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
+  const total=Math.max(0,bruto-_desc);
+  const valorDom=(_vTipo==='domicilio'||_vTipo==='envio')?(parseFloat(_vCli.valorDom)||0):0;
+  const elTot=document.getElementById('venta-total');
+  if(elTot) elTot.textContent=fmtMoney(total+valorDom);
+  const elDom=document.getElementById('linea-dom');
+  if(elDom) elDom.innerHTML = valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:'';
 }
 
 function agregarAlCarrito(id){
@@ -3242,8 +3254,10 @@ function editarUsuario(negId,userId){
   const permActuales = (u&&u.permisos&&u.permisos.length)?u.permisos:(PERMISOS_POR_ROL[(u?u.rol:'cajero')]||[]);
   const TODAS_PANTALLAS=[['inicio','Dashboard'],['ventas','Nueva Venta'],['pedidos','Pedidos'],
     ['catalogo','Menú / Inventario'],['caja','Caja'],['cocina','Cocina'],['citas','Agendar'],
-    ['domicilios','Domicilios'],['clientes','Clientes'],['reportes','Reportes'],
-    ['contable','Contable'],['gastosneg','Gastos'],['usuarios','Usuarios'],['config','Configuración']];
+    ['domicilios','Domicilios'],['clientes','Clientes'],['reimpresiones','Reimpresiones'],
+    ['tiempos','Tiempos de Entrega'],['reportes','Reportes'],['historial','Historial'],
+    ['contable','Contable'],['gastosneg','Gastos'],['auditoria','Auditoría'],
+    ['usuarios','Usuarios'],['config','Configuración']];
   const sucHTML=(neg.sucursales&&neg.sucursales.length>1)?`<div class="m-row">
       <label>Sucursales a las que puede entrar (vacío = todas)</label>
       <div class="checks">${neg.sucursales.map(s=>`<label class="chk"><input type="checkbox" class="u-suc" value="${escapeHtml(s.id)}" ${(u&&u.sucursales&&u.sucursales.indexOf(s.id)>-1)?'checked':''}> 📍 ${escapeHtml(s.nombre)}</label>`).join('')}</div>
@@ -3324,11 +3338,11 @@ function armarMenu(){
   if(F.indexOf('citas')>-1 && neg.usaCitas) ops.push({id:'citas', ic:'calendar', txt:'Agendar'});
   if(F.indexOf('domicilios')>-1) ops.push({id:'domicilios', ic:'truck', txt:'Domicilios'});
   if(F.indexOf('clientes')>-1) ops.push({id:'clientes', ic:'users', txt:'Clientes'});
-  if(F.indexOf('pedidos')>-1) ops.push({id:'reimpresiones', ic:'history', txt:'Reimpresiones'});
+  if((F.indexOf('pedidos')>-1||F.indexOf('ventas')>-1)) ops.push({id:'reimpresiones', ic:'history', txt:'Reimpresiones'});
   if(ops.length){ items.push({g:'OPERACIONES'}); ops.forEach(o=>items.push(o)); }
   const ges=[];
   if(F.indexOf('reportes')>-1) ges.push({id:'reportes', ic:'report', txt:'Reportes'});
-  if(F.indexOf('pedidos')>-1) ges.push({id:'historial', ic:'history', txt:'Historial'});
+  if((F.indexOf('pedidos')>-1||F.indexOf('ventas')>-1)) ges.push({id:'historial', ic:'history', txt:'Historial'});
   if(F.indexOf('contable')>-1) ges.push({id:'contable', ic:'report', txt:'Registro Contable'});
   if(F.indexOf('gastosneg')>-1) ges.push({id:'gastosneg', ic:'cash', txt:'Gastos del Negocio'});
   if(u.rol==='admin'||u.esSupervisor) ges.push({id:'auditoria', ic:'history', txt:'Auditoría'});
@@ -3731,10 +3745,13 @@ function tiempos(){
 // ============================================================
 //  HISTORIAL (todas las ventas, con filtros)
 // ============================================================
-let _hBusca='', _hFiltro='todas';
+let _hBusca='', _hFiltro='todas', _hMes=null;
 function historial(){
   ESCRIBIENDO=false;
+  const mes=_hMes||today().substring(0,7);
   let vs=misDatos('ventas').slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
+  // Por defecto se muestra el mes seleccionado (como Portal Imperial)
+  if(mes!=='todos') vs=vs.filter(v=>(v.fecha||'').substring(0,7)===mes);
   if(_hFiltro==='pagadas') vs=vs.filter(v=>v.estado==='pagada');
   else if(_hFiltro==='anuladas') vs=vs.filter(v=>v.estado==='anulada');
   else if(_hFiltro==='abiertas') vs=vs.filter(v=>v.estado==='abierta');
@@ -3742,18 +3759,26 @@ function historial(){
     vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.cliTel||'').includes(q)); }
   const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
   const totalPag=vs.filter(v=>v.estado==='pagada').reduce((a,v)=>a+(v.total||0),0);
+  // Meses disponibles
+  const mesesSet={}; mesesSet[today().substring(0,7)]=1;
+  misDatos('ventas').forEach(v=>{ if(v.fecha) mesesSet[v.fecha.substring(0,7)]=1; });
+  const meses=Object.keys(mesesSet).sort().reverse();
   return `
     <div class="tarjeta">
       <div class="t-cab">
         <span class="t-tit">${ic('history')} Historial de ventas</span>
         <div class="t-acc">
-          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_hBusca)}" oninput="_hBusca=this.value;render()">
+          <select class="busca" onchange="_hMes=this.value;render()">
+            ${meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${nombreMes(m)}</option>`).join('')}
+            <option value="todos" ${mes==='todos'?'selected':''}>Todo el historial</option>
+          </select>
+          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_hBusca)}" oninput="_hBusca=this.value">
         </div>
       </div>
       <div class="cats">
         ${[['todas','Todas'],['pagadas','Pagadas'],['abiertas','Por cobrar'],['anuladas','Anuladas']].map(f=>`<button class="cat ${_hFiltro===f[0]?'on':''}" onclick="_hFiltro='${f[0]}';render()">${f[1]}</button>`).join('')}
       </div>
-      <p class="nota">${vs.length} venta(s) · Total pagado en el filtro: <strong class="oro">${fmtMoney(totalPag)}</strong></p>
+      <p class="nota">${vs.length} venta(s) · Total pagado: <strong class="oro">${fmtMoney(totalPag)}</strong></p>
       <div class="tabla-wrap"><table class="tabla">
         <thead><tr><th>Factura</th><th>Tipo</th><th>Cliente</th><th>Método</th><th>Total</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
         <tbody>${vs.length? vs.slice(0,200).map(v=>`<tr>
@@ -3933,6 +3958,13 @@ function quitarTema(){
 function render(){
   const app=document.getElementById('app');
   if(!app) return;
+  // Guardar el campo enfocado (buscadores) para restaurarlo tras redibujar,
+  // así el teclado no se cierra al escribir en cualquier búsqueda del sistema.
+  let _foco=null;
+  const _act=document.activeElement;
+  if(_act && (_act.tagName==='INPUT'||_act.tagName==='TEXTAREA') && _act.closest('#app')){
+    _foco={ph:_act.getAttribute('placeholder'), id:_act.id||'', pos:_act.selectionStart};
+  }
   // El tema del negocio se aplica dentro del negocio; el login y el
   // panel del súper admin conservan el estilo de la marca Wallace.
   if(STATE.user && STATE.negocio && !STATE.esSuperAdmin){ aplicarTema(STATE.negocio); }
@@ -3946,6 +3978,16 @@ function render(){
     return;
   }
   app.innerHTML=vistaNegocio();
+  // Restaurar el foco del buscador que estaba activo (no cerrar el teclado)
+  if(_foco && (_foco.ph||_foco.id)){
+    let el=null;
+    if(_foco.id) el=document.getElementById(_foco.id);
+    if(!el && _foco.ph){
+      const ins=app.querySelectorAll('input,textarea');
+      for(let i=0;i<ins.length;i++){ if(ins[i].getAttribute('placeholder')===_foco.ph){ el=ins[i]; break; } }
+    }
+    if(el){ try{ el.focus(); if(_foco.pos!=null && el.value.length>=_foco.pos) el.setSelectionRange(_foco.pos,_foco.pos); }catch(e){} }
+  }
   // Reflejar el estado de conexión
   const dot=document.getElementById('fb-status');
   const txt=document.getElementById('fb-txt');
