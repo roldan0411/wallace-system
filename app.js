@@ -238,14 +238,36 @@ function limpiarDatosAjenos(negId){
 // Refresca la pantalla salvo que el usuario esté ocupado
 function refrescarSiSePuede(){
   if(!STATE.user) return;
-  // Solo se evita refrescar mientras se ARMA una venta (pantalla 'ventas'),
-  // para no borrar el carrito. En Dashboard, Pedidos, Cocina, etc. SIEMPRE
-  // se refresca en vivo aunque ESCRIBIENDO haya quedado en true.
+  // Si el usuario está escribiendo en CUALQUIER campo (texto, número, select
+  // abierto, textarea), NO refrescamos: redibujar destruiría el campo y se
+  // perdería el foco / el teclado en móvil. Esperamos a que termine.
+  const a=document.activeElement;
+  if(a){
+    const tag=(a.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea'||tag==='select'||a.isContentEditable){
+      _refrescoPendiente=true;   // recordamos que hay cambios sin pintar
+      return;
+    }
+  }
+  // Solo se evita refrescar mientras se ARMA una venta (pantalla 'ventas')
   if(ESCRIBIENDO && STATE.pageNeg==='ventas') return;
   const modal=document.getElementById('modal-container');
   if(modal && modal.classList.contains('activo')) return;   // modal abierto
+  _refrescoPendiente=false;
   try{ render(); }catch(e){}
 }
+let _refrescoPendiente=false;
+// Cuando el usuario deja de escribir (quita el foco), pintamos lo que llegó
+document.addEventListener('focusout', function(){
+  setTimeout(function(){
+    if(!_refrescoPendiente) return;
+    const a=document.activeElement;
+    const tag=a?(a.tagName||'').toLowerCase():'';
+    if(tag==='input'||tag==='textarea'||tag==='select'||(a&&a.isContentEditable)) return;
+    _refrescoPendiente=false;
+    refrescarSiSePuede();
+  },150);
+}, true);
 
 // Botón "Actualizar": fuerza traer de la nube lo que corresponda
 function refrescarDeLaNube(){
@@ -1893,9 +1915,21 @@ function movimientoCaja(tipo){
     const arr=misDatos('caja_actual');
     const c=Array.isArray(arr)?arr[0]:arr;
     if(!c){ toast('No hay caja abierta','error'); return; }
+    const valor=parseFloat(d.valor)||0;
+    if(valor<=0){ toast('Valor inválido','error'); return; }
     c.movimientos=c.movimientos||[];
-    c.movimientos.unshift({id:uid(), tipo, concepto:d.concepto, valor:parseFloat(d.valor)||0, por:STATE.user.nombre, fecha:now()});
+    c.movimientos.unshift({id:uid(), tipo, concepto:d.concepto, valor, por:STATE.user.nombre, fecha:now()});
     guardarMisDatos('caja_actual',[c]);
+    // Un GASTO de caja es un egreso del negocio: queda en Gastos del Negocio
+    // y por tanto en el Reporte Contable (restando de ingresos).
+    if(tipo==='gasto'){
+      const g=misDatos('gastos_negocio');
+      g.unshift({id:uid(), concepto:d.concepto, valor, categoria:'Caja', origen:'caja',
+        por:STATE.user.nombre, fecha:now()});
+      guardarMisDatos('gastos_negocio',g);
+    }
+    logAudit(tipo==='gasto'?'Gasto de caja':tipo==='retiro'?'Retiro de caja':'Entrada a caja',
+      d.concepto+' · '+fmtMoney(valor));
     cerrarModal(); toast('Registrado','success'); render();
   }});
 }
@@ -1922,16 +1956,104 @@ function cerrarCaja(){
   ], onGuardar:(d)=>{
     const contado=parseFloat(d.contado)||0;
     const dif=contado-esperado;
+    const cierre=Object.assign({}, c, {id:uid(), cierre:now(), cerradaPor:STATE.user.nombre,
+      totalVentas:ventas.reduce((a,v)=>a+(v.subtotal||0),0),
+      efVenta, gastos, retiros, entradas, propEf, domEf,
+      esperado, contado, diferencia:dif, motivoDescuadre:(d.motivo||'')});
     const cierres=misDatos('cierres');
-    cierres.unshift(Object.assign({}, c, {id:uid(), cierre:now(), cerradaPor:STATE.user.nombre,
-      totalVentas:ventas.reduce((a,v)=>a+(v.subtotal||0),0), esperado, contado, diferencia:dif}));
+    cierres.unshift(cierre);
     guardarMisDatos('cierres',cierres);
+    logAudit('Cerró caja', 'Esperado '+fmtMoney(esperado)+' · Contado '+fmtMoney(contado)+
+      (dif===0?' · Cuadró':dif>0?' · Sobró '+fmtMoney(dif):' · Faltó '+fmtMoney(Math.abs(dif))));
     // Cierre real: la caja queda vacía para TODOS
     DB.set(claveCajaActual(),[]);
     cerrarModal();
+    // Imprimir el cuadre de caja (tirilla 80mm), como Portal Imperial
+    imprimirCierre(cierre);
+    // Si hubo descuadre, mostramos el reporte para revisar en pantalla
+    if(dif!==0){ setTimeout(()=>reporteDescuadre(cierre),300); }
     toast(dif===0?'Caja cerrada, cuadró exacto':dif>0?'Caja cerrada, sobró '+fmtMoney(dif):'Caja cerrada, faltó '+fmtMoney(Math.abs(dif)),
-      dif===0?'success':'info');
+      dif===0?'success':'error');
     render();
+  }});
+}
+// Imprime el cuadre de caja en tirilla POS 80mm
+function imprimirCierre(c){
+  const neg=STATE.negocio||{};
+  const dif=c.diferencia||0;
+  const metodos=[['efectivo','Efectivo'],['banco','Banco'],['tarjeta','Tarjeta']];
+  const porMet={efectivo:0,banco:0,tarjeta:0};
+  const ventasCierre=(c.ventasCierre||[]);
+  // Recalcular por método desde las ventas de la jornada guardadas, o usar totales
+  const html=`<div style="font-family:Arial,sans-serif;color:#000;width:72mm;padding:4mm;margin:0 auto;font-weight:600;">
+    <div style="text-align:center;">
+      ${neg.logo?`<img src="${neg.logo}" style="max-height:90px;max-width:200px;margin-bottom:4px;">`:''}
+      <div style="font-size:20px;font-weight:800;">${escapeHtml(neg.nombre||'')}</div>
+    </div>
+    <div style="text-align:center;font-size:17px;font-weight:800;border-top:2px solid #000;border-bottom:2px solid #000;padding:6px 0;margin:8px 0;">CIERRE DE CAJA</div>
+    <div style="font-size:13px;line-height:1.7;">
+      <div style="display:flex;justify-content:space-between;"><span>Cajero:</span><span>${escapeHtml(c.cerradaPor||c.cajero||'')}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Apertura:</span><span>${fmtDate(c.apertura)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Cierre:</span><span>${fmtDate(c.cierre)}</span></div>
+    </div>
+    <div style="border-top:2px solid #000;margin:8px 0;padding-top:8px;font-size:14px;line-height:1.9;">
+      <div style="display:flex;justify-content:space-between;"><span>Base inicial</span><span>${fmtMoney(c.base||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Ventas efectivo</span><span>${fmtMoney(c.efVenta||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Entradas</span><span>+${fmtMoney(c.entradas||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Gastos</span><span>-${fmtMoney(c.gastos||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Retiros</span><span>-${fmtMoney(c.retiros||0)}</span></div>
+    </div>
+    <div style="border-top:1px dashed #000;margin:8px 0;padding-top:8px;font-size:12px;line-height:1.7;">
+      <div style="display:flex;justify-content:space-between;"><span>Propinas (no ingreso)</span><span>${fmtMoney(c.propEf||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Domicilios (no ingreso)</span><span>${fmtMoney(c.domEf||0)}</span></div>
+    </div>
+    <div style="border-top:2px solid #000;margin:8px 0;padding-top:8px;font-size:15px;line-height:2;font-weight:800;">
+      <div style="display:flex;justify-content:space-between;"><span>Total ventas</span><span>${fmtMoney(c.totalVentas||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Efectivo esperado</span><span>${fmtMoney(c.esperado||0)}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Efectivo contado</span><span>${fmtMoney(c.contado||0)}</span></div>
+    </div>
+    <div style="border:3px solid #000;border-radius:6px;margin-top:8px;padding:10px;text-align:center;font-size:18px;font-weight:800;">
+      ${dif===0?'CAJA CUADRADA':dif>0?'SOBRA '+fmtMoney(dif):'FALTA '+fmtMoney(Math.abs(dif))}
+    </div>
+    ${c.motivoDescuadre?`<div style="font-size:12px;margin-top:8px;">Obs: ${escapeHtml(c.motivoDescuadre)}</div>`:''}
+    <div style="text-align:center;font-size:13px;margin-top:18px;">Firma: _______________</div>
+    <div style="text-align:center;font-size:9px;margin-top:12px;border-top:1px dashed #000;padding-top:6px;">Software por WALLACE COMPANY SYSTEM</div>
+  </div>`;
+  const w=window.open('','_blank','width=400,height=680');
+  if(!w){ toast('Permite las ventanas emergentes para imprimir','error'); return; }
+  w.document.write('<html><head><title>Cierre '+fmtDate(c.cierre)+'</title><meta charset="utf-8"><style>@page{size:80mm auto;margin:0;}body{margin:0;padding:4mm 3mm;width:80mm;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff;}</style></head><body>'+html+'</body></html>');
+  w.document.close();
+  setTimeout(()=>w.print(),400);
+}
+// Reporte de descuadre (cuando la caja no cuadra al cerrar)
+function reporteDescuadre(c){
+  const dif=c.diferencia||0;
+  const cuerpo=`
+    <div class="${dif<0?'alerta':'tarjeta-pend'}" style="border-radius:10px;padding:14px 16px;">
+      <div style="font-size:17px;font-weight:800;" class="${dif<0?'rojo':'oro'}">
+        ${dif<0?'⚠️ FALTÓ '+fmtMoney(Math.abs(dif)):'💰 SOBRÓ '+fmtMoney(dif)}
+      </div>
+      <p class="nota" style="margin-top:6px;">Cerró: ${escapeHtml(c.cerradaPor||'')} · ${fmtDate(c.cierre)}</p>
+    </div>
+    <div class="cobro-caja" style="margin-top:12px;">
+      <div class="c-row"><span>Base de apertura</span><span>${fmtMoney(c.base||0)}</span></div>
+      <div class="c-row"><span>Ventas en efectivo</span><span>${fmtMoney(c.efVenta||0)}</span></div>
+      <div class="c-row"><span>Entradas</span><span>+${fmtMoney(c.entradas||0)}</span></div>
+      <div class="c-row"><span>Gastos</span><span class="rojo">−${fmtMoney(c.gastos||0)}</span></div>
+      <div class="c-row"><span>Retiros</span><span class="rojo">−${fmtMoney(c.retiros||0)}</span></div>
+      <div class="c-row c-total"><span>Esperado en cajón</span><strong>${fmtMoney(c.esperado||0)}</strong></div>
+      <div class="c-row"><span>Contado real</span><span class="negrita">${fmtMoney(c.contado||0)}</span></div>
+      <div class="c-row c-total"><span>Diferencia</span><strong class="${dif<0?'rojo':'oro'}">${dif<0?'−':'+'}${fmtMoney(Math.abs(dif))}</strong></div>
+    </div>`;
+  abrirModal({titulo:'📋 Reporte de descuadre', textoBoton:'Entendido', campos:[
+    {id:'motivo', label:'¿Sabes por qué el descuadre? (opcional, queda registrado)', valor:c.motivoDescuadre||''}
+  ], extraHTML:cuerpo, onGuardar:(d)=>{
+    if(d.motivo){
+      const cierres=misDatos('cierres'); const x=cierres.find(y=>y.id===c.id);
+      if(x){ x.motivoDescuadre=d.motivo; guardarMisDatos('cierres',cierres); }
+      logAudit('Motivo de descuadre', d.motivo);
+    }
+    cerrarModal();
   }});
 }
 function claveCajaActual(){
@@ -2502,16 +2624,16 @@ function contable(){
   const gastos=misDatos('gastos_negocio').filter(g=>(g.fecha||'').substring(0,7)===mes);
   const totalGastos=gastos.reduce((a,g)=>a+g.valor,0);
   const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
-  let gastosCaja=0, retiros=0;
+  let retiros=0;
   cierres.forEach(c=>(c.movimientos||[]).forEach(m=>{
-    if(m.tipo==='gasto') gastosCaja+=m.valor;
     if(m.tipo==='retiro') retiros+=m.valor; }));
-  const egresos=totalGastos+gastosCaja;
+  // Los gastos de caja YA están en gastos_negocio (origen:'caja'), no se suman
+  // aparte para no contarlos doble.
+  const gastosCaja=gastos.filter(g=>g.origen==='caja').reduce((a,g)=>a+g.valor,0);
+  const egresos=totalGastos;
   const utilidad=totalVentas-egresos;
   const porConcepto={};
-  gastos.forEach(g=>{ porConcepto[g.concepto]=(porConcepto[g.concepto]||0)+g.valor; });
-  cierres.forEach(c=>(c.movimientos||[]).forEach(m=>{
-    if(m.tipo==='gasto'){ const k='(caja) '+m.concepto; porConcepto[k]=(porConcepto[k]||0)+m.valor; } }));
+  gastos.forEach(g=>{ const k=(g.origen==='caja'?'(caja) ':'')+g.concepto; porConcepto[k]=(porConcepto[k]||0)+g.valor; });
   const conceptos=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
   const mesesSet={}; mesesSet[today().substring(0,7)]=1;
   vs.forEach(v=>{ if(v.fecha) mesesSet[v.fecha.substring(0,7)]=1; });
@@ -2559,15 +2681,21 @@ function contable(){
     </div>`:''}
     ${cierres.length?`<div class="tarjeta"><span class="t-tit">Cierres de caja</span>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Fecha</th><th>Cajero</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead>
-        <tbody>${cierres.map(c=>`<tr>
+        <thead><tr><th>Fecha</th><th>Cajero</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th></th></tr></thead>
+        <tbody>${cierres.map((c,ci)=>`<tr>
           <td>${(c.cierre||'').split('T')[0]}</td>
           <td>${escapeHtml(c.cerradaPor||c.cajero||'—')}</td>
           <td>${fmtMoney(c.esperado||0)}</td>
           <td>${fmtMoney(c.contado||0)}</td>
           <td class="${(c.diferencia||0)===0?'':(c.diferencia>0?'verde':'rojo')}">${(c.diferencia||0)===0?'✓ cuadró':fmtMoney(c.diferencia)}</td>
+          <td><button class="btn btn-sm" onclick="reimprimirCierre('${c.id}')" title="Reimprimir cuadre">🖨️</button></td>
         </tr>`).join('')}</tbody>
       </table></div></div>`:''}`;
+}
+function reimprimirCierre(id){
+  const c=misDatos('cierres').find(x=>x.id===id);
+  if(!c){ toast('Cierre no encontrado','error'); return; }
+  imprimirCierre(c);
 }
 function nombreMes(m){
   if(!m) return '';
@@ -2617,7 +2745,7 @@ function gastosneg(){
           <thead><tr><th>Fecha</th><th>Concepto</th><th>Valor</th><th></th></tr></thead>
           <tbody>${delMes.length?delMes.map(g=>`<tr>
             <td class="gris chico">${(g.fecha||'').split('T')[0]}</td>
-            <td>${escapeHtml(g.concepto)}${g.nota?`<br><span class="gris chico">${escapeHtml(g.nota)}</span>`:''}</td>
+            <td>${escapeHtml(g.concepto)}${g.origen==='caja'?' <span class="pill pill-azul">de caja</span>':''}${g.nota?`<br><span class="gris chico">${escapeHtml(g.nota)}</span>`:''}</td>
             <td class="negrita">${fmtMoney(g.valor)}</td>
             <td><button class="btn btn-sm btn-rojo" onclick="eliminarGasto('${g.id}')">×</button></td>
           </tr>`).join(''):'<tr><td colspan="4" class="gris">Sin gastos este mes.</td></tr>'}</tbody>
@@ -2638,12 +2766,20 @@ function nuevoGasto(){
     arr.unshift({id:uid(), concepto:d.concepto, valor:parseFloat(d.valor)||0,
       fecha:d.fecha||today(), metodo:d.metodo, nota:d.nota, por:STATE.user.nombre, creado:now()});
     guardarMisDatos('gastos_negocio',arr);
+    logAudit('Registró gasto', d.concepto+' · '+fmtMoney(parseFloat(d.valor)||0));
     cerrarModal(); toast('Gasto registrado','success'); render();
   }});
 }
 function eliminarGasto(id){
-  confirmarModal('¿Eliminar este gasto?',()=>{
-    eliminarMisDatos('gastos_negocio',id); toast('Eliminado','info'); render();
+  const g=misDatos('gastos_negocio').find(x=>x.id===id);
+  if(!g){ return; }
+  const aviso = g.origen==='caja'
+    ? '⚠️ Este gasto se hizo desde la CAJA. Si lo borras aquí, la caja de ese día quedará descuadrada. ¿Eliminar de todas formas?'
+    : '¿Eliminar el gasto "'+escapeHtml(g.concepto)+'" de '+fmtMoney(g.valor)+'?';
+  confirmarModal(aviso,()=>{
+    eliminarMisDatos('gastos_negocio',id);
+    logAudit('Eliminó gasto', (g.concepto||'')+' · '+fmtMoney(g.valor));
+    toast('Gasto eliminado','info'); render();
   },'Eliminar');
 }
 
