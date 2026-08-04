@@ -552,10 +552,7 @@ function abrirModal(cfg){
     if(cfg.onGuardar) cfg.onGuardar(datos);
   };
   setTimeout(()=>{
-    // En móvil NO enfocamos automáticamente: abriría el teclado y taparía la pantalla.
-    // Solo enfocamos en pantallas grandes (escritorio), donde no estorba.
-    const esMovil = window.matchMedia && window.matchMedia('(max-width: 820px)').matches;
-    if(!esMovil){ const f=cont.querySelector('input,select,textarea'); if(f) f.focus(); }
+    const f=cont.querySelector('input,select,textarea'); if(f) f.focus();
     if(typeof cfg.onAbrir==='function') cfg.onAbrir();
   },50);
 }
@@ -1019,16 +1016,16 @@ function nuevaVenta(){
     <div class="caja-aviso">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>
     <div class="venta-grid">
       <div class="venta-izq">
-        <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;filtrarProductos()">
-        ${cats.length>1?`<div class="cats" id="venta-cats">${cats.map(c=>`<button class="cat ${_vCat===c?'on':''}" onclick="_vCat='${escapeHtml(c)}';filtrarProductos();marcarCat(this)">${escapeHtml(c)}</button>`).join('')}</div>`:''}
-        <div id="venta-prods">${productos.length?`<div class="prods">
+        <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;render()">
+        ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="cat ${_vCat===c?'on':''}" onclick="_vCat='${escapeHtml(c)}';render()">${escapeHtml(c)}</button>`).join('')}</div>`:''}
+        ${productos.length?`<div class="prods">
           ${productos.map(p=>`<div class="prod" onclick="agregarAlCarrito('${p.id}')">
             <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('box')}</div>
             <div class="prod-nom">${escapeHtml(p.nombre)}</div>
             <div class="prod-pre">${fmtMoney(p.precio)}</div>
             ${p.stock!=null?`<div class="prod-stock ${p.stock<=0?'sin':p.stock<=(p.stockMin||0)?'poco':''}">${p.stock<=0?'Sin stock':'Stock: '+p.stock}</div>`:''}
           </div>`).join('')}
-        </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin '+escapeHtml((neg.palabraProductos||'productos').toLowerCase())+'. Agrégalos en Inventario.'}</p>`}</div>
+        </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin '+escapeHtml((neg.palabraProductos||'productos').toLowerCase())+'. Agrégalos en Inventario.'}</p>`}
       </div>
       <div class="tarjeta carrito">
         <div class="t-cab">
@@ -1113,29 +1110,6 @@ function actualizarTotalVenta(){
   if(elTot) elTot.textContent=fmtMoney(total+valorDom);
   const elDom=document.getElementById('linea-dom');
   if(elDom) elDom.innerHTML = valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:'';
-}
-
-// Filtra solo la grilla de productos (sin recargar el carrito ni perder foco del buscador)
-function filtrarProductos(){
-  const neg=STATE.negocio;
-  let productos=misDatos('productos').filter(p=>!p.agotado);
-  if(_vCat!=='Todas') productos=productos.filter(p=>(p.categoria||'General')===_vCat);
-  if(_vBusca){ const q=_vBusca.toLowerCase(); productos=productos.filter(p=>(p.nombre||'').toLowerCase().includes(q)); }
-  const cont=document.getElementById('venta-prods');
-  if(!cont) return;
-  cont.innerHTML = productos.length?`<div class="prods">
-    ${productos.map(p=>`<div class="prod" onclick="agregarAlCarrito('${p.id}')">
-      <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('box')}</div>
-      <div class="prod-nom">${escapeHtml(p.nombre)}</div>
-      <div class="prod-pre">${fmtMoney(p.precio)}</div>
-      ${p.stock!=null?`<div class="prod-stock ${p.stock<=0?'sin':p.stock<=(p.stockMin||0)?'poco':''}">${p.stock<=0?'Sin stock':'Stock: '+p.stock}</div>`:''}
-    </div>`).join('')}
-  </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin productos.'}</p>`;
-}
-function marcarCat(el){
-  const cont=document.getElementById('venta-cats');
-  if(cont){ cont.querySelectorAll('.cat').forEach(c=>c.classList.remove('on')); }
-  if(el) el.classList.add('on');
 }
 
 function agregarAlCarrito(id){
@@ -1675,6 +1649,101 @@ function eliminarDefinitivo(id){
   },'Sí, eliminar');
 }
 
+// ============================================================
+//  LOTES Y FECHAS DE VENCIMIENTO (FEFO)
+//  Un producto puede tener p.lotes = [{id, cantidad, vence:'YYYY-MM-DD', ingresado, motivo}]
+//  El p.stock total se mantiene igual a la suma de los lotes.
+//  Al descontar se saca primero del lote que vence antes (First Expired, First Out).
+// ============================================================
+function ordenarLotes(lotes){
+  // Sin fecha van al final; los que vencen antes, primero
+  return (lotes||[]).slice().sort((a,b)=>{
+    if(!a.vence && !b.vence) return 0;
+    if(!a.vence) return 1;
+    if(!b.vence) return -1;
+    return a.vence.localeCompare(b.vence);
+  });
+}
+function sumaLotes(p){ return (p.lotes||[]).reduce((a,l)=>a+(l.cantidad||0),0); }
+// Descuenta 'cant' unidades del producto sacando de los lotes más próximos a vencer
+function descontarDeLotes(p, cant){
+  if(!p.lotes || !p.lotes.length) return;
+  let resta=cant;
+  const orden=ordenarLotes(p.lotes);
+  for(const l of orden){
+    if(resta<=0) break;
+    const usar=Math.min(l.cantidad||0, resta);
+    l.cantidad=(l.cantidad||0)-usar;
+    resta-=usar;
+  }
+  // Quitar lotes que quedaron en 0
+  p.lotes=p.lotes.filter(l=>(l.cantidad||0)>0);
+}
+// Reingresa 'cant' unidades: las suma al lote más próximo a vencer (el que probablemente se usó)
+function reingresarALotes(p, cant){
+  if(!p.lotes || !p.lotes.length){
+    // No había lotes: crear uno sin fecha para no perder la cantidad
+    p.lotes=[{id:uid(), cantidad:cant, vence:'', ingresado:now(), motivo:'Devolución'}];
+    return;
+  }
+  const orden=ordenarLotes(p.lotes);
+  orden[0].cantidad=(orden[0].cantidad||0)+cant;
+}
+// Días que faltan para una fecha (negativo = ya venció)
+function diasHasta(fecha){
+  if(!fecha) return null;
+  const hoy=new Date(today()+'T00:00:00');
+  const f=new Date(fecha+'T00:00:00');
+  return Math.round((f-hoy)/86400000);
+}
+// Umbral de aviso configurable por negocio (por defecto 7 días)
+function diasAvisoVence(){
+  const n=STATE.negocio;
+  return (n && n.diasAvisoVence!=null) ? n.diasAvisoVence : 7;
+}
+// Lista de {producto, lote, dias} de lotes por vencer o vencidos en TODOS los productos
+function lotesAlerta(){
+  const umbral=diasAvisoVence();
+  const res=[];
+  misDatos('productos').forEach(p=>{
+    (p.lotes||[]).forEach(l=>{
+      if(!l.vence || (l.cantidad||0)<=0) return;
+      const d=diasHasta(l.vence);
+      if(d!=null && d<=umbral) res.push({producto:p, lote:l, dias:d});
+    });
+  });
+  return res.sort((a,b)=>a.dias-b.dias);
+}
+// Aviso al entrar a inventario si hay lotes por vencer/vencidos (una vez por render)
+function avisarVencimientos(){
+  const neg=STATE.negocio;
+  if((neg.funciones||[]).indexOf('inventario')<0) return;
+  if(neg.alertaVence===false) return;
+  const al=lotesAlerta();
+  if(!al.length) return;
+  const vencidos=al.filter(x=>x.dias<0);
+  const proximos=al.filter(x=>x.dias>=0);
+  if(vencidos.length) sonidoAlerta();
+  const cuerpo=`
+    ${vencidos.length?`<div class="alerta" style="border-radius:10px;padding:12px 15px;margin-bottom:10px;">
+      <strong class="rojo" style="font-size:15px;">⛔ YA VENCIERON (${vencidos.length})</strong>
+      <p style="margin-top:6px;line-height:1.8;">${vencidos.map(x=>escapeHtml(x.producto.nombre)+' · lote de '+x.lote.cantidad+' · venció '+fmtSoloFecha(x.lote.vence)+' (hace '+Math.abs(x.dias)+' día'+(Math.abs(x.dias)===1?'':'s')+')').join('<br>')}</p>
+      <p class="nota" style="margin-top:8px;">Retíralos del inventario para no venderlos.</p>
+    </div>`:''}
+    ${proximos.length?`<div class="tarjeta-pend" style="border-radius:10px;padding:12px 15px;">
+      <strong class="oro" style="font-size:15px;">⚠️ POR VENCER (${proximos.length})</strong>
+      <p style="margin-top:6px;line-height:1.8;">${proximos.map(x=>escapeHtml(x.producto.nombre)+' · lote de '+x.lote.cantidad+' · vence '+fmtSoloFecha(x.lote.vence)+' ('+(x.dias===0?'hoy':'en '+x.dias+' día'+(x.dias===1?'':'s'))+')').join('<br>')}</p>
+      <p class="nota" style="margin-top:8px;">Prioriza vender estos primero (el sistema ya los saca primero al vender).</p>
+    </div>`:''}`;
+  abrirModal({titulo:'Alertas de vencimiento', textoBoton:'Entendido', campos:[],
+    extraHTML:cuerpo, onGuardar:()=>{ cerrarModal(); }});
+}
+function fmtSoloFecha(f){
+  if(!f) return '—';
+  try{ return new Date(f+'T00:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}); }
+  catch(e){ return f; }
+}
+
 // ---------- INVENTARIO ----------
 function descontarStock(venta){
   const neg=STATE.negocio;
@@ -1696,7 +1765,10 @@ function descontarStock(venta){
         }
       });
     }
-    if(p.stock!=null){ p.stock=Math.max(0,p.stock-item.qty); cambioP=true; }
+    if(p.stock!=null){
+      if((p.lotes||[]).length){ descontarDeLotes(p, item.qty); }   // FEFO: saca primero lo que vence antes
+      p.stock=Math.max(0,p.stock-item.qty); cambioP=true;
+    }
   });
   if(cambioI) guardarMisDatos('insumos',insumos);
   if(cambioP) guardarMisDatos('productos',productos);
@@ -1717,7 +1789,10 @@ function devolverStock(venta){
         if(ins){ ins.stock=(ins.stock||0)+r.cantidad*item.qty; cambioI=true; }
       });
     }
-    if(p.stock!=null){ p.stock=(p.stock||0)+item.qty; cambioP=true; }
+    if(p.stock!=null){
+      if((p.lotes||[]).length){ reingresarALotes(p, item.qty); }
+      p.stock=(p.stock||0)+item.qty; cambioP=true;
+    }
   });
   if(cambioI) guardarMisDatos('insumos',insumos);
   if(cambioP) guardarMisDatos('productos',productos);
@@ -2199,18 +2274,31 @@ function inventario(){
   const agotados=conStock.filter(p=>p.stock<=0);
   const bajos=conStock.filter(p=>p.stock>0 && p.stock<=(p.stockMin||0));
   const valor=conStock.reduce((a,p)=>a+(p.stock*(p.precio||0)),0);
+  // Alertas de vencimiento por lotes
+  const alVence=lotesAlerta();
+  const vencidos=alVence.filter(x=>x.dias<0);
+  const porVencer=alVence.filter(x=>x.dias>=0);
+  const usaLotesAlgun=todos.some(p=>p.usaLotes);
 
   return `
     ${conStock.length?`<div class="stats">
       <div class="stat"><div class="stat-lbl">${escapeHtml(pps)}</div><div class="stat-val">${todos.length}</div><div class="stat-sub">${conStock.reduce((a,p)=>a+p.stock,0)} unidades</div></div>
       <div class="stat gold"><div class="stat-lbl">Valor del inventario</div><div class="stat-val">${fmtMoney(valor)}</div><div class="stat-sub">a precio de venta</div></div>
       <div class="stat ${bajos.length?'rojo':''}"><div class="stat-lbl">Quedan pocos</div><div class="stat-val">${bajos.length}</div><div class="stat-sub">por agotarse</div></div>
-      <div class="stat ${agotados.length?'rojo':''}"><div class="stat-lbl">Agotados</div><div class="stat-val">${agotados.length}</div><div class="stat-sub">sin unidades</div></div>
+      ${usaLotesAlgun
+        ?`<div class="stat ${vencidos.length?'rojo':porVencer.length?'gold':''}"><div class="stat-lbl">Por vencer / vencidos</div><div class="stat-val">${porVencer.length+vencidos.length}</div><div class="stat-sub">lotes con alerta</div></div>`
+        :`<div class="stat ${agotados.length?'rojo':''}"><div class="stat-lbl">Agotados</div><div class="stat-val">${agotados.length}</div><div class="stat-sub">sin unidades</div></div>`}
     </div>`:''}
     ${(agotados.length||bajos.length)?`<div class="tarjeta alerta">
       <span class="t-tit chico">⚠️ Alertas de inventario</span>
       ${agotados.length?`<p><strong class="rojo">AGOTADOS (${agotados.length}):</strong> ${agotados.map(p=>escapeHtml(p.nombre)).join(', ')}</p>`:''}
       ${bajos.length?`<p><strong class="oro">Quedan pocos (${bajos.length}):</strong> ${bajos.map(p=>escapeHtml(p.nombre)+' ('+p.stock+')').join(', ')}</p>`:''}
+    </div>`:''}
+    ${(vencidos.length||porVencer.length)?`<div class="tarjeta alerta">
+      <span class="t-tit chico">📅 Alertas de vencimiento</span>
+      ${vencidos.length?`<p><strong class="rojo">YA VENCIERON (${vencidos.length}):</strong> ${vencidos.map(x=>escapeHtml(x.producto.nombre)+' ('+x.lote.cantidad+' und, venció '+fmtSoloFecha(x.lote.vence)+')').join(', ')}</p>`:''}
+      ${porVencer.length?`<p><strong class="oro">POR VENCER (${porVencer.length}):</strong> ${porVencer.map(x=>escapeHtml(x.producto.nombre)+' ('+x.lote.cantidad+' und, '+(x.dias===0?'vence hoy':'en '+x.dias+'d')+')').join(', ')}</p>`:''}
+      <p class="nota">Al vender, el sistema saca primero los lotes más próximos a vencer.</p>
     </div>`:''}
     <div class="tarjeta">
       <div class="t-cab">
@@ -2225,15 +2313,28 @@ function inventario(){
         ${lista.map(p=>{
           const sin=p.stock!=null&&p.stock<=0;
           const poco=p.stock!=null&&p.stock>0&&p.stock<=(p.stockMin||0);
+          // Lote más próximo a vencer (si maneja lotes)
+          let vencePill='';
+          if(p.usaLotes && (p.lotes||[]).length){
+            const conFecha=ordenarLotes(p.lotes.filter(l=>l.vence && (l.cantidad||0)>0));
+            if(conFecha.length){
+              const d=diasHasta(conFecha[0].vence);
+              const clase = d<0?'pill-rojo':d<=diasAvisoVence()?'pill-gold':'pill-verde';
+              const txt = d<0?('venció '+fmtSoloFecha(conFecha[0].vence)):d===0?'vence hoy':('vence en '+d+'d');
+              vencePill=`<div style="margin-top:4px;"><span class="pill ${clase} chico">📅 ${txt}</span></div>`;
+            }
+          }
           return `<div class="prod ${p.agotado||sin?'off':''}">
             <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('box')}
               ${p.agotado?'<span class="badge-off">AGOTADO</span>':sin?'<span class="badge-off">SIN STOCK</span>':poco?'<span class="badge-off amarillo">POCOS</span>':''}</div>
-            <div class="prod-nom">${escapeHtml(p.nombre)}</div>
+            <div class="prod-nom">${escapeHtml(p.nombre)}${p.usaLotes?' <span class="gris chico">📦 lotes</span>':''}</div>
             <div class="prod-cat">${escapeHtml(p.categoria||'General')}</div>
             <div class="prod-pre">${fmtMoney(p.precio)}</div>
             ${p.stock!=null?`<div class="prod-stock ${sin?'sin':poco?'poco':''}">Stock: ${p.stock}</div>`:''}
+            ${vencePill}
             <div class="prod-acc">
               ${p.stock!=null?`<button class="btn btn-sm btn-verde" onclick="entradaStock('${p.id}')">+ Stock</button>`:''}
+              ${p.usaLotes?`<button class="btn btn-sm" onclick="verLotes('${p.id}')" title="Ver y gestionar lotes">📦 Lotes</button>`:''}
               <button class="btn btn-sm" onclick="editarProducto('${p.id}')">Editar</button>
               <button class="btn btn-sm btn-rojo" onclick="eliminarProducto('${p.id}')">×</button>
             </div>
@@ -2259,15 +2360,26 @@ function editarProducto(id){
   ];
   // Solo los negocios SIN recetas manejan stock por producto.
   // En restaurante el plato no tiene stock propio: se controla por sus insumos.
+  const usaLotes = !!(p && p.usaLotes);
   if(!esResto){
-    campos.push({id:'stock', label:'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''});
+    campos.push({id:'stock', label:usaLotes?'Stock total (se calcula por lotes)':'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''});
     campos.push({id:'stockmin', label:'Avisar cuando queden menos de', tipo:'number', valor:p&&p.stockMin!=null?String(p.stockMin):'5'});
   }
+
+  // Bloque para activar el manejo por lotes/fecha de vencimiento (solo negocios con stock)
+  const extraLotes = (!esResto) ? `
+    <div class="cobro-caja" style="margin-top:14px;">
+      <label class="chk" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="m-usalotes" ${usaLotes?'checked':''}>
+        <span><strong>Manejar por lotes con fecha de vencimiento</strong></span>
+      </label>
+      <p class="nota" style="margin-top:8px;">Actívalo para productos perecederos (comida, medicamentos, etc.). Cada entrada de stock guardará su fecha de vencimiento y el sistema venderá primero lo que esté más próximo a vencer, avisándote antes de que se dañe.</p>
+    </div>` : '';
 
   abrirModal({
     titulo:(p?'Editar':'Nuevo')+' '+(neg.palabraProducto||'producto').toLowerCase(),
     textoBoton:'Guardar', campos:campos,
-    extraHTML: esResto ? recetaEditorHTML() : '',
+    extraHTML: esResto ? recetaEditorHTML() : extraLotes,
     onGuardar:(d)=>{
       const arr=misDatos('productos');
       const datos={
@@ -2280,6 +2392,22 @@ function editarProducto(id){
       } else {
         datos.stock = d.stock===''?null:(parseFloat(d.stock)||0);
         datos.stockMin = parseFloat(d.stockmin)||0;
+        const chkLotes=document.getElementById('m-usalotes');
+        datos.usaLotes = !!(chkLotes && chkLotes.checked);
+        const x0 = p ? arr.find(y=>y.id===id) : null;
+        const lotesPrev = (x0 && x0.lotes) ? x0.lotes : [];
+        if(datos.usaLotes){
+          // Si se activa y hay stock sin lotes, crear un lote inicial sin fecha con ese stock
+          if(!lotesPrev.length && datos.stock!=null && datos.stock>0){
+            datos.lotes=[{id:uid(), cantidad:datos.stock, vence:'', ingresado:now(), motivo:'Stock inicial'}];
+          } else {
+            datos.lotes = lotesPrev;
+            // El stock total pasa a ser la suma de los lotes existentes (si los hay)
+            if(lotesPrev.length) datos.stock = lotesPrev.reduce((a,l)=>a+(l.cantidad||0),0);
+          }
+        } else {
+          datos.lotes = [];   // se desactiva el manejo por lotes
+        }
       }
       if(p){ const x=arr.find(y=>y.id===id); if(x) Object.assign(x,datos); }
       else { arr.unshift(Object.assign({id:uid(), agotado:false, creado:now(), imagen:''}, datos)); }
@@ -2348,22 +2476,96 @@ function eliminarProducto(id){
 function entradaStock(id){
   const productos=misDatos('productos');
   const p=productos.find(x=>x.id===id); if(!p) return;
-  abrirModal({titulo:'Entrada de stock · '+p.nombre, textoBoton:'Agregar', campos:[
+  const campos=[
     {id:'cant', label:'¿Cuántas unidades entran?', tipo:'number', requerido:true},
     {id:'motivo', label:'Motivo', valor:'Compra'}
-  ], extraHTML:`<p class="nota">Stock actual: <strong>${p.stock||0}</strong></p>`,
+  ];
+  // Si el producto maneja lotes, pedir la fecha de vencimiento de este lote
+  if(p.usaLotes){
+    campos.push({id:'vence', label:'Fecha de vencimiento de este lote (opcional)', tipo:'date', valor:''});
+  }
+  const lotesHTML = p.usaLotes ? lotesDetalleHTML(p) : '';
+  abrirModal({titulo:'Entrada de stock · '+p.nombre, textoBoton:'Agregar', campos:campos,
+  extraHTML:`<p class="nota">Stock actual: <strong>${p.stock||0}</strong></p>${lotesHTML}`,
   onGuardar:(d)=>{
     const cant=parseFloat(d.cant)||0;
     if(cant<=0){ toast('Cantidad inválida','error'); return; }
     const arr=misDatos('productos');
     const x=arr.find(y=>y.id===id);
-    if(x){ x.stock=(x.stock||0)+cant; guardarMisDatos('productos',arr); }
+    if(x){
+      x.stock=(x.stock||0)+cant;
+      if(x.usaLotes){
+        if(!x.lotes) x.lotes=[];
+        x.lotes.push({id:uid(), cantidad:cant, vence:(d.vence||''), ingresado:now(), motivo:d.motivo});
+      }
+      guardarMisDatos('productos',arr);
+    }
     const movs=misDatos('movimientos');
     movs.unshift({id:uid(), productoId:id, nombre:p.nombre, tipo:'entrada', cantidad:cant,
-      motivo:d.motivo, por:STATE.user.nombre, fecha:now()});
+      motivo:d.motivo+(d.vence?' · vence '+d.vence:''), por:STATE.user.nombre, fecha:now()});
     guardarMisDatos('movimientos',movs);
     cerrarModal(); toast('Stock actualizado','success'); render();
   }});
+}
+// Muestra el detalle de lotes de un producto (dentro de un modal)
+function lotesDetalleHTML(p){
+  const lotes=ordenarLotes(p.lotes||[]).filter(l=>(l.cantidad||0)>0);
+  if(!lotes.length) return `<p class="nota" style="margin-top:8px;">Sin lotes registrados. La cantidad que ingreses creará el primer lote.</p>`;
+  return `<div class="cobro-caja" style="margin-top:12px;">
+    <strong class="chico">Lotes actuales <span class="gris">(se vende primero el que vence antes)</span></strong>
+    <div style="margin-top:8px;">
+      ${lotes.map(l=>{
+        const d=l.vence?diasHasta(l.vence):null;
+        const clase = d==null?'' : d<0?'pill-rojo' : d<=diasAvisoVence()?'pill-gold':'pill-verde';
+        const txt = !l.vence?'sin fecha' : d<0?('venció hace '+Math.abs(d)+'d') : d===0?'vence hoy' : ('vence en '+d+'d');
+        return `<div class="c-row" style="padding:5px 0;">
+          <span>${l.cantidad} und ${l.vence?'· '+fmtSoloFecha(l.vence):''}</span>
+          <span><span class="pill ${clase}">${txt}</span></span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+// Modal para ver y gestionar (retirar) los lotes de un producto
+function verLotes(id){
+  const p=misDatos('productos').find(x=>x.id===id); if(!p) return;
+  const lotes=ordenarLotes(p.lotes||[]).filter(l=>(l.cantidad||0)>0);
+  const cuerpo = lotes.length ? `
+    <div style="margin-top:6px;">
+      ${lotes.map(l=>{
+        const d=l.vence?diasHasta(l.vence):null;
+        const clase = d==null?'' : d<0?'pill-rojo' : d<=diasAvisoVence()?'pill-gold':'pill-verde';
+        const txt = !l.vence?'sin fecha' : d<0?('venció hace '+Math.abs(d)+'d') : d===0?'vence hoy' : ('vence en '+d+'d');
+        return `<div class="c-row" style="padding:8px 0;border-bottom:1px solid var(--linea2);">
+          <span><strong>${l.cantidad} und</strong> ${l.vence?'· '+fmtSoloFecha(l.vence):''}<br><span class="gris chico">${escapeHtml(l.motivo||'')}</span></span>
+          <span style="text-align:right;">
+            <span class="pill ${clase}">${txt}</span><br>
+            <button class="btn btn-sm btn-rojo" style="margin-top:5px;" onclick="retirarLote('${p.id}','${l.id}')">Retirar</button>
+          </span>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="nota" style="margin-top:10px;">Usa <strong>Retirar</strong> para sacar del inventario un lote vencido o dañado. Al vender, el sistema descuenta primero el lote más próximo a vencer.</p>`
+    : `<p class="nota">Este producto no tiene lotes con existencias. Registra una entrada de stock para crear un lote.</p>`;
+  abrirModal({titulo:'Lotes · '+p.nombre, textoBoton:'Cerrar', campos:[],
+    extraHTML:`<p class="nota">Stock total: <strong>${p.stock||0}</strong></p>${cuerpo}`,
+    onGuardar:()=>{ cerrarModal(); }});
+}
+// Retira (elimina) un lote y descuenta su cantidad del stock total
+function retirarLote(prodId, loteId){
+  const arr=misDatos('productos');
+  const p=arr.find(x=>x.id===prodId); if(!p||!p.lotes) return;
+  const l=p.lotes.find(x=>x.id===loteId); if(!l) return;
+  confirmarModal('¿Retirar del inventario este lote de '+l.cantidad+' unidad(es)'+(l.vence?' que vence '+fmtSoloFecha(l.vence):'')+'?',()=>{
+    p.stock=Math.max(0,(p.stock||0)-(l.cantidad||0));
+    p.lotes=p.lotes.filter(x=>x.id!==loteId);
+    guardarMisDatos('productos',arr);
+    const movs=misDatos('movimientos');
+    movs.unshift({id:uid(), productoId:prodId, nombre:p.nombre, tipo:'retiro_lote', cantidad:l.cantidad,
+      motivo:'Retiro de lote'+(l.vence?' vencido/dañado ('+l.vence+')':''), por:STATE.user.nombre, fecha:now()});
+    guardarMisDatos('movimientos',movs);
+    cerrarModal(); toast('Lote retirado','info'); render();
+  },'Retirar');
 }
 
 // ============================================================
@@ -3465,6 +3667,8 @@ function irA(pg){
   STATE.pageNeg=pg;
   render();
   const sb=document.getElementById('sidebar'); if(sb) sb.classList.remove('abierto');
+  // Al entrar a Inventario, avisar si hay lotes vencidos o por vencer
+  if(pg==='inventario' || pg==='catalogo'){ try{ avisarVencimientos(); }catch(e){} }
 }
 function armarMenu(){
   const neg=STATE.negocio, u=STATE.user;
@@ -3578,7 +3782,11 @@ function minegocio(){
       <div class="checks">
         <label class="chk"><input type="checkbox" id="n-sonidos" ${neg.sonidos!==false?'checked':''}> Sonidos al vender</label>
         <label class="chk"><input type="checkbox" id="n-alerta" ${neg.alertaStock!==false?'checked':''}> Avisar cuando se agote un producto</label>
+        <label class="chk"><input type="checkbox" id="n-alertavence" ${neg.alertaVence!==false?'checked':''}> Avisar productos por vencer</label>
       </div>
+      <div class="m-row" style="margin-top:12px;">
+        <label>Avisar cuántos días antes de que un producto se venza</label>
+        <input id="n-diasvence" type="number" min="0" class="campo" value="${neg.diasAvisoVence!=null?neg.diasAvisoVence:7}" placeholder="Ej: 7"></div>
       <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="sonidoVenta()">🔊 Probar sonido</button>
     </div>
     <div class="tarjeta">
@@ -3637,6 +3845,8 @@ function guardarMiNegocio(){
   n.pctDatafono=parseFloat(val('n-pct'))||0;
   n.sonidos=chk('n-sonidos');
   n.alertaStock=chk('n-alerta');
+  n.alertaVence=chk('n-alertavence');
+  { const dv=parseInt(val('n-diasvence'),10); n.diasAvisoVence=isNaN(dv)?7:Math.max(0,dv); }
   if(window._logoNuevo!==undefined){ n.logo=window._logoNuevo; window._logoNuevo=undefined; }
   negocios[i]=n;
   DB.set('negocios',negocios);
@@ -3655,42 +3865,64 @@ function citas(){
   const hoy=today();
   const deHoy=lista.filter(c=>(c.fechaHora||'').startsWith(hoy));
   const pendientes=lista.filter(c=>c.estado==='pendiente');
+  const usaInv=(neg.funciones||[]).indexOf('inventario')>-1;
+  // Cuántas unidades hay apartadas ahora mismo (citas pendientes con productos)
+  const apartadasActivas=lista.filter(c=>c.estado==='pendiente' && (c.apartados||[]).length)
+    .reduce((a,c)=>a+(c.apartados||[]).reduce((s,x)=>s+(x.cantidad||0),0),0);
   return `
     <div class="stats">
       <div class="stat verde"><div class="stat-lbl">Agendado hoy</div><div class="stat-val">${deHoy.length}</div><div class="stat-sub">para el día de hoy</div></div>
       <div class="stat gold"><div class="stat-lbl">Pendientes</div><div class="stat-val">${pendientes.length}</div><div class="stat-sub">sin atender</div></div>
-      <div class="stat azul"><div class="stat-lbl">Total agendado</div><div class="stat-val">${lista.length}</div><div class="stat-sub">en el sistema</div></div>
+      ${usaInv?`<div class="stat azul"><div class="stat-lbl">Productos apartados</div><div class="stat-val">${apartadasActivas}</div><div class="stat-sub">reservados sin entregar</div></div>`
+        :`<div class="stat azul"><div class="stat-lbl">Total agendado</div><div class="stat-val">${lista.length}</div><div class="stat-sub">en el sistema</div></div>`}
     </div>
     <div class="tarjeta">
       <div class="t-cab">
         <span class="t-tit">${ic('calendar')} Agendar</span>
         <button class="btn btn-gold" onclick="nuevaCita()">+ Nuevo agendamiento</button>
       </div>
+      ${usaInv?`<p class="nota">Al apartar productos se descuentan del inventario y quedan reservados para esa persona. Si <strong>no se recoge</strong>, vuelven al stock.</p>`:''}
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Detalle</th><th>Encargado</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Fecha y hora</th><th>Cliente</th><th>Detalle</th>${usaInv?'<th>Apartado</th>':''}<th>Encargado</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
-        ${lista.length? lista.map(c=>`<tr>
+        ${lista.length? lista.map(c=>{
+          const ap=c.apartados||[];
+          const apHTML=ap.length
+            ? ap.map(x=>`<div class="chico">${escapeHtml(x.nombre)} <strong>×${x.cantidad}</strong></div>`).join('')
+              +(c.estado==='pendiente'?'<span class="pill pill-azul" style="margin-top:4px;">Reservado</span>'
+                :c.estado==='atendida'?'<span class="pill pill-verde" style="margin-top:4px;">Entregado</span>'
+                :c.estado==='no_recogio'?'<span class="pill pill-rojo" style="margin-top:4px;">Devuelto al stock</span>'
+                :'<span class="pill pill-rojo" style="margin-top:4px;">Devuelto al stock</span>')
+            : '<span class="gris chico">—</span>';
+          return `<tr>
           <td>${fmtDate(c.fechaHora)}</td>
           <td><strong>${escapeHtml(c.cliente||'—')}</strong>${c.tel?`<br><span class="gris chico">${escapeHtml(c.tel)}</span>`:''}</td>
           <td>${escapeHtml(c.detalle||'—')}</td>
+          ${usaInv?`<td>${apHTML}</td>`:''}
           <td>${escapeHtml(c.encargado||'—')}</td>
           <td>${c.estado==='atendida'?'<span class="pill pill-verde">Atendida</span>'
               :c.estado==='cancelada'?'<span class="pill pill-rojo">Cancelada</span>'
+              :c.estado==='no_recogio'?'<span class="pill pill-rojo">No se recogió</span>'
               :'<span class="pill pill-gold">Pendiente</span>'}</td>
           <td class="acciones">
             ${c.estado==='pendiente'?`
-              <button class="btn btn-sm btn-verde" onclick="marcarCita('${c.id}','atendida')" title="Marcar atendida">✓</button>
-              <button class="btn btn-sm btn-rojo" onclick="marcarCita('${c.id}','cancelada')" title="Cancelar">✕</button>`:''}
+              <button class="btn btn-sm btn-verde" onclick="marcarCita('${c.id}','atendida')" title="${ap.length?'Entregado (mantiene el descuento de inventario)':'Marcar atendida'}">${ap.length?'✓ Entregado':'✓'}</button>
+              ${ap.length?`<button class="btn btn-sm btn-rojo" onclick="marcarCita('${c.id}','no_recogio')" title="No se recogió (devuelve los productos al stock)">↩ No se recogió</button>`
+                :`<button class="btn btn-sm btn-rojo" onclick="marcarCita('${c.id}','cancelada')" title="Cancelar">✕</button>`}`:''}
             <button class="btn btn-sm" onclick="eliminarCita('${c.id}')" title="Eliminar">🗑</button>
           </td>
-        </tr>`).join('') : '<tr><td colspan="6" class="gris">Nada agendado todavía.</td></tr>'}
+        </tr>`;}).join('') : `<tr><td colspan="${usaInv?7:6}" class="gris">Nada agendado todavía.</td></tr>`}
         </tbody>
       </table></div>
     </div>`;
 }
+
+let _apartTmp=[];   // productos que se están apartando en el modal de la cita
 function nuevaCita(){
   const neg=STATE.negocio;
   const esServicio=(neg.palabraProducto||'')==='Servicio';
+  const usaInv=(neg.funciones||[]).indexOf('inventario')>-1;
+  _apartTmp=[];
   abrirModal({titulo:'Nuevo agendamiento', textoBoton:'Agendar', campos:[
     {id:'cliente', label:'Cliente', requerido:true},
     {id:'tel', label:'Teléfono (opcional)'},
@@ -3700,27 +3932,141 @@ function nuevaCita(){
       valor:esServicio?'Corte':'',
       placeholder:esServicio?'Corte, tinte, manicure...':'Ej: 2 collares chicle, entrega de pedido...'},
     {id:'encargado', label:'Encargado (opcional)'}
-  ], onGuardar:(d)=>{
+  ], extraHTML: usaInv ? apartadoEditorHTML() : '',
+  onGuardar:(d)=>{
+    const apartados=_apartTmp.filter(x=>x.prodId && x.cantidad>0);
+    // Verificar que aún haya stock suficiente antes de apartar
+    if(apartados.length){
+      const productos=misDatos('productos');
+      const faltan=[];
+      apartados.forEach(x=>{
+        const p=productos.find(y=>y.id===x.prodId);
+        if(p && p.stock!=null && p.stock < x.cantidad){
+          faltan.push(x.nombre+' (quedan '+p.stock+', apartas '+x.cantidad+')');
+        }
+      });
+      if(faltan.length){ toast('Sin stock para apartar: '+faltan.join(', '),'error'); return; }
+    }
     const arr=misDatos('citas');
-    arr.push({id:uid(), cliente:d.cliente, tel:d.tel,
+    const cita={id:uid(), cliente:d.cliente, tel:d.tel,
       fechaHora:d.fecha+'T'+(d.hora||'10:00')+':00',
       detalle:d.detalle, encargado:d.encargado,
-      estado:'pendiente', creado:now(), por:STATE.user.nombre});
+      apartados:apartados, stockDescontado:false,
+      estado:'pendiente', creado:now(), por:STATE.user.nombre};
+    // Descontar del inventario lo apartado
+    if(apartados.length){
+      descontarApartado(apartados);
+      cita.stockDescontado=true;
+    }
+    arr.push(cita);
     guardarMisDatos('citas',arr);
-    cerrarModal(); toast('Agendado','success'); render();
+    _apartTmp=[];
+    cerrarModal();
+    toast(apartados.length?'Agendado y productos apartados':'Agendado','success');
+    render();
   }});
+}
+
+// --- Editor de productos apartados (dentro del modal de la cita) ---
+function apartadoEditorHTML(){
+  const productos=misDatos('productos').filter(p=>p.stock!=null);
+  if(!productos.length){
+    return `<div class="cobro-caja" style="margin-top:14px;">
+      <strong>Apartar productos</strong>
+      <p class="nota" style="margin-top:8px;">No hay productos con inventario para apartar. Agrega productos con stock en <strong>Inventario</strong>.</p>
+    </div>`;
+  }
+  return `<div class="cobro-caja" style="margin-top:14px;">
+    <strong>Apartar productos <span class="gris chico">(opcional — se restan del inventario y quedan reservados)</span></strong>
+    <div id="apart-lista" style="margin:10px 0;">${apartadoFilasHTML()}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="apart-prod" class="campo" style="flex:2;min-width:130px;margin:0;">
+        ${productos.map(p=>`<option value="${p.id}">${escapeHtml(p.nombre)} (stock ${p.stock})</option>`).join('')}
+      </select>
+      <input id="apart-cant" type="number" min="1" class="campo" placeholder="Cant." style="flex:1;min-width:70px;margin:0;">
+      <button type="button" class="btn btn-verde btn-sm" onclick="agregarProdApartado()">+ Apartar</button>
+    </div>
+  </div>`;
+}
+function apartadoFilasHTML(){
+  if(!_apartTmp.length) return '<p class="nota">Sin productos apartados. Esta cita se agenda sin reservar inventario.</p>';
+  return _apartTmp.map((x,idx)=>`<div class="c-row" style="padding:6px 0;">
+      <span>${escapeHtml(x.nombre)}</span>
+      <span><strong>×${x.cantidad}</strong>
+        <button type="button" class="mini-x" onclick="quitarProdApartado(${idx})">×</button></span>
+    </div>`).join('');
+}
+function agregarProdApartado(){
+  const sel=document.getElementById('apart-prod');
+  const cant=parseFloat((document.getElementById('apart-cant')||{}).value)||0;
+  if(!sel||!sel.value){ toast('Elige un producto','error'); return; }
+  if(cant<=0){ toast('Escribe la cantidad','error'); return; }
+  const p=misDatos('productos').find(y=>y.id===sel.value);
+  if(!p){ toast('Producto no encontrado','error'); return; }
+  if(p.stock!=null && p.stock<cant){ toast('Solo quedan '+p.stock+' de '+p.nombre,'error'); return; }
+  const ya=_apartTmp.find(x=>x.prodId===sel.value);
+  if(ya){ ya.cantidad=cant; } else { _apartTmp.push({prodId:p.id, nombre:p.nombre, cantidad:cant, precio:p.precio||0}); }
+  const cont=document.getElementById('apart-lista');
+  if(cont) cont.innerHTML=apartadoFilasHTML();
+  const ci=document.getElementById('apart-cant'); if(ci) ci.value='';
+}
+function quitarProdApartado(idx){
+  _apartTmp.splice(idx,1);
+  const cont=document.getElementById('apart-lista');
+  if(cont) cont.innerHTML=apartadoFilasHTML();
+}
+// Resta del stock los productos apartados (usa lotes FEFO si el producto los maneja)
+function descontarApartado(apartados){
+  const productos=misDatos('productos');
+  let cambio=false;
+  (apartados||[]).forEach(x=>{
+    const p=productos.find(y=>y.id===x.prodId);
+    if(!p || p.stock==null) return;
+    if((p.lotes||[]).length){ descontarDeLotes(p, x.cantidad); }
+    p.stock=Math.max(0, p.stock - x.cantidad);
+    cambio=true;
+  });
+  if(cambio) guardarMisDatos('productos',productos);
+}
+// Devuelve al stock los productos apartados (cuando no se recogió o se canceló)
+function devolverApartado(apartados){
+  const productos=misDatos('productos');
+  let cambio=false;
+  (apartados||[]).forEach(x=>{
+    const p=productos.find(y=>y.id===x.prodId);
+    if(!p || p.stock==null) return;
+    if((p.lotes||[]).length){ reingresarALotes(p, x.cantidad); }
+    p.stock=(p.stock||0) + x.cantidad;
+    cambio=true;
+  });
+  if(cambio) guardarMisDatos('productos',productos);
 }
 function marcarCita(id,estado){
   const arr=misDatos('citas');
   const c=arr.find(x=>x.id===id); if(!c) return;
+  const tieneApartados=(c.apartados||[]).length>0;
+  // Si NO se recogió o se cancela: devolver al stock lo que se había apartado
+  if((estado==='no_recogio' || estado==='cancelada') && tieneApartados && c.stockDescontado){
+    devolverApartado(c.apartados);
+    c.stockDescontado=false;
+  }
   c.estado=estado;
   c.cerrada=now();
   guardarMisDatos('citas',arr);
-  toast(estado==='atendida'?'Marcado como atendido':'Cancelado','info');
+  const msg = estado==='atendida' ? 'Marcado como entregado'
+            : estado==='no_recogio' ? 'No se recogió · productos devueltos al stock'
+            : 'Cancelado';
+  toast(msg,'info');
   render();
 }
 function eliminarCita(id){
-  confirmarModal('¿Eliminar este agendamiento?',()=>{
+  const c=misDatos('citas').find(x=>x.id===id);
+  const advertir=(c && (c.apartados||[]).length && c.stockDescontado)
+    ? '¿Eliminar este agendamiento? Los productos apartados volverán al stock.'
+    : '¿Eliminar este agendamiento?';
+  confirmarModal(advertir,()=>{
+    // Si aún tenía productos apartados descontados, devolverlos antes de borrar
+    if(c && (c.apartados||[]).length && c.stockDescontado){ devolverApartado(c.apartados); }
     eliminarMisDatos('citas',id); toast('Eliminado','info'); render();
   },'Eliminar');
 }
@@ -4115,9 +4461,7 @@ function render(){
   let _foco=null;
   const _act=document.activeElement;
   if(_act && (_act.tagName==='INPUT'||_act.tagName==='TEXTAREA') && _act.closest('#app')){
-    // Guardamos también la pantalla actual: solo restauraremos el foco si NO
-    // cambiamos de pantalla (o sea, el usuario estaba escribiendo en un buscador).
-    _foco={ph:_act.getAttribute('placeholder'), id:_act.id||'', pos:_act.selectionStart, pag:STATE.pageNeg};
+    _foco={ph:_act.getAttribute('placeholder'), id:_act.id||'', pos:_act.selectionStart};
   }
   // El tema del negocio se aplica dentro del negocio; el login y el
   // panel del súper admin conservan el estilo de la marca Wallace.
@@ -4132,10 +4476,8 @@ function render(){
     return;
   }
   app.innerHTML=vistaNegocio();
-  // Restaurar el foco del buscador SOLO si seguimos en la misma pantalla
-  // (el usuario estaba escribiendo). Si navegó a otra ventana, no reenfocamos
-  // para que el teclado del celular no se abra solo.
-  if(_foco && (_foco.ph||_foco.id) && _foco.pag===STATE.pageNeg){
+  // Restaurar el foco del buscador que estaba activo (no cerrar el teclado)
+  if(_foco && (_foco.ph||_foco.id)){
     let el=null;
     if(_foco.id) el=document.getElementById(_foco.id);
     if(!el && _foco.ph){
