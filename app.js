@@ -2361,20 +2361,32 @@ function editarProducto(id){
   // Solo los negocios SIN recetas manejan stock por producto.
   // En restaurante el plato no tiene stock propio: se controla por sus insumos.
   const usaLotes = !!(p && p.usaLotes);
+  const esNuevo = !p;
   if(!esResto){
-    campos.push({id:'stock', label:usaLotes?'Stock total (se calcula por lotes)':'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''});
+    campos.push({id:'stock', label:usaLotes?'Stock total (se maneja por lotes)':'Stock (deja vacío si no llevas inventario)', tipo:'number', valor:p&&p.stock!=null?String(p.stock):''});
     campos.push({id:'stockmin', label:'Avisar cuando queden menos de', tipo:'number', valor:p&&p.stockMin!=null?String(p.stockMin):'5'});
+    // En el PRIMER ingreso (producto nuevo) se pide la fecha de vencimiento directamente.
+    // Si la llenan, el producto pasa a manejarse por lotes automáticamente.
+    if(esNuevo){
+      campos.push({id:'vence', label:'Fecha de vencimiento (opcional — si es perecedero)', tipo:'date', valor:''});
+    }
   }
 
-  // Bloque para activar el manejo por lotes/fecha de vencimiento (solo negocios con stock)
-  const extraLotes = (!esResto) ? `
-    <div class="cobro-caja" style="margin-top:14px;">
-      <label class="chk" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="m-usalotes" ${usaLotes?'checked':''}>
-        <span><strong>Manejar por lotes con fecha de vencimiento</strong></span>
-      </label>
-      <p class="nota" style="margin-top:8px;">Actívalo para productos perecederos (comida, medicamentos, etc.). Cada entrada de stock guardará su fecha de vencimiento y el sistema venderá primero lo que esté más próximo a vencer, avisándote antes de que se dañe.</p>
-    </div>` : '';
+  // Nota informativa (solo negocios con stock).
+  // - Producto nuevo: explica que la fecha crea el primer lote.
+  // - Producto que YA usa lotes: recuerda cómo se agregan más lotes.
+  let extraLotes = '';
+  if(!esResto){
+    if(esNuevo){
+      extraLotes = `<div class="cobro-caja" style="margin-top:14px;">
+        <p class="nota" style="margin:0;">📅 Si el producto se vence (comida, medicamentos, etc.), pon la <strong>fecha de vencimiento</strong> arriba. Se guardará como el primer lote y podrás ir agregando más lotes con el botón <strong>"+ Stock"</strong>. El sistema venderá primero lo que esté más próximo a vencer y te avisará antes de que se dañe.</p>
+      </div>`;
+    } else if(usaLotes){
+      extraLotes = `<div class="cobro-caja" style="margin-top:14px;">
+        <p class="nota" style="margin:0;">📦 Este producto se maneja <strong>por lotes con vencimiento</strong>. Para ingresar más mercancía con su fecha, usa el botón <strong>"+ Stock"</strong>. Para ver o retirar lotes, usa <strong>"📦 Lotes"</strong>.</p>
+      </div>`;
+    }
+  }
 
   abrirModal({
     titulo:(p?'Editar':'Nuevo')+' '+(neg.palabraProducto||'producto').toLowerCase(),
@@ -2392,21 +2404,28 @@ function editarProducto(id){
       } else {
         datos.stock = d.stock===''?null:(parseFloat(d.stock)||0);
         datos.stockMin = parseFloat(d.stockmin)||0;
-        const chkLotes=document.getElementById('m-usalotes');
-        datos.usaLotes = !!(chkLotes && chkLotes.checked);
-        const x0 = p ? arr.find(y=>y.id===id) : null;
-        const lotesPrev = (x0 && x0.lotes) ? x0.lotes : [];
-        if(datos.usaLotes){
-          // Si se activa y hay stock sin lotes, crear un lote inicial sin fecha con ese stock
-          if(!lotesPrev.length && datos.stock!=null && datos.stock>0){
-            datos.lotes=[{id:uid(), cantidad:datos.stock, vence:'', ingresado:now(), motivo:'Stock inicial'}];
+        if(esNuevo){
+          // Primer ingreso: si pusieron fecha de vencimiento, arranca como lotes.
+          const vence = (d.vence||'').trim();
+          if(vence && datos.stock!=null && datos.stock>0){
+            datos.usaLotes = true;
+            datos.lotes = [{id:uid(), cantidad:datos.stock, vence:vence, ingresado:now(), motivo:'Stock inicial'}];
           } else {
-            datos.lotes = lotesPrev;
-            // El stock total pasa a ser la suma de los lotes existentes (si los hay)
-            if(lotesPrev.length) datos.stock = lotesPrev.reduce((a,l)=>a+(l.cantidad||0),0);
+            datos.usaLotes = false;
+            datos.lotes = [];
           }
         } else {
-          datos.lotes = [];   // se desactiva el manejo por lotes
+          // Edición de un producto existente: conservar su manejo de lotes tal cual.
+          const x0 = arr.find(y=>y.id===id);
+          datos.usaLotes = !!(x0 && x0.usaLotes);
+          const lotesPrev = (x0 && x0.lotes) ? x0.lotes : [];
+          if(datos.usaLotes){
+            datos.lotes = lotesPrev;
+            // El stock total refleja la suma de los lotes existentes.
+            if(lotesPrev.length) datos.stock = lotesPrev.reduce((a,l)=>a+(l.cantidad||0),0);
+          } else {
+            datos.lotes = [];
+          }
         }
       }
       if(p){ const x=arr.find(y=>y.id===id); if(x) Object.assign(x,datos); }
@@ -2480,29 +2499,38 @@ function entradaStock(id){
     {id:'cant', label:'¿Cuántas unidades entran?', tipo:'number', requerido:true},
     {id:'motivo', label:'Motivo', valor:'Compra'}
   ];
-  // Si el producto maneja lotes, pedir la fecha de vencimiento de este lote
-  if(p.usaLotes){
-    campos.push({id:'vence', label:'Fecha de vencimiento de este lote (opcional)', tipo:'date', valor:''});
-  }
+  // Siempre se ofrece la fecha de vencimiento (opcional).
+  // Si el producto ya maneja lotes, se agrega como un lote más.
+  // Si aún NO los maneja y ponen una fecha, se convierte a lotes desde este ingreso.
+  campos.push({id:'vence', label:p.usaLotes?'Fecha de vencimiento de este lote (opcional)':'Fecha de vencimiento (opcional — si es perecedero)', tipo:'date', valor:''});
   const lotesHTML = p.usaLotes ? lotesDetalleHTML(p) : '';
   abrirModal({titulo:'Entrada de stock · '+p.nombre, textoBoton:'Agregar', campos:campos,
   extraHTML:`<p class="nota">Stock actual: <strong>${p.stock||0}</strong></p>${lotesHTML}`,
   onGuardar:(d)=>{
     const cant=parseFloat(d.cant)||0;
     if(cant<=0){ toast('Cantidad inválida','error'); return; }
+    const vence=(d.vence||'').trim();
     const arr=misDatos('productos');
     const x=arr.find(y=>y.id===id);
     if(x){
+      // Si aún no usaba lotes pero ahora ponen fecha, activarlo y convertir el stock previo en un lote sin fecha
+      if(!x.usaLotes && vence){
+        x.usaLotes=true;
+        x.lotes = (x.lotes && x.lotes.length) ? x.lotes : [];
+        if((x.stock||0)>0){
+          x.lotes.push({id:uid(), cantidad:x.stock, vence:'', ingresado:now(), motivo:'Stock anterior'});
+        }
+      }
       x.stock=(x.stock||0)+cant;
       if(x.usaLotes){
         if(!x.lotes) x.lotes=[];
-        x.lotes.push({id:uid(), cantidad:cant, vence:(d.vence||''), ingresado:now(), motivo:d.motivo});
+        x.lotes.push({id:uid(), cantidad:cant, vence:vence, ingresado:now(), motivo:d.motivo});
       }
       guardarMisDatos('productos',arr);
     }
     const movs=misDatos('movimientos');
     movs.unshift({id:uid(), productoId:id, nombre:p.nombre, tipo:'entrada', cantidad:cant,
-      motivo:d.motivo+(d.vence?' · vence '+d.vence:''), por:STATE.user.nombre, fecha:now()});
+      motivo:d.motivo+(vence?' · vence '+vence:''), por:STATE.user.nombre, fecha:now()});
     guardarMisDatos('movimientos',movs);
     cerrarModal(); toast('Stock actualizado','success'); render();
   }});
