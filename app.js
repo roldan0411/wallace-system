@@ -1383,67 +1383,86 @@ function pedidos(){
   ESCRIBIENDO=false;
   const caja=misDatos('caja_actual');
   const cajaAbierta=Array.isArray(caja)?caja[0]:caja;
-  let vs=ventasJornada(false);
+  let vs=ventasJornada(false).filter(v=>v.estado!=='anulada');
   if(_pBusca){
     const q=_pBusca.toLowerCase();
     vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)
       ||(v.cliNombre||'').toLowerCase().includes(q)
       ||(v.cliTel||'').includes(q)
+      ||(v.domiciliario||'').toLowerCase().includes(q)
       ||(v.mesa||'').toLowerCase().includes(q));
   }
-  const pend=vs.filter(v=>v.estado==='abierta');
-  const cerr=vs.filter(v=>v.estado!=='abierta');
-  const totPend=pend.reduce((a,v)=>a+(v.total||0),0);
+  vs=vs.sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
   const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
-
   const usaCocina=neg.usaCocina;
-  const fila=(v)=>`<tr class="${v.estado==='abierta'?'fila-pend':''}">
+  const doms=misDatos('domiciliarios');
+  // Badge de cocina
+  const cocBadge=(e)=>{
+    const m={pendiente:['pill-gold','Pendiente'],preparando:['pill-azul','Preparando'],listo:['pill-verde','Listo'],entregado:['pill','Entregado']};
+    const x=m[e||'pendiente']; return `<span class="pill ${x[0]}">${x[1]}</span>`;
+  };
+  const selDom=(v)=>{
+    if(!doms.length) return '—';
+    return `<select class="busca" style="min-width:auto;padding:5px 8px;" onchange="asignarDomiciliario('${v.id}',this.value)"><option value="">Asignar…</option>${doms.map(d=>`<option ${v.domiciliario===d.nombre?'selected':''}>${escapeHtml(d.nombre)}</option>`).join('')}</select>`;
+  };
+  const fila=(v)=>{
+    const abierta=v.estado==='abierta';
+    return `<tr class="${abierta?'fila-pend':''}">
     <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong>${v.editadoPor?`<br><span class="gris chico">editado: ${escapeHtml(v.editadoPor)}</span>`:''}</td>
-    <td>${etiq[v.tipo]||'—'}${v.mesa?' '+escapeHtml(v.mesa):''}</td>
-    <td>${escapeHtml(v.cliNombre||'—')}${v.cliTel?`<br><span class="gris chico">${escapeHtml(v.cliTel)}</span>`:''}</td>
+    <td>${etiq[v.tipo]||'—'}${v.mesa?'<br><span class="gris chico">'+escapeHtml(v.mesa)+'</span>':''}</td>
+    <td>${escapeHtml(v.cliNombre||v.mesa||'—')}${v.cliTel?`<br><span class="gris chico">${escapeHtml(v.cliTel)}</span>`:''}</td>
     <td class="negrita">${fmtMoney(v.total)}</td>
-    <td>${v.estado==='anulada'?'<span class="pill pill-rojo">Anulada</span>'
-        :v.estado==='abierta'?'<span class="pill pill-gold">Por cobrar</span>'
-        :'<span class="pill pill-verde">Pagada</span>'}${v.estado==='pagada'&&v.metodo?`<br><span class="gris chico">${escapeHtml(v.metodo)}</span>`:''}</td>
-    <td class="gris chico">${fmtDate(v.fecha)}${v.vendedor?`<br>por ${escapeHtml(v.vendedor)}`:''}</td>
+    <td>${abierta?'<span class="pill pill-gold">Abierta</span>':'<span class="pill pill-verde">Pagada</span>'}${v.estado==='pagada'&&v.metodo?`<br><span class="gris chico">${escapeHtml(v.metodo)}</span>`:''}</td>
+    <td>${usaCocina?cocBadge(v.estadoCocina):'—'}</td>
+    <td><select class="busca" style="min-width:auto;padding:5px 8px;" onchange="setEstadoPedido('${v.id}',this.value)"><option value="activo" ${v.estadoPedido!=='entregado'?'selected':''}>Activo</option><option value="entregado" ${v.estadoPedido==='entregado'?'selected':''}>Entregado</option></select></td>
+    <td>${v.tipo==='domicilio'?selDom(v):'—'}</td>
     <td class="acciones">
-      ${v.estado==='abierta'&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-gold" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
-      ${v.estado!=='anulada'&&tienePermiso('editar')?`<button class="btn btn-sm" onclick="editarPedido('${v.id}')" title="Editar pedido">✏️</button>`:''}
-      ${usaCocina&&v.estado!=='anulada'&&tienePermiso('comanda')?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
-      ${v.estado!=='anulada'&&tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${v.estado==='pagada'?'Reimprimir factura':'Imprimir cuenta (cobro pendiente)'}">🖨️</button>`:''}
+      ${abierta&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-verde" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
+      ${tienePermiso('editar')?`<button class="btn btn-sm" onclick="editarPedido('${v.id}')" title="Editar">✏️</button>`:''}
+      ${usaCocina&&tienePermiso('comanda')?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
+      ${tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${v.estado==='pagada'?'Reimprimir factura':'Imprimir cuenta (cobro pendiente)'}">🖨️</button>`:''}
       ${v.estado==='pagada'&&tienePermiso('cambiarpago')?`<button class="btn btn-sm" onclick="cambiarFormaPago('${v.id}')" title="Cambiar forma de pago">💳</button>`:''}
-      ${v.estado!=='anulada'&&tienePermiso('anular')?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular factura">✕</button>`:''}
+      ${tienePermiso('anular')?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular">🚫</button>`:''}
       ${tienePermiso('eliminar')?`<button class="btn btn-sm btn-rojo" onclick="eliminarDefinitivo('${v.id}')" title="Eliminar por completo">🗑️</button>`:''}
     </td>
-  </tr>`;
+  </tr>`;};
 
   return `
-    ${pend.length?`<div class="tarjeta tarjeta-pend">
-      <div class="t-cab">
-        <span class="t-tit">⏳ Por cobrar (${pend.length})</span>
-        <span class="pill pill-gold grande">${fmtMoney(totPend)}</span>
-      </div>
-      <p class="gris">Pedidos confirmados que todavía no se han cobrado.</p>
-      <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
-        <tbody>${pend.map(fila).join('')}</tbody>
-      </table></div>
-    </div>`:''}
     <div class="tarjeta">
       <div class="t-cab">
-        <span class="t-tit">${ic('report')} Pedidos ${cajaAbierta?'(jornada actual)':'(hoy)'}</span>
+        <span class="t-tit">${ic('report')} Pedidos <span class="gris chico" style="font-weight:normal;">${cajaAbierta?'(caja actual)':'(hoy)'}</span></span>
         <div class="t-acc">
-          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pBusca)}" oninput="_pBusca=this.value;render()">
+          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pBusca)}" oninput="_pBusca=this.value">
           <button class="btn btn-sm" onclick="refrescarDeLaNube()">🔄 Actualizar</button>
           <button class="btn btn-gold" onclick="irA('ventas')">+ Nueva</button>
         </div>
       </div>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Pedido</th><th>Tipo</th><th>Cliente</th><th>Total</th><th>Estado</th><th>Fecha</th><th>Acciones</th></tr></thead>
-        <tbody>${cerr.length? cerr.slice(0,80).map(fila).join('')
-          : `<tr><td colspan="7" class="gris">${pend.length?'Todos los pedidos están por cobrar.':'Sin pedidos en esta jornada.'}</td></tr>`}</tbody>
+        <thead><tr><th>Pedido / Mensajero</th><th>Tipo</th><th>Cliente/Mesa</th><th>Total</th><th>Cobro</th><th>Cocina</th><th>Pedido</th><th>Domiciliario</th><th>Acciones</th></tr></thead>
+        <tbody>${vs.length? vs.slice(0,100).map(fila).join('')
+          : '<tr><td colspan="9" class="gris">Sin pedidos en esta jornada.</td></tr>'}</tbody>
       </table></div>
     </div>`;
+}
+// Cambiar estado del pedido (activo/entregado) desde la tabla
+function setEstadoPedido(id, estado){
+  const arr=misDatos('ventas');
+  const v=arr.find(x=>x.id===id); if(!v) return;
+  v.estadoPedido=estado;
+  if(estado==='entregado' && v.estadoCocina && v.estadoCocina!=='entregado') v.estadoCocina='entregado';
+  guardarMisDatos('ventas',arr);
+  toast(estado==='entregado'?'Pedido entregado':'Pedido activo','info');
+  render();
+}
+// Asignar domiciliario a un pedido desde la tabla
+function asignarDomiciliario(id, nombre){
+  const arr=misDatos('ventas');
+  const v=arr.find(x=>x.id===id); if(!v) return;
+  v.domiciliario=nombre;
+  guardarMisDatos('ventas',arr);
+  logAudit('Asignó domiciliario', (v.factura||'')+' → '+nombre);
+  toast(nombre?'Domiciliario asignado':'Domiciliario quitado','success');
+  render();
 }
 
 // ---------- COBRAR ----------
@@ -1868,45 +1887,65 @@ function caja(){
   const propBanco=noEf.reduce((a,v)=>a+(v.propina||0),0);
   const domBanco=noEf.reduce((a,v)=>a+(v.valorDom||0),0);
   const enCaja=(c.base||0)+metodos.efectivo+propEf+domEf+recEf+entradas-gastos-retiros-propBanco-domBanco;
-  const terceros=(propinas+domis+recargos)>0;
+  const domBancoTotal=noEf.reduce((a,v)=>a+(v.valorDom||0),0);
+  const esAdmin=STATE.user.rol==='admin'||STATE.user.esSupervisor;
 
   return `
     <div class="stats">
-      <div class="stat verde"><div class="stat-lbl">Efectivo en el cajón</div><div class="stat-val">${fmtMoney(enCaja)}</div><div class="stat-sub">base ${fmtMoney(c.base||0)}</div></div>
-      <div class="stat gold"><div class="stat-lbl">Vendido en la jornada</div><div class="stat-val">${fmtMoney(totalVenta)}</div><div class="stat-sub">${ventas.length} venta(s)</div></div>
-      <div class="stat azul"><div class="stat-lbl">Abierta por</div><div class="stat-val" style="font-size:17px;">${escapeHtml(c.cajero||'—')}</div><div class="stat-sub">${fmtDate(c.apertura)}</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Efectivo</div><div class="stat-val">${fmtMoney(metodos.efectivo)}</div><div class="stat-sub">recibido en la jornada</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('cash')}</div><div class="stat-lbl">Banco</div><div class="stat-val">${fmtMoney(metodos.banco)}</div><div class="stat-sub">transferencias</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('cash')}</div><div class="stat-lbl">Tarjeta</div><div class="stat-val">${fmtMoney(metodos.tarjeta)}</div><div class="stat-sub">datáfono</div></div>
     </div>
+    <p class="nota" style="margin:-6px 0 14px;">💵 VENTA (solo comida) recibida por cada método. Total venta: <strong class="oro">${fmtMoney(totalVenta)}</strong>.${domBancoTotal>0?` Además entraron <strong>${fmtMoney(domBancoTotal)}</strong> de domicilios por banco (se le pagan al domiciliario en efectivo).`:''}</p>
     <div class="grid2">
       <div class="tarjeta">
-        <span class="t-tit">${ic('cash')} Resumen de ventas</span>
-        <div class="linea"><span>Efectivo</span><strong class="verde">${fmtMoney(metodos.efectivo)}</strong></div>
-        <div class="linea"><span>Banco / Transferencia</span><strong class="azul">${fmtMoney(metodos.banco)}</strong></div>
-        <div class="linea"><span>Tarjeta / Datáfono</span><strong>${fmtMoney(metodos.tarjeta)}</strong></div>
-        <div class="linea total-linea"><span>TOTAL VENDIDO</span><strong>${fmtMoney(totalVenta)}</strong></div>
+        <span class="t-tit">${ic('cash')} Resumen de caja — ${escapeHtml(c.cajero||'')}</span>
+        <div class="linea"><span>Apertura</span><span class="gris chico">${fmtDate(c.apertura)}</span></div>
+        <div class="linea"><span>Base inicial</span><strong>${fmtMoney(c.base||0)}</strong></div>
+        <div class="linea"><span>Ventas reales (solo comida)</span><strong class="oro">${fmtMoney(totalVenta)}</strong></div>
+        <div class="linea"><span>Entradas extra</span><strong class="verde">${fmtMoney(entradas)}</strong></div>
+        <div class="linea"><span>Gastos / Nómina</span><strong class="rojo">−${fmtMoney(gastos)}</strong></div>
+        <div class="linea"><span>Retiros autorizados</span><strong class="rojo">−${fmtMoney(retiros)}</strong></div>
+        <div class="linea total-linea" style="font-size:18px;"><span>Efectivo en Caja</span><strong class="oro">${fmtMoney(enCaja)}</strong></div>
+        <p class="nota" style="margin-top:8px;">Efectivo del cajón: base + comida en efectivo + entradas − gastos − retiros${(propBanco+domBanco)>0?' − propinas/domicilios por banco ('+fmtMoney(propBanco+domBanco)+', pagados en efectivo a su dueño)':''}. Solo la comida es del negocio. El banco/tarjeta no está en el cajón.</p>
+        ${esAdmin?`<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--verde-c);">🔍 Ver desglose del efectivo (diagnóstico)</summary>
+          <div style="margin-top:8px;font-size:12px;">
+            <div class="linea" style="padding:4px 0;"><span>Base inicial</span><span>${fmtMoney(c.base||0)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>+ Comida en efectivo</span><span>${fmtMoney(metodos.efectivo)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>+ Propinas/domicilios efectivo</span><span>${fmtMoney(propEf+domEf+recEf)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>+ Entradas</span><span>${fmtMoney(entradas)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>− Gastos</span><span>−${fmtMoney(gastos)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>− Retiros</span><span>−${fmtMoney(retiros)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>− Propinas/domicilios por banco</span><span>−${fmtMoney(propBanco+domBanco)}</span></div>
+            <div class="linea" style="padding:4px 0;font-weight:800;"><span>= Efectivo esperado</span><span class="oro">${fmtMoney(enCaja)}</span></div>
+          </div></details>`:''}
+        <div class="botones-fila" style="margin-top:14px;margin-bottom:0;">
+          <button class="btn btn-sm btn-rojo" onclick="movimientoCaja('gasto')">$ Gasto</button>
+          <button class="btn btn-sm" onclick="movimientoCaja('retiro')">$ Retiro</button>
+          <button class="btn btn-sm btn-verde" onclick="movimientoCaja('entrada')">+ Entrada</button>
+          <button class="btn btn-rojo" onclick="cerrarCaja()" style="margin-left:auto;">🔒 Cerrar Caja</button>
+        </div>
       </div>
       <div class="tarjeta">
-        <span class="t-tit">${ic('report')} Movimientos</span>
-        <div class="botones-fila">
-          <button class="btn btn-sm btn-rojo" onclick="movimientoCaja('gasto')">− Gasto</button>
-          <button class="btn btn-sm" onclick="movimientoCaja('retiro')">↑ Retiro</button>
-          <button class="btn btn-sm btn-verde" onclick="movimientoCaja('entrada')">+ Entrada</button>
-        </div>
-        ${movs.length?movs.map(m=>`<div class="linea">
-          <span>${m.tipo==='gasto'?'Gasto':m.tipo==='retiro'?'Retiro':'Entrada'}: ${escapeHtml(m.concepto||'')}<br><span class="gris chico">${escapeHtml(m.por||'')}</span></span>
-          <strong class="${m.tipo==='entrada'?'verde':'rojo'}">${m.tipo==='entrada'?'+':'−'}${fmtMoney(m.valor)}</strong>
-        </div>`).join(''):'<p class="gris">Sin movimientos.</p>'}
+        <span class="t-tit">${ic('users')} No son ingreso del negocio</span>
+        <p class="gris" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
+        <div class="linea"><span>👤 Propinas (del mesero)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>
+        <div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>
+        <div class="linea"><span>💳 Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>
       </div>
     </div>
-    ${terceros?`<div class="tarjeta">
-      <span class="t-tit">${ic('users')} Dinero que no es del negocio</span>
-      <p class="gris">Se cobra al cliente pero pertenece a terceros. No cuenta como venta.</p>
-      ${propinas>0?`<div class="linea"><span>Propinas (del mesero)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
-      ${domis>0?`<div class="linea"><span>Domicilios (del domiciliario)</span><strong class="verde">${fmtMoney(domis)}</strong></div>`:''}
-      ${recargos>0?`<div class="linea"><span>Recargo datáfono (del banco)</span><strong class="oro">${fmtMoney(recargos)}</strong></div>`:''}
-    </div>`:''}
-    <div class="tarjeta">
-      <button class="btn btn-rojo btn-block" onclick="cerrarCaja()">Cerrar caja y hacer el cuadre</button>
-    </div>`;
+    ${movs.length?`<div class="tarjeta">
+      <span class="t-tit">${ic('report')} Movimientos del día</span>
+      <div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>Tipo</th><th>Concepto</th><th>Quién</th><th>Valor</th></tr></thead>
+        <tbody>${movs.map(m=>`<tr>
+          <td>${m.tipo==='gasto'?'<span class="pill pill-rojo">Gasto</span>':m.tipo==='retiro'?'<span class="pill pill-gold">Retiro</span>':'<span class="pill pill-verde">Entrada</span>'}</td>
+          <td>${escapeHtml(m.concepto||'')}</td>
+          <td class="gris">${escapeHtml(m.por||'')}</td>
+          <td class="negrita ${m.tipo==='entrada'?'verde':'rojo'}">${m.tipo==='entrada'?'+':'−'}${fmtMoney(m.valor)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`:''}`;
 }
 
 function abrirCaja(){
@@ -2570,51 +2609,104 @@ function reportes(){
   const k7=d7.toISOString().split('T')[0];
   const hace7=vs.filter(v=>(v.fecha||'').startsWith(k7)).reduce((a,v)=>a+(v.subtotal||0),0);
   const cambio=hace7>0?Math.round((totHoy-hace7)/hace7*100):0;
+  // Gráfico 7 días
   const dias=[];
   for(let i=6;i>=0;i--){
     const d=new Date(); d.setDate(d.getDate()-i);
     const k=d.toISOString().split('T')[0];
-    dias.push({lbl:['D','L','M','X','J','V','S'][d.getDay()],
+    dias.push({lbl:['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'][d.getDay()],
       tot:vs.filter(v=>(v.fecha||'').startsWith(k)).reduce((a,v)=>a+(v.subtotal||0),0)});
   }
   const mx=Math.max.apply(null,dias.map(d=>d.tot).concat([1]));
+  // Gráfico 12 meses
   const meses=[];
   for(let i=11;i>=0;i--){
     const d=new Date(); d.setMonth(d.getMonth()-i);
     const k=d.toISOString().substring(0,7);
-    meses.push({lbl:['E','F','M','A','M','J','J','A','S','O','N','D'][d.getMonth()],
+    meses.push({lbl:['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][d.getMonth()],
       tot:vs.filter(v=>(v.fecha||'').substring(0,7)===k).reduce((a,v)=>a+(v.subtotal||0),0)});
   }
   const mxM=Math.max.apply(null,meses.map(m=>m.tot).concat([1]));
+  // Ventas últimos 30 días para más/menos vendidos y horas pico
+  const d30=new Date(); d30.setDate(d30.getDate()-30);
+  const k30=d30.toISOString().split('T')[0];
+  const v30=vs.filter(v=>(v.fecha||'').split('T')[0]>=k30);
   const items={};
-  vs.filter(v=>(v.fecha||'').substring(0,7)===h.substring(0,7))
-    .forEach(v=>(v.items||[]).forEach(i=>{ items[i.nombre]=(items[i.nombre]||0)+i.qty; }));
-  const top=Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  v30.forEach(v=>(v.items||[]).forEach(i=>{ if(!items[i.nombre])items[i.nombre]={qty:0,total:0}; items[i.nombre].qty+=i.qty; items[i.nombre].total+=i.precio*i.qty; }));
+  const ordenados=Object.entries(items).sort((a,b)=>b[1].qty-a[1].qty);
+  const top=ordenados.slice(0,8);
+  const menos=ordenados.slice(-8).reverse();
+  // Horas pico (30 días)
+  const horas=new Array(24).fill(0);
+  v30.forEach(v=>{ const hh=new Date(v.fecha).getHours(); horas[hh]+=(v.subtotal||0); });
+  const maxHora=Math.max.apply(null,horas.concat([1]));
+  const horasActivas=horas.map((tot,hh)=>({h:hh,tot})).filter(x=>x.tot>0);
+  // Resumen del día: propinas por mesero, platos de hoy, domicilios
+  const propinasHoy=hoy.reduce((a,v)=>a+(v.propina||0),0);
+  const meseros=(DB.get('usuarios')||[]).filter(u=>u.negocioId===neg.id && u.rol==='mesero').map(u=>u.nombre);
+  const numMeseros=meseros.length||1;
+  const propinaPorMesero=propinasHoy/numMeseros;
+  const itemsHoy={}; hoy.forEach(v=>(v.items||[]).forEach(i=>{ itemsHoy[i.nombre]=(itemsHoy[i.nombre]||0)+i.qty; }));
+  const topHoy=Object.entries(itemsHoy).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const domiciliosHoy=hoy.filter(v=>v.tipo==='domicilio').length;
+  const recargosHoy=hoy.reduce((a,v)=>a+(v.recargo||0),0);
   window._repData={totHoy,hoy,ticket,cambio,hace7,dias,meses,top,mes:h.substring(0,7)};
 
   return `
     <div class="tarjeta">
       <div class="t-cab">
-        <span class="t-tit">${ic('report')} Reportes de ${escapeHtml(neg.nombre)}</span>
-        <div class="t-acc"><button class="btn btn-gold btn-sm" onclick="imprimirReporte()">🖨️ PDF / Imprimir</button></div>
+        <span class="t-tit">${ic('report')} Resumen del Día (Hoy)</span>
+        <button class="btn btn-gold btn-sm" onclick="imprimirReporte()">🖨️ PDF / Imprimir</button>
+      </div>
+      <div class="stats" style="margin-bottom:6px;">
+        <div class="stat verde"><div class="stat-lbl">Vendido hoy</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} ventas</div></div>
+        <div class="stat gold"><div class="stat-lbl">Propinas del día</div><div class="stat-val">${fmtMoney(propinasHoy)}</div><div class="stat-sub">para los meseros</div></div>
+        <div class="stat azul"><div class="stat-lbl">Domicilios</div><div class="stat-val">${domiciliosHoy}</div><div class="stat-sub">recargos: ${fmtMoney(recargosHoy)}</div></div>
+      </div>
+      <div class="grid2">
+        <div>
+          <p class="oro negrita" style="margin-bottom:8px;">💵 Propinas a repartir (entre ${numMeseros} mesero${numMeseros!==1?'s':''})</p>
+          ${propinasHoy>0?`<div style="padding:12px 14px;background:rgba(var(--acc-rgb),.08);border-radius:10px;">
+            <div class="linea" style="border:none;padding:2px 0;"><span class="negrita">A cada mesero le toca:</span><strong class="oro">${fmtMoney(propinaPorMesero)}</strong></div>
+            ${meseros.length?`<p class="gris chico" style="margin-top:4px;">${meseros.map(m=>escapeHtml(m)).join(' · ')}</p>`:''}
+          </div>`:'<p class="gris">No hay propinas registradas hoy.</p>'}
+        </div>
+        <div>
+          <p class="oro negrita" style="margin-bottom:8px;">🍽️ Platos más pedidos hoy</p>
+          ${topHoy.length?`<table class="tabla"><tbody>${topHoy.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td class="oro negrita" style="text-align:right;">${q}</td></tr>`).join('')}</tbody></table>`:'<p class="gris">Aún no hay ventas hoy.</p>'}
+        </div>
       </div>
     </div>
     <div class="stats">
-      <div class="stat verde"><div class="stat-lbl">Vendido hoy</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} venta(s)</div></div>
-      <div class="stat gold"><div class="stat-lbl">Ticket promedio</div><div class="stat-val">${fmtMoney(ticket)}</div><div class="stat-sub">por venta</div></div>
-      <div class="stat azul"><div class="stat-lbl">vs. semana pasada</div><div class="stat-val">${cambio>=0?'+':''}${cambio}%</div><div class="stat-sub">${fmtMoney(hace7)} ese día</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas Hoy</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} transacciones</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Ticket Promedio</div><div class="stat-val">${fmtMoney(ticket)}</div><div class="stat-sub">por venta</div></div>
+      <div class="stat ${cambio>=0?'verde':'rojo'}"><div class="stat-ico ${cambio>=0?'verde':'rojo'}">${ic('history')}</div><div class="stat-lbl">vs. mismo día semana pasada</div><div class="stat-val">${cambio>=0?'+':''}${cambio}%</div><div class="stat-sub">Hace 7 días: ${fmtMoney(hace7)}</div></div>
     </div>
     <div class="grid2">
-      <div class="tarjeta"><span class="t-tit">Ventas por día (7 días)</span>
+      <div class="tarjeta"><span class="t-tit">${ic('report')} Ventas por Día (7 días)</span>
         <div class="barras">${dias.map(d=>`<div class="barra"><div class="b-val">${d.tot>0?(d.tot/1000).toFixed(0)+'k':''}</div><div class="b-fill" style="height:${Math.max(4,(d.tot/mx)*130)}px"></div><div class="b-lbl">${d.lbl}</div></div>`).join('')}</div></div>
-      <div class="tarjeta"><span class="t-tit">Ventas por mes (12 meses)</span>
+      <div class="tarjeta"><span class="t-tit">${ic('report')} Ventas Mensuales (12 meses)</span>
         <div class="barras">${meses.map(m=>`<div class="barra"><div class="b-val">${m.tot>0?(m.tot/1000).toFixed(0)+'k':''}</div><div class="b-fill" style="height:${Math.max(4,(m.tot/mxM)*130)}px"></div><div class="b-lbl">${m.lbl}</div></div>`).join('')}</div></div>
     </div>
-    ${top.length?`<div class="tarjeta"><span class="t-tit">Más vendidos del mes</span>
-      <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>#</th><th>Producto</th><th>Unidades</th></tr></thead>
-        <tbody>${top.map((t,i)=>`<tr><td class="gris">${i+1}</td><td><strong>${escapeHtml(t[0])}</strong></td><td class="negrita">${t[1]}</td></tr>`).join('')}</tbody>
-      </table></div></div>`:''}`;
+    <div class="tarjeta"><span class="t-tit">${ic('history')} Horas Pico (últimos 30 días)</span>
+      ${horasActivas.length?`<div class="barras">${horasActivas.map(x=>`<div class="barra"><div class="b-val">${(x.tot/1000).toFixed(0)}k</div><div class="b-fill" style="height:${Math.max(4,(x.tot/maxHora)*130)}px"></div><div class="b-lbl">${x.h}H</div></div>`).join('')}</div>
+        <p class="nota" style="margin-top:8px;">Te ayuda a saber a qué horas necesitas más personal.</p>`:'<p class="gris">Sin datos.</p>'}
+    </div>
+    <div class="grid2">
+      <div class="tarjeta"><span class="t-tit">${ic('box')} Más Vendidos (30 días)</span>
+        ${top.length?`<div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Producto</th><th>Uds.</th><th>Total</th></tr></thead>
+          <tbody>${top.map(([n,d])=>`<tr><td>${escapeHtml(n)}</td><td class="negrita">${d.qty}</td><td class="oro">${fmtMoney(d.total)}</td></tr>`).join('')}</tbody>
+        </table></div>`:'<p class="gris">Sin datos.</p>'}
+      </div>
+      <div class="tarjeta"><span class="t-tit">${ic('report')} Menos Vendidos (30 días)</span>
+        ${menos.length?`<div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Producto</th><th>Uds.</th><th>Total</th></tr></thead>
+          <tbody>${menos.map(([n,d])=>`<tr><td>${escapeHtml(n)}</td><td class="negrita">${d.qty}</td><td class="gris">${fmtMoney(d.total)}</td></tr>`).join('')}</tbody>
+        </table></div>
+        <p class="nota" style="margin-top:8px;">Candidatos a quitar o renovar en el menú.</p>`:'<p class="gris">Sin datos.</p>'}
+      </div>
+    </div>`;
 }
 
 // ============================================================
@@ -2625,9 +2717,16 @@ function contable(){
   ESCRIBIENDO=false;
   const neg=STATE.negocio;
   const mes=_mesCont||today().substring(0,7);
+  // Mes anterior para el comparativo
+  const [anio,mnum]=mes.split('-').map(Number);
+  const dPrev=new Date(anio,mnum-2,1); const mesPrev=dPrev.getFullYear()+'-'+String(dPrev.getMonth()+1).padStart(2,'0');
   const vs=misDatos('ventas').filter(v=>v.estado==='pagada');
   const delMes=vs.filter(v=>(v.fecha||'').substring(0,7)===mes);
+  const delPrev=vs.filter(v=>(v.fecha||'').substring(0,7)===mesPrev);
   const totalVentas=delMes.reduce((a,v)=>a+(v.subtotal||0),0);
+  const totalPrev=delPrev.reduce((a,v)=>a+(v.subtotal||0),0);
+  const difV=totalVentas-totalPrev;
+  const pctV=totalPrev>0?Math.round((difV/totalPrev)*100):0;
   const metodos={efectivo:0,banco:0,tarjeta:0};
   delMes.forEach(v=>{ if(metodos[v.metodo]!==undefined) metodos[v.metodo]+=(v.subtotal||0); });
   const propinas=delMes.reduce((a,v)=>a+(v.propina||0),0);
@@ -2637,69 +2736,92 @@ function contable(){
   const totalGastos=gastos.reduce((a,g)=>a+g.valor,0);
   const cierres=misDatos('cierres').filter(c=>(c.cierre||'').substring(0,7)===mes);
   let retiros=0;
-  cierres.forEach(c=>(c.movimientos||[]).forEach(m=>{
-    if(m.tipo==='retiro') retiros+=m.valor; }));
-  // Los gastos de caja YA están en gastos_negocio (origen:'caja'), no se suman
-  // aparte para no contarlos doble.
-  const gastosCaja=gastos.filter(g=>g.origen==='caja').reduce((a,g)=>a+g.valor,0);
+  cierres.forEach(c=>(c.movimientos||[]).forEach(m=>{ if(m.tipo==='retiro') retiros+=m.valor; }));
   const egresos=totalGastos;
   const utilidad=totalVentas-egresos;
-  const porConcepto={};
-  gastos.forEach(g=>{ const k=(g.origen==='caja'?'(caja) ':'')+g.concepto; porConcepto[k]=(porConcepto[k]||0)+g.valor; });
-  const conceptos=Object.entries(porConcepto).sort((a,b)=>b[1]-a[1]);
+  const sumaDif=cierres.reduce((a,c)=>a+(c.diferencia||0),0);
+  // Egresos separados: los de caja diaria vs los del negocio
+  const gCaja={}, gNeg={};
+  gastos.forEach(g=>{ const dest=(g.origen==='caja')?gCaja:gNeg; dest[g.concepto]=(dest[g.concepto]||0)+g.valor; });
+  const concCaja=Object.entries(gCaja).sort((a,b)=>b[1]-a[1]);
+  const concNeg=Object.entries(gNeg).sort((a,b)=>b[1]-a[1]);
+  // Productos más vendidos del mes
+  const items={};
+  delMes.forEach(v=>(v.items||[]).forEach(i=>{ if(!items[i.nombre])items[i.nombre]={qty:0,total:0}; items[i.nombre].qty+=i.qty; items[i.nombre].total+=i.precio*i.qty; }));
+  const topProd=Object.entries(items).sort((a,b)=>b[1].qty-a[1].qty).slice(0,10);
+  // Días de mayor venta
+  const porDia={}; delMes.forEach(v=>{ const d=(v.fecha||'').split('T')[0]; porDia[d]=(porDia[d]||0)+(v.subtotal||0); });
+  const topDias=Object.entries(porDia).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const mesesSet={}; mesesSet[today().substring(0,7)]=1;
   vs.forEach(v=>{ if(v.fecha) mesesSet[v.fecha.substring(0,7)]=1; });
   misDatos('gastos_negocio').forEach(g=>{ if(g.fecha) mesesSet[g.fecha.substring(0,7)]=1; });
   const meses=Object.keys(mesesSet).sort().reverse();
-  window._contData={mes,nombreMes:nombreMes(mes),totalVentas,metodos,totalGastos,gastosCaja,egresos,utilidad,conceptos,cierres,propinas,domis,recargos,retiros};
+  window._contData={mes,nombreMes:nombreMes(mes),totalVentas,metodos,totalGastos,egresos,utilidad,cierres,propinas,domis,recargos,retiros};
 
   return `
     <div class="tarjeta">
       <div class="t-cab">
-        <div><span class="t-tit">${ic('report')} Registro Contable</span>
-          <p class="gris">Informe interno de gestión. No es tributario ni tiene relación con la DIAN.</p></div>
+        <div><span class="t-tit">${ic('report')} Registro Contable Mensual</span>
+          <p class="gris">Informe interno de gestión para el dueño. No es tributario ni tiene relación con la DIAN.</p></div>
         <div class="t-acc">
           <select class="busca" onchange="_mesCont=this.value;render()">
             ${meses.map(m=>`<option value="${m}" ${m===mes?'selected':''}>${nombreMes(m)}</option>`).join('')}
           </select>
-          <button class="btn btn-gold btn-sm" onclick="imprimirContable()">🖨️ PDF</button>
+          <button class="btn btn-gold btn-sm" onclick="imprimirContable()">🖨️ PDF / Imprimir</button>
         </div>
       </div>
     </div>
     <div class="stats">
-      <div class="stat verde"><div class="stat-lbl">Ventas del mes</div><div class="stat-val">${fmtMoney(totalVentas)}</div><div class="stat-sub">${delMes.length} venta(s)</div></div>
-      <div class="stat rojo"><div class="stat-lbl">Egresos</div><div class="stat-val">${fmtMoney(egresos)}</div><div class="stat-sub">caja + negocio</div></div>
-      <div class="stat gold"><div class="stat-lbl">Utilidad estimada</div><div class="stat-val">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − egresos</div></div>
-      <div class="stat azul"><div class="stat-lbl">Cierres</div><div class="stat-val">${cierres.length}</div><div class="stat-sub">del mes</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas del mes (comida)</div><div class="stat-val">${fmtMoney(totalVentas)}</div><div class="stat-sub">${totalPrev>0?(pctV>=0?'▲ +':'▼ ')+pctV+'% vs mes anterior':delMes.length+' venta(s)'}</div></div>
+      <div class="stat rojo"><div class="stat-ico rojo">${ic('cash')}</div><div class="stat-lbl">Gastos del mes</div><div class="stat-val">${fmtMoney(egresos)}</div><div class="stat-sub">caja + negocio (sin retiros)</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Utilidad estimada</div><div class="stat-val">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − egresos</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('history')}</div><div class="stat-lbl">Cierres del mes</div><div class="stat-val">${cierres.length}</div><div class="stat-sub">${sumaDif===0?'sin descuadres':(sumaDif>0?'sobró '+fmtMoney(sumaDif):'faltó '+fmtMoney(Math.abs(sumaDif)))}</div></div>
     </div>
     <div class="grid2">
-      <div class="tarjeta"><span class="t-tit">Ventas por método</span>
+      <div class="tarjeta"><span class="t-tit">${ic('cash')} Ventas por método de pago</span>
         <div class="linea"><span>Efectivo</span><strong class="verde">${fmtMoney(metodos.efectivo)}</strong></div>
-        <div class="linea"><span>Banco</span><strong class="azul">${fmtMoney(metodos.banco)}</strong></div>
-        <div class="linea"><span>Tarjeta</span><strong>${fmtMoney(metodos.tarjeta)}</strong></div>
-        <div class="linea total-linea"><span>TOTAL</span><strong>${fmtMoney(totalVentas)}</strong></div>
+        <div class="linea"><span>Banco / Transferencia</span><strong class="azul">${fmtMoney(metodos.banco)}</strong></div>
+        <div class="linea"><span>Tarjeta</span><strong class="oro">${fmtMoney(metodos.tarjeta)}</strong></div>
+        <div class="linea total-linea"><span>TOTAL VENTAS</span><strong>${fmtMoney(totalVentas)}</strong></div>
       </div>
-      <div class="tarjeta"><span class="t-tit">Egresos por concepto</span>
-        ${conceptos.length?conceptos.map(c=>`<div class="linea"><span>${escapeHtml(c[0])}</span><strong class="rojo">${fmtMoney(c[1])}</strong></div>`).join(''):'<p class="gris">Sin gastos este mes.</p>'}
-        ${conceptos.length?`<div class="linea total-linea"><span>TOTAL</span><strong class="rojo">${fmtMoney(egresos)}</strong></div>`:''}
+      <div class="tarjeta"><span class="t-tit">${ic('cash')} Egresos por concepto (lo que se gastó)</span>
+        ${concCaja.length?`<p class="gris chico" style="margin:4px 0;">De la caja diaria:</p>
+          ${concCaja.map(c=>`<div class="linea"><span>${escapeHtml(c[0])}</span><strong class="rojo">${fmtMoney(c[1])}</strong></div>`).join('')}`:''}
+        ${concNeg.length?`<p class="gris chico" style="margin:8px 0 4px;">Gastos del negocio (arriendo, recibos, etc.):</p>
+          ${concNeg.map(c=>`<div class="linea"><span>${escapeHtml(c[0])}</span><strong class="rojo">${fmtMoney(c[1])}</strong></div>`).join('')}`:''}
+        ${(!concCaja.length&&!concNeg.length)?'<p class="gris">Sin gastos este mes.</p>':`<div class="linea total-linea"><span>TOTAL EGRESOS</span><strong class="rojo">${fmtMoney(egresos)}</strong></div>`}
       </div>
     </div>
-    ${(propinas+domis+recargos)>0?`<div class="tarjeta">
-      <span class="t-tit">Dinero de terceros (no es ingreso)</span>
-      ${propinas>0?`<div class="linea"><span>Propinas</span><strong>${fmtMoney(propinas)}</strong></div>`:''}
-      ${domis>0?`<div class="linea"><span>Domicilios</span><strong>${fmtMoney(domis)}</strong></div>`:''}
-      ${recargos>0?`<div class="linea"><span>Recargos datáfono</span><strong>${fmtMoney(recargos)}</strong></div>`:''}
+    ${(propinas+domis+recargos+retiros)>0?`<div class="tarjeta">
+      <span class="t-tit">${ic('users')} Dinero de terceros (no es ingreso)</span>
+      ${propinas>0?`<div class="linea"><span>Propinas</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
+      ${domis>0?`<div class="linea"><span>Domicilios</span><strong class="azul">${fmtMoney(domis)}</strong></div>`:''}
+      ${recargos>0?`<div class="linea"><span>Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>`:''}
       ${retiros>0?`<div class="linea"><span>Retiros del dueño (no es gasto)</span><strong class="gris">${fmtMoney(retiros)}</strong></div>`:''}
     </div>`:''}
-    ${cierres.length?`<div class="tarjeta"><span class="t-tit">Cierres de caja</span>
+    <div class="grid2">
+      <div class="tarjeta"><span class="t-tit">${ic('box')} Productos más vendidos</span>
+        ${topProd.length?`<div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Producto</th><th>Cant.</th><th>Total</th></tr></thead>
+          <tbody>${topProd.map(p=>`<tr><td>${escapeHtml(p[0])}</td><td class="negrita">${p[1].qty}</td><td class="oro">${fmtMoney(p[1].total)}</td></tr>`).join('')}</tbody>
+        </table></div>`:'<p class="gris">Sin ventas este mes.</p>'}
+      </div>
+      <div class="tarjeta"><span class="t-tit">${ic('history')} Días de mayor venta</span>
+        ${topDias.length?`<div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Día</th><th>Ventas</th></tr></thead>
+          <tbody>${topDias.map(d=>`<tr><td>${d[0]}</td><td class="negrita oro">${fmtMoney(d[1])}</td></tr>`).join('')}</tbody>
+        </table></div>`:'<p class="gris">Sin datos.</p>'}
+      </div>
+    </div>
+    ${cierres.length?`<div class="tarjeta"><span class="t-tit">${ic('history')} Cierres de caja del mes (control de descuadres)</span>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Fecha</th><th>Cajero</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th></th></tr></thead>
-        <tbody>${cierres.map((c,ci)=>`<tr>
+        <thead><tr><th>Día</th><th>Cajero</th><th>Esperado</th><th>Contado</th><th>Resultado</th><th></th></tr></thead>
+        <tbody>${cierres.map(c=>`<tr>
           <td>${(c.cierre||'').split('T')[0]}</td>
           <td>${escapeHtml(c.cerradaPor||c.cajero||'—')}</td>
           <td>${fmtMoney(c.esperado||0)}</td>
           <td>${fmtMoney(c.contado||0)}</td>
-          <td class="${(c.diferencia||0)===0?'':(c.diferencia>0?'verde':'rojo')}">${(c.diferencia||0)===0?'✓ cuadró':fmtMoney(c.diferencia)}</td>
+          <td>${(c.diferencia||0)===0?'<span class="pill pill-verde">Cuadró</span>':(c.diferencia>0?'<span class="pill pill-azul">Sobró '+fmtMoney(c.diferencia)+'</span>':'<span class="pill pill-rojo">Faltó '+fmtMoney(Math.abs(c.diferencia))+'</span>')}</td>
           <td><button class="btn btn-sm" onclick="reimprimirCierre('${c.id}')" title="Reimprimir cuadre">🖨️</button></td>
         </tr>`).join('')}</tbody>
       </table></div></div>`:''}`;
