@@ -1488,7 +1488,7 @@ function abrirCobro(v, esNuevo){
   const pct=neg.pctDatafono||0;
   const campos=[{id:'metodo', label:'Método de pago', tipo:'select', opciones:[
     {valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}];
-  if(usaPropina) campos.push({id:'propina', label:'Propina (del mesero, no es del negocio)', tipo:'number', valor:'0'});
+  if(usaPropina) campos.push({id:'propina', label:'Propina (del personal, no es del negocio)', tipo:'number', valor:'0'});
   campos.push({id:'recargo', label:'Recargo del datáfono (lo cobra el banco)', tipo:'number', valor:'0'});
 
   abrirModal({titulo:'Cobrar '+(v.factura||'')+' · '+fmtMoney(base+dom), textoBoton:'Confirmar cobro',
@@ -2036,7 +2036,7 @@ function caja(){
       <div class="tarjeta">
         <span class="t-tit">${ic('users')} No son ingreso del negocio</span>
         <p class="gris" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
-        ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?`<div class="linea"><span>👤 Propinas (del mesero)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
+        ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?`<div class="linea"><span>👤 Propinas (del personal)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
         ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?`<div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>`:''}
         <div class="linea"><span>💳 Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>
       </div>
@@ -2980,6 +2980,8 @@ function reportes(){
   const maxHora=Math.max.apply(null,horas.concat([1]));
   const horasActivas=horas.map((tot,hh)=>({h:hh,tot})).filter(x=>x.tot>0);
   // Resumen del día: propinas por mesero, platos de hoy, domicilios
+  const usaPropinaNeg=(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina);
+  const usaDomiciliosNeg=(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1);
   const propinasHoy=hoy.reduce((a,v)=>a+(v.propina||0),0);
   const meseros=(DB.get('usuarios')||[]).filter(u=>u.negocioId===neg.id && u.rol==='mesero').map(u=>u.nombre);
   const numMeseros=meseros.length||1;
@@ -2998,19 +3000,19 @@ function reportes(){
       </div>
       <div class="stats" style="margin-bottom:6px;">
         <div class="stat verde"><div class="stat-lbl">Vendido hoy</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} ventas</div></div>
-        <div class="stat gold"><div class="stat-lbl">Propinas del día</div><div class="stat-val">${fmtMoney(propinasHoy)}</div><div class="stat-sub">para los meseros</div></div>
-        <div class="stat azul"><div class="stat-lbl">Domicilios</div><div class="stat-val">${domiciliosHoy}</div><div class="stat-sub">recargos: ${fmtMoney(recargosHoy)}</div></div>
+        ${usaPropinaNeg?`<div class="stat gold"><div class="stat-lbl">Propinas del día</div><div class="stat-val">${fmtMoney(propinasHoy)}</div><div class="stat-sub">para el personal</div></div>`:''}
+        ${usaDomiciliosNeg?`<div class="stat azul"><div class="stat-lbl">Domicilios</div><div class="stat-val">${domiciliosHoy}</div><div class="stat-sub">recargos: ${fmtMoney(recargosHoy)}</div></div>`:`<div class="stat gold"><div class="stat-lbl">Ticket promedio</div><div class="stat-val">${fmtMoney(ticket)}</div><div class="stat-sub">por venta</div></div>`}
       </div>
       <div class="grid2">
-        <div>
-          <p class="oro negrita" style="margin-bottom:8px;">💵 Propinas a repartir (entre ${numMeseros} mesero${numMeseros!==1?'s':''})</p>
+        ${usaPropinaNeg?`<div>
+          <p class="oro negrita" style="margin-bottom:8px;">💵 Propinas a repartir (entre ${numMeseros} ${numMeseros!==1?'personas':'persona'})</p>
           ${propinasHoy>0?`<div style="padding:12px 14px;background:rgba(var(--acc-rgb),.08);border-radius:10px;">
-            <div class="linea" style="border:none;padding:2px 0;"><span class="negrita">A cada mesero le toca:</span><strong class="oro">${fmtMoney(propinaPorMesero)}</strong></div>
+            <div class="linea" style="border:none;padding:2px 0;"><span class="negrita">A cada uno le toca:</span><strong class="oro">${fmtMoney(propinaPorMesero)}</strong></div>
             ${meseros.length?`<p class="gris chico" style="margin-top:4px;">${meseros.map(m=>escapeHtml(m)).join(' · ')}</p>`:''}
           </div>`:'<p class="gris">No hay propinas registradas hoy.</p>'}
-        </div>
+        </div>`:''}
         <div>
-          <p class="oro negrita" style="margin-bottom:8px;">🍽️ ${pProds(true)} más pedidos hoy</p>
+          <p class="oro negrita" style="margin-bottom:8px;">🍽️ ${pProds(true)} más vendidos hoy</p>
           ${topHoy.length?`<table class="tabla"><tbody>${topHoy.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td class="oro negrita" style="text-align:right;">${q}</td></tr>`).join('')}</tbody></table>`:'<p class="gris">Aún no hay ventas hoy.</p>'}
         </div>
       </div>
