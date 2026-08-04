@@ -1478,7 +1478,7 @@ function abrirCobro(v, esNuevo){
   const neg=STATE.negocio;
   const base=v.subtotal||0;
   const dom=v.valorDom||0;
-  const usaPropina=neg.usaCocina;
+  const usaPropina=(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina);
   const pct=neg.pctDatafono||0;
   const campos=[{id:'metodo', label:'Método de pago', tipo:'select', opciones:[
     {valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}];
@@ -1929,8 +1929,8 @@ function caja(){
       <div class="tarjeta">
         <span class="t-tit">${ic('users')} No son ingreso del negocio</span>
         <p class="gris" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
-        <div class="linea"><span>👤 Propinas (del mesero)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>
-        <div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>
+        ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?`<div class="linea"><span>👤 Propinas (del mesero)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
+        ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?`<div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>`:''}
         <div class="linea"><span>💳 Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>
       </div>
     </div>
@@ -3235,12 +3235,15 @@ function pantallaConfig(negId){
       <span class="t-tit">Opciones</span>
       <div class="checks">
         <label class="chk"><input type="checkbox" id="c-mesas" ${neg.usaMesas?'checked':''}> Usa mesas</label>
-        <label class="chk"><input type="checkbox" id="c-cocina" ${neg.usaCocina?'checked':''}> Usa cocina (KDS y propinas)</label>
+        <label class="chk"><input type="checkbox" id="c-cocina" ${neg.usaCocina?'checked':''}> Usa cocina (pantalla KDS)</label>
+        <label class="chk"><input type="checkbox" id="c-propina" ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?'checked':''}> Cobra propina (mesero)</label>
+        <label class="chk"><input type="checkbox" id="c-domis" ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?'checked':''}> Maneja domicilios</label>
         <label class="chk"><input type="checkbox" id="c-recetas" ${neg.usaRecetas?'checked':''}> Usa recetas (descuenta insumos)</label>
         <label class="chk"><input type="checkbox" id="c-citas" ${neg.usaCitas?'checked':''}> Usa agenda</label>
         <label class="chk"><input type="checkbox" id="c-sonidos" ${neg.sonidos!==false?'checked':''}> Sonidos</label>
         <label class="chk"><input type="checkbox" id="c-alerta" ${neg.alertaStock!==false?'checked':''}> Avisar stock bajo</label>
       </div>
+      <p class="nota" style="margin-top:8px;">Marca solo lo que el negocio necesita. Ej: una tienda de accesorios no marca cocina ni propina.</p>
       <div class="form2" style="margin-top:14px;">
         <div class="m-row"><label>Apariencia del sistema</label><select id="c-tema" class="campo">
           <option value="oscuro" ${neg.tema!=='claro'?'selected':''}>Oscuro neón</option>
@@ -3287,6 +3290,7 @@ function guardarConfig(negId){
   n.palabraProducto=val('c-pal1').trim()||'Producto';
   n.palabraProductos=val('c-pal2').trim()||'Productos';
   n.usaMesas=chk('c-mesas'); n.usaCocina=chk('c-cocina');
+  n.usaPropina=chk('c-propina'); n.usaDomicilios=chk('c-domis');
   n.usaRecetas=chk('c-recetas'); n.usaCitas=chk('c-citas');
   n.sonidos=chk('c-sonidos'); n.alertaStock=chk('c-alerta');
   n.tipoFactura=val('c-fact'); n.pctDatafono=parseFloat(val('c-pct'))||0;
