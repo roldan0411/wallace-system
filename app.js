@@ -502,6 +502,12 @@ const ICONS = {
 };
 function ic(n){ return ICONS[n]||ICONS.dashboard; }
 
+// ---- Vocabulario dinámico por negocio ----
+// Cada empresa define cómo llama a sus productos (Plato, Producto, Artículo,
+// Servicio…). Estos helpers devuelven esa palabra para usarla en TODO el sistema.
+function pProd(cap){ const n=STATE.negocio; let p=(n&&n.palabraProducto)?n.palabraProducto:'Producto'; return cap?p:p.toLowerCase(); }
+function pProds(cap){ const n=STATE.negocio; let p=(n&&n.palabraProductos)?n.palabraProductos:'Productos'; return cap?p:p.toLowerCase(); }
+
 // ============================================================
 //  AVISOS Y MODALES
 // ============================================================
@@ -2236,19 +2242,19 @@ function inventario(){
     const conReceta=todos.filter(p=>(p.receta||[]).length).length;
     return `
       <div class="stats">
-        <div class="stat gold"><div class="stat-ico gold">${ic('chef')}</div><div class="stat-lbl">Platos en el menú</div><div class="stat-val">${todos.length}</div><div class="stat-sub">${cats.length-1} categoría(s)</div></div>
+        <div class="stat gold"><div class="stat-ico gold">${ic('chef')}</div><div class="stat-lbl">${pProds(true)} en el catálogo</div><div class="stat-val">${todos.length}</div><div class="stat-sub">${cats.length-1} categoría(s)</div></div>
         <div class="stat verde"><div class="stat-ico verde">${ic('box')}</div><div class="stat-lbl">Con receta</div><div class="stat-val">${conReceta}</div><div class="stat-sub">descuentan insumos</div></div>
         <div class="stat"><div class="stat-ico">${ic('cart')}</div><div class="stat-lbl">Insumos disponibles</div><div class="stat-val">${insumos.length}</div><div class="stat-sub">para armar recetas</div></div>
       </div>
       <div class="tarjeta">
         <div class="t-cab">
-          <span class="t-tit">${ic('chef')} Menú de platos</span>
+          <span class="t-tit">${ic('chef')} ${neg.usaRecetas?'Menú':'Catálogo'} de ${pProds()}</span>
           <div class="t-acc">
-            <input type="text" class="busca" placeholder="🔍 Buscar plato..." value="${escapeHtml(_iBusca)}" oninput="_iBusca=this.value;render()">
-            <button class="btn btn-gold" onclick="editarProducto(null)">+ Agregar plato</button>
+            <input type="text" class="busca" placeholder="🔍 Buscar ${pProd()}..." value="${escapeHtml(_iBusca)}" oninput="_iBusca=this.value;render()">
+            <button class="btn btn-gold" onclick="editarProducto(null)">+ Agregar ${pProd()}</button>
           </div>
         </div>
-        <p class="nota">Estos platos son los que aparecen en <strong>Nueva Venta</strong>. Cada plato puede tener una receta que descuenta insumos al venderse.</p>
+        <p class="nota">Estos ${pProds()} son los que aparecen en <strong>Nueva Venta</strong>.${neg.usaRecetas?' Cada '+pProd()+' puede tener una receta que descuenta insumos al venderse.':''}</p>
         ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="cat ${_iCat===c?'on':''}" onclick="_iCat='${escapeHtml(c)}';render()">${escapeHtml(c)}${c!=='Todas'?' ('+todos.filter(p=>(p.categoria||'General')===c).length+')':''}</button>`).join('')}</div>`:''}
         ${lista.length?`<div class="prods inv">
           ${lista.map(p=>{
@@ -2265,7 +2271,7 @@ function inventario(){
               </div>
             </div>`;
           }).join('')}
-        </div>`:`<p class="gris">${_iBusca||_iCat!=='Todas'?'No se encontraron platos.':'Sin platos aún. Agrega el primero con "+ Agregar plato".'}</p>`}
+        </div>`:`<p class="gris">${_iBusca||_iCat!=='Todas'?'No se encontraron '+pProds()+'.':'Sin '+pProds()+' aún. Agrega el primero con "+ Agregar '+pProd()+'".'}</p>`}
       </div>`;
   }
 
@@ -2442,7 +2448,7 @@ function recetaEditorHTML(){
   if(!insumos.length){
     return `<div class="cobro-caja" style="margin-top:14px;">
       <strong>Receta</strong>
-      <p class="nota" style="margin-top:8px;">Aún no tienes insumos. Ve a <strong>Insumos</strong> y agrega arroz, pollo, etc. Luego podrás armar la receta de este plato. Sin receta, el plato se vende sin descontar inventario.</p>
+      <p class="nota" style="margin-top:8px;">Aún no tienes insumos. Ve a <strong>Insumos</strong> y agrega arroz, pollo, etc. Luego podrás armar la receta de este ${pProd()}. Sin receta, el ${pProd()} se vende sin descontar inventario.</p>
     </div>`;
   }
   return `<div class="cobro-caja" style="margin-top:14px;">
@@ -2459,7 +2465,7 @@ function recetaEditorHTML(){
 }
 function recetaFilasHTML(){
   const insumos=misDatos('insumos');
-  if(!_recetaTmp.length) return '<p class="nota">Sin insumos en la receta. Este plato se venderá sin descontar inventario.</p>';
+  if(!_recetaTmp.length) return '<p class="nota">Sin insumos en la receta. Este ${pProd()} se venderá sin descontar inventario.</p>';
   return _recetaTmp.map((r,idx)=>{
     const ins=insumos.find(i=>i.id===r.insumoId);
     return `<div class="c-row" style="padding:6px 0;">
@@ -2679,7 +2685,7 @@ function eliminarInsumo(id){
   const i=misDatos('insumos').find(x=>x.id===id);
   // Avisar si algún plato lo usa en su receta
   const platos=misDatos('productos').filter(p=>(p.receta||[]).some(r=>r.insumoId===id));
-  const aviso=platos.length?' Lo usan '+platos.length+' plato(s): quedarán sin ese insumo en la receta.':'';
+  const aviso=platos.length?' Lo usan '+platos.length+' '+pProd()+'(s): quedarán sin ese insumo en la receta.':'';
   confirmarModal('¿Eliminar el insumo "'+(i?i.nombre:'')+'"?'+aviso,()=>{
     eliminarMisDatos('insumos',id);
     // Limpiarlo de las recetas
@@ -3004,7 +3010,7 @@ function reportes(){
           </div>`:'<p class="gris">No hay propinas registradas hoy.</p>'}
         </div>
         <div>
-          <p class="oro negrita" style="margin-bottom:8px;">🍽️ Platos más pedidos hoy</p>
+          <p class="oro negrita" style="margin-bottom:8px;">🍽️ ${pProds(true)} más pedidos hoy</p>
           ${topHoy.length?`<table class="tabla"><tbody>${topHoy.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td class="oro negrita" style="text-align:right;">${q}</td></tr>`).join('')}</tbody></table>`:'<p class="gris">Aún no hay ventas hoy.</p>'}
         </div>
       </div>
@@ -3025,15 +3031,15 @@ function reportes(){
         <p class="nota" style="margin-top:8px;">Te ayuda a saber a qué horas necesitas más personal.</p>`:'<p class="gris">Sin datos.</p>'}
     </div>
     <div class="grid2">
-      <div class="tarjeta"><span class="t-tit">${ic('box')} Más Vendidos (30 días)</span>
+      <div class="tarjeta"><span class="t-tit">${ic('box')} ${pProds(true)} más vendidos (30 días)</span>
         ${top.length?`<div class="tabla-wrap"><table class="tabla">
-          <thead><tr><th>Producto</th><th>Uds.</th><th>Total</th></tr></thead>
+          <thead><tr><th>${pProd(true)}</th><th>Uds.</th><th>Total</th></tr></thead>
           <tbody>${top.map(([n,d])=>`<tr><td>${escapeHtml(n)}</td><td class="negrita">${d.qty}</td><td class="oro">${fmtMoney(d.total)}</td></tr>`).join('')}</tbody>
         </table></div>`:'<p class="gris">Sin datos.</p>'}
       </div>
-      <div class="tarjeta"><span class="t-tit">${ic('report')} Menos Vendidos (30 días)</span>
+      <div class="tarjeta"><span class="t-tit">${ic('report')} ${pProds(true)} menos vendidos (30 días)</span>
         ${menos.length?`<div class="tabla-wrap"><table class="tabla">
-          <thead><tr><th>Producto</th><th>Uds.</th><th>Total</th></tr></thead>
+          <thead><tr><th>${pProd(true)}</th><th>Uds.</th><th>Total</th></tr></thead>
           <tbody>${menos.map(([n,d])=>`<tr><td>${escapeHtml(n)}</td><td class="negrita">${d.qty}</td><td class="gris">${fmtMoney(d.total)}</td></tr>`).join('')}</tbody>
         </table></div>
         <p class="nota" style="margin-top:8px;">Candidatos a quitar o renovar en el menú.</p>`:'<p class="gris">Sin datos.</p>'}
@@ -3132,9 +3138,9 @@ function contable(){
       ${retiros>0?`<div class="linea"><span>Retiros del dueño (no es gasto)</span><strong class="gris">${fmtMoney(retiros)}</strong></div>`:''}
     </div>`:''}
     <div class="grid2">
-      <div class="tarjeta"><span class="t-tit">${ic('box')} Productos más vendidos</span>
+      <div class="tarjeta"><span class="t-tit">${ic('box')} ${pProds(true)} más vendidos</span>
         ${topProd.length?`<div class="tabla-wrap"><table class="tabla">
-          <thead><tr><th>Producto</th><th>Cant.</th><th>Total</th></tr></thead>
+          <thead><tr><th>${pProd(true)}</th><th>Cant.</th><th>Total</th></tr></thead>
           <tbody>${topProd.map(p=>`<tr><td>${escapeHtml(p[0])}</td><td class="negrita">${p[1].qty}</td><td class="oro">${fmtMoney(p[1].total)}</td></tr>`).join('')}</tbody>
         </table></div>`:'<p class="gris">Sin ventas este mes.</p>'}
       </div>
