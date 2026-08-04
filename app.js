@@ -3918,7 +3918,7 @@ function citas(){
           const apHTML=ap.length
             ? ap.map(x=>`<div class="chico">${escapeHtml(x.nombre)} <strong>×${x.cantidad}</strong></div>`).join('')
               +(c.estado==='pendiente'?'<span class="pill pill-azul" style="margin-top:4px;">Reservado</span>'
-                :c.estado==='atendida'?'<span class="pill pill-verde" style="margin-top:4px;">Entregado</span>'
+                :c.estado==='atendida'?(c.ventaId?'<span class="pill pill-verde" style="margin-top:4px;">Entregado y cobrado</span>':'<span class="pill pill-verde" style="margin-top:4px;">Entregado</span>')
                 :c.estado==='no_recogio'?'<span class="pill pill-rojo" style="margin-top:4px;">Devuelto al stock</span>'
                 :'<span class="pill pill-rojo" style="margin-top:4px;">Devuelto al stock</span>')
             : '<span class="gris chico">—</span>';
@@ -4073,6 +4073,13 @@ function marcarCita(id,estado){
   const arr=misDatos('citas');
   const c=arr.find(x=>x.id===id); if(!c) return;
   const tieneApartados=(c.apartados||[]).length>0;
+
+  // ENTREGADO con productos apartados: registrar la venta (cuenta en dashboard/caja/reportes)
+  if(estado==='atendida' && tieneApartados && !c.ventaId){
+    cobrarCitaEntregada(c);   // abre modal de cobro; al confirmar marca la cita y crea la venta
+    return;
+  }
+
   // Si NO se recogió o se cancela: devolver al stock lo que se había apartado
   if((estado==='no_recogio' || estado==='cancelada') && tieneApartados && c.stockDescontado){
     devolverApartado(c.apartados);
@@ -4087,14 +4094,78 @@ function marcarCita(id,estado){
   toast(msg,'info');
   render();
 }
+
+// Al confirmar que la cita llegó y se llevó los productos: cobrar y registrar la venta.
+// El stock YA se descontó cuando se apartó, así que la venta NO vuelve a descontarlo.
+function cobrarCitaEntregada(cita){
+  const neg=STATE.negocio;
+  const items=(cita.apartados||[]).map(x=>({prodId:x.prodId, nombre:x.nombre, precio:x.precio||0, qty:x.cantidad}));
+  const bruto=items.reduce((a,i)=>a+i.precio*i.qty,0);
+  abrirModal({titulo:'Cobrar entrega · '+escapeHtml(cita.cliente||'')+' · '+fmtMoney(bruto),
+    textoBoton:'Confirmar entrega y cobro',
+    campos:[{id:'metodo', label:'Método de pago', tipo:'select', opciones:[
+      {valor:'efectivo',label:'Efectivo'},{valor:'banco',label:'Transferencia / Banco'},{valor:'tarjeta',label:'Tarjeta / Datáfono'}]}],
+    extraHTML:`<div class="cobro-caja">
+      ${items.map(i=>`<div class="c-row"><span>${escapeHtml(i.nombre)} ×${i.qty}</span><strong>${fmtMoney(i.precio*i.qty)}</strong></div>`).join('')}
+      <div class="c-row c-total"><span>TOTAL A COBRAR</span><strong>${fmtMoney(bruto)}</strong></div>
+      <p class="nota" style="margin-top:8px;">Los productos ya se descontaron del inventario al apartarse; esta venta no los vuelve a descontar.</p>
+    </div>`,
+    onGuardar:(d)=>{
+      if(_guardando) return;
+      _guardando=true;
+      try{
+        const metodo=d.metodo||'efectivo';
+        const caja=misDatos('caja_actual');
+        const cajaAbierta=Array.isArray(caja)?caja[0]:caja;
+        const ventas=misDatos('ventas');
+        // Número de factura consecutivo (igual que armarVenta)
+        let mayor=0;
+        ventas.forEach(v=>{ const n=parseInt(String(v.factura||'').replace(/\D/g,''))||0; if(n>mayor) mayor=n; });
+        const venta={
+          id:uid(), factura:'F-'+String(mayor+1).padStart(5,'0'),
+          items:items,
+          subtotal:bruto, subtotalBruto:bruto, descuento:0, descMotivo:'',
+          valorDom:0, propina:0, recargo:0, total:bruto,
+          metodo:metodo, estado:'pagada',
+          tipo:'llevar', cajaId:cajaAbierta?cajaAbierta.id:null,
+          vendedor:STATE.user.nombre, fecha:now(),
+          obs:'Entrega de agendamiento'+(cita.detalle?' · '+cita.detalle:''), mesa:'',
+          cliNombre:cita.cliente||'', cliTel:cita.tel||'', cliDir:'', cliBarrio:'',
+          cliCiudad:'', cliDepto:'', transportadora:'', domiciliario:'',
+          estadoCocina:'',
+          cobrado:now(), cobradoPor:STATE.user.nombre,
+          origenCita:cita.id
+        };
+        ventas.unshift(venta);
+        guardarMisDatos('ventas',ventas);
+        guardarClienteAuto(venta);
+        // OJO: no llamamos descontarStock: el stock ya se descontó al apartar.
+        // Marcar la cita como atendida y enlazarla con la venta
+        const arr=misDatos('citas');
+        const c=arr.find(x=>x.id===cita.id);
+        if(c){ c.estado='atendida'; c.cerrada=now(); c.ventaId=venta.id; }
+        guardarMisDatos('citas',arr);
+        sonidoVenta();
+        cerrarModal();
+        toast('Entregado y cobrado: '+fmtMoney(venta.total),'success');
+        if((neg.funciones||[]).indexOf('facturas')>-1){
+          const fid=venta.id;
+          setTimeout(()=>confirmarModal('¿Imprimir factura?',()=>imprimirFactura(fid),'Imprimir'),400);
+        }
+        render();
+      }catch(e){ console.error(e); toast('Error al registrar la venta','error'); }
+      finally{ _guardando=false; }
+    }});
+}
 function eliminarCita(id){
   const c=misDatos('citas').find(x=>x.id===id);
-  const advertir=(c && (c.apartados||[]).length && c.stockDescontado)
+  const debeDevolver = c && (c.apartados||[]).length && c.stockDescontado && !c.ventaId;
+  const advertir = debeDevolver
     ? '¿Eliminar este agendamiento? Los productos apartados volverán al stock.'
     : '¿Eliminar este agendamiento?';
   confirmarModal(advertir,()=>{
-    // Si aún tenía productos apartados descontados, devolverlos antes de borrar
-    if(c && (c.apartados||[]).length && c.stockDescontado){ devolverApartado(c.apartados); }
+    // Solo devolver stock si aún estaba apartado y NO se convirtió en venta
+    if(debeDevolver){ devolverApartado(c.apartados); }
     eliminarMisDatos('citas',id); toast('Eliminado','info'); render();
   },'Eliminar');
 }
