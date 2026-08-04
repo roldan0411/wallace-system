@@ -3693,10 +3693,57 @@ function eliminarUsuario(id){
 function irA(pg){
   if(pg!=='ventas') ESCRIBIENDO=false;
   STATE.pageNeg=pg;
-  render();
   const sb=document.getElementById('sidebar'); if(sb) sb.classList.remove('abierto');
+  // Navegación suave: si ya estamos dentro del negocio, solo cambiamos el
+  // contenido central y el título, sin reconstruir el sidebar (evita el "parpadeo").
+  if(STATE.user && STATE.negocio && !STATE.esSuperAdmin && document.querySelector('.app-grid')){
+    renderContenido();
+  } else {
+    render();
+  }
   // Al entrar a Inventario, avisar si hay lotes vencidos o por vencer
   if(pg==='inventario' || pg==='catalogo'){ try{ avisarVencimientos(); }catch(e){} }
+}
+
+// Redibuja SOLO el área de contenido, el título y el resaltado del menú.
+// El sidebar y la topbar permanecen intactos, así la navegación es instantánea y sin saltos.
+function renderContenido(){
+  const cont=document.querySelector('.main .contenido');
+  if(!cont){ render(); return; }   // por si el layout aún no existe, redibujar completo
+  const neg=STATE.negocio;
+  const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
+    inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
+    domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
+    contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
+    tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría', reimpresiones:'Reimpresiones'};
+  const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
+    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina,
+    tiempos, historial, auditoria, reimpresiones};
+  const fn=pantallas[STATE.pageNeg];
+  let contenido='';
+  if(!fn){
+    contenido='<div class="tarjeta centro-msg"><div class="msg-ico">🚧</div>'
+      +'<div class="t-tit centrado">Pantalla no disponible</div>'
+      +'<p class="gris">Esta sección todavía no está habilitada para tu negocio.</p>'
+      +'<button class="btn btn-gold" onclick="irA(\'inicio\')">Volver al inicio</button></div>';
+  } else {
+    try{ contenido=fn(); }catch(e){ console.error('Error en pantalla',STATE.pageNeg,e);
+      contenido='<div class="tarjeta"><p class="rojo">Ocurrió un error al mostrar esta pantalla.</p><button class="btn" onclick="irA(\'inicio\')">Volver al inicio</button></div>'; }
+  }
+  cont.innerHTML=contenido;
+  cont.scrollTop=0;                         // subir al inicio de la nueva sección
+  // Actualizar el título de la topbar
+  const h1=document.querySelector('.main .topbar h1');
+  if(h1){
+    const btn=h1.querySelector('.menu-btn');
+    h1.innerHTML=(btn?btn.outerHTML:'')+' '+escapeHtml(titulos[STATE.pageNeg]||'');
+  }
+  // Actualizar cuál ítem del menú queda resaltado
+  document.querySelectorAll('.side-nav .nav-item').forEach(el=>{
+    const oc=el.getAttribute('onclick')||'';
+    const m=oc.match(/irA\('([^']+)'\)/);
+    if(m) el.classList.toggle('on', m[1]===STATE.pageNeg);
+  });
 }
 function armarMenu(){
   const neg=STATE.negocio, u=STATE.user;
