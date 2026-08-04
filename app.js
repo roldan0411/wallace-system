@@ -507,6 +507,8 @@ function ic(n){ return ICONS[n]||ICONS.dashboard; }
 // Servicio…). Estos helpers devuelven esa palabra para usarla en TODO el sistema.
 function pProd(cap){ const n=STATE.negocio; let p=(n&&n.palabraProducto)?n.palabraProducto:'Producto'; return cap?p:p.toLowerCase(); }
 function pProds(cap){ const n=STATE.negocio; let p=(n&&n.palabraProductos)?n.palabraProductos:'Productos'; return cap?p:p.toLowerCase(); }
+function pPedido(cap){ const n=STATE.negocio; let p=(n&&n.palabraPedido)?n.palabraPedido:'Pedido'; return cap?p:p.toLowerCase(); }
+function pPersonal(cap){ const n=STATE.negocio; let p=(n&&n.palabraPersonal)?n.palabraPersonal:'Personal'; return cap?p:p.toLowerCase(); }
 
 // ============================================================
 //  AVISOS Y MODALES
@@ -3000,19 +3002,19 @@ function reportes(){
       </div>
       <div class="stats" style="margin-bottom:6px;">
         <div class="stat verde"><div class="stat-lbl">Vendido hoy</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} ventas</div></div>
-        ${usaPropinaNeg?`<div class="stat gold"><div class="stat-lbl">Propinas del día</div><div class="stat-val">${fmtMoney(propinasHoy)}</div><div class="stat-sub">para el personal</div></div>`:''}
+        ${usaPropinaNeg?`<div class="stat gold"><div class="stat-lbl">Propinas del día</div><div class="stat-val">${fmtMoney(propinasHoy)}</div><div class="stat-sub">para ${pPersonal()}</div></div>`:''}
         ${usaDomiciliosNeg?`<div class="stat azul"><div class="stat-lbl">Domicilios</div><div class="stat-val">${domiciliosHoy}</div><div class="stat-sub">recargos: ${fmtMoney(recargosHoy)}</div></div>`:`<div class="stat gold"><div class="stat-lbl">Ticket promedio</div><div class="stat-val">${fmtMoney(ticket)}</div><div class="stat-sub">por venta</div></div>`}
       </div>
       <div class="grid2">
         ${usaPropinaNeg?`<div>
-          <p class="oro negrita" style="margin-bottom:8px;">💵 Propinas a repartir (entre ${numMeseros} ${numMeseros!==1?'personas':'persona'})</p>
+          <p class="oro negrita" style="margin-bottom:8px;">💵 Propinas a repartir (entre ${numMeseros} ${pPersonal()})</p>
           ${propinasHoy>0?`<div style="padding:12px 14px;background:rgba(var(--acc-rgb),.08);border-radius:10px;">
             <div class="linea" style="border:none;padding:2px 0;"><span class="negrita">A cada uno le toca:</span><strong class="oro">${fmtMoney(propinaPorMesero)}</strong></div>
             ${meseros.length?`<p class="gris chico" style="margin-top:4px;">${meseros.map(m=>escapeHtml(m)).join(' · ')}</p>`:''}
           </div>`:'<p class="gris">No hay propinas registradas hoy.</p>'}
         </div>`:''}
         <div>
-          <p class="oro negrita" style="margin-bottom:8px;">🍽️ ${pProds(true)} más vendidos hoy</p>
+          <p class="oro negrita" style="margin-bottom:8px;">${ic('box')} ${pProds(true)} más vendidos hoy</p>
           ${topHoy.length?`<table class="tabla"><tbody>${topHoy.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td class="oro negrita" style="text-align:right;">${q}</td></tr>`).join('')}</tbody></table>`:'<p class="gris">Aún no hay ventas hoy.</p>'}
         </div>
       </div>
@@ -3557,10 +3559,13 @@ function pantallaConfig(negId){
       </select>
     </div>
     <div class="tarjeta">
-      <span class="t-tit">Vocabulario</span>
+      <span class="t-tit">Vocabulario personalizado</span>
+      <p class="nota">Personaliza cómo el sistema llama a las cosas según tu negocio. Ej: un restaurante usa "Plato/Platos", una tienda "Producto/Productos", una boutique "Prenda/Prendas".</p>
       <div class="form2">
-        <div class="m-row"><label>Singular</label><input id="c-pal1" class="campo" value="${escapeHtml(neg.palabraProducto||'Producto')}"></div>
-        <div class="m-row"><label>Plural</label><input id="c-pal2" class="campo" value="${escapeHtml(neg.palabraProductos||'Productos')}"></div>
+        <div class="m-row"><label>Producto (singular)</label><input id="c-pal1" class="campo" value="${escapeHtml(neg.palabraProducto||'Producto')}" placeholder="Ej: Producto, Plato, Artículo"></div>
+        <div class="m-row"><label>Productos (plural)</label><input id="c-pal2" class="campo" value="${escapeHtml(neg.palabraProductos||'Productos')}" placeholder="Ej: Productos, Platos, Artículos"></div>
+        <div class="m-row"><label>Cómo llamas al pedido/venta</label><input id="c-palped" class="campo" value="${escapeHtml(neg.palabraPedido||'Pedido')}" placeholder="Ej: Pedido, Orden, Venta"></div>
+        <div class="m-row"><label>Cómo llamas al personal</label><input id="c-palpers" class="campo" value="${escapeHtml(neg.palabraPersonal||'Personal')}" placeholder="Ej: Mesero, Personal, Vendedor"></div>
       </div>
     </div>
     <div class="tarjeta">
@@ -3576,7 +3581,7 @@ function pantallaConfig(negId){
       <div class="checks">
         <label class="chk"><input type="checkbox" id="c-mesas" ${neg.usaMesas?'checked':''}> Usa mesas</label>
         <label class="chk"><input type="checkbox" id="c-cocina" ${neg.usaCocina?'checked':''}> Usa cocina (pantalla KDS)</label>
-        <label class="chk"><input type="checkbox" id="c-propina" ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?'checked':''}> Cobra propina (mesero)</label>
+        <label class="chk"><input type="checkbox" id="c-propina" ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?'checked':''}> Cobra propina (personal de servicio)</label>
         <label class="chk"><input type="checkbox" id="c-domis" ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?'checked':''}> Maneja domicilios</label>
         <label class="chk"><input type="checkbox" id="c-recetas" ${neg.usaRecetas?'checked':''}> Usa recetas (descuenta insumos)</label>
         <label class="chk"><input type="checkbox" id="c-citas" ${neg.usaCitas?'checked':''}> Usa agenda</label>
@@ -3629,6 +3634,8 @@ function guardarConfig(negId){
   n.flujoPedido=val('c-flujo');
   n.palabraProducto=val('c-pal1').trim()||'Producto';
   n.palabraProductos=val('c-pal2').trim()||'Productos';
+  n.palabraPedido=val('c-palped').trim()||'Pedido';
+  n.palabraPersonal=val('c-palpers').trim()||'Personal';
   n.usaMesas=chk('c-mesas'); n.usaCocina=chk('c-cocina');
   n.usaPropina=chk('c-propina'); n.usaDomicilios=chk('c-domis');
   n.usaRecetas=chk('c-recetas'); n.usaCitas=chk('c-citas');
