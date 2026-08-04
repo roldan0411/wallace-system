@@ -552,7 +552,10 @@ function abrirModal(cfg){
     if(cfg.onGuardar) cfg.onGuardar(datos);
   };
   setTimeout(()=>{
-    const f=cont.querySelector('input,select,textarea'); if(f) f.focus();
+    // En móvil NO enfocamos automáticamente: abriría el teclado y taparía la pantalla.
+    // Solo enfocamos en pantallas grandes (escritorio), donde no estorba.
+    const esMovil = window.matchMedia && window.matchMedia('(max-width: 820px)').matches;
+    if(!esMovil){ const f=cont.querySelector('input,select,textarea'); if(f) f.focus(); }
     if(typeof cfg.onAbrir==='function') cfg.onAbrir();
   },50);
 }
@@ -1016,16 +1019,16 @@ function nuevaVenta(){
     <div class="caja-aviso">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>
     <div class="venta-grid">
       <div class="venta-izq">
-        <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;render()">
-        ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="cat ${_vCat===c?'on':''}" onclick="_vCat='${escapeHtml(c)}';render()">${escapeHtml(c)}</button>`).join('')}</div>`:''}
-        ${productos.length?`<div class="prods">
+        <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;filtrarProductos()">
+        ${cats.length>1?`<div class="cats" id="venta-cats">${cats.map(c=>`<button class="cat ${_vCat===c?'on':''}" onclick="_vCat='${escapeHtml(c)}';filtrarProductos();marcarCat(this)">${escapeHtml(c)}</button>`).join('')}</div>`:''}
+        <div id="venta-prods">${productos.length?`<div class="prods">
           ${productos.map(p=>`<div class="prod" onclick="agregarAlCarrito('${p.id}')">
             <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('box')}</div>
             <div class="prod-nom">${escapeHtml(p.nombre)}</div>
             <div class="prod-pre">${fmtMoney(p.precio)}</div>
             ${p.stock!=null?`<div class="prod-stock ${p.stock<=0?'sin':p.stock<=(p.stockMin||0)?'poco':''}">${p.stock<=0?'Sin stock':'Stock: '+p.stock}</div>`:''}
           </div>`).join('')}
-        </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin '+escapeHtml((neg.palabraProductos||'productos').toLowerCase())+'. Agrégalos en Inventario.'}</p>`}
+        </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin '+escapeHtml((neg.palabraProductos||'productos').toLowerCase())+'. Agrégalos en Inventario.'}</p>`}</div>
       </div>
       <div class="tarjeta carrito">
         <div class="t-cab">
@@ -1110,6 +1113,29 @@ function actualizarTotalVenta(){
   if(elTot) elTot.textContent=fmtMoney(total+valorDom);
   const elDom=document.getElementById('linea-dom');
   if(elDom) elDom.innerHTML = valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:'';
+}
+
+// Filtra solo la grilla de productos (sin recargar el carrito ni perder foco del buscador)
+function filtrarProductos(){
+  const neg=STATE.negocio;
+  let productos=misDatos('productos').filter(p=>!p.agotado);
+  if(_vCat!=='Todas') productos=productos.filter(p=>(p.categoria||'General')===_vCat);
+  if(_vBusca){ const q=_vBusca.toLowerCase(); productos=productos.filter(p=>(p.nombre||'').toLowerCase().includes(q)); }
+  const cont=document.getElementById('venta-prods');
+  if(!cont) return;
+  cont.innerHTML = productos.length?`<div class="prods">
+    ${productos.map(p=>`<div class="prod" onclick="agregarAlCarrito('${p.id}')">
+      <div class="prod-ico">${p.imagen?`<img src="${p.imagen}" alt="">`:ic('box')}</div>
+      <div class="prod-nom">${escapeHtml(p.nombre)}</div>
+      <div class="prod-pre">${fmtMoney(p.precio)}</div>
+      ${p.stock!=null?`<div class="prod-stock ${p.stock<=0?'sin':p.stock<=(p.stockMin||0)?'poco':''}">${p.stock<=0?'Sin stock':'Stock: '+p.stock}</div>`:''}
+    </div>`).join('')}
+  </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin productos.'}</p>`;
+}
+function marcarCat(el){
+  const cont=document.getElementById('venta-cats');
+  if(cont){ cont.querySelectorAll('.cat').forEach(c=>c.classList.remove('on')); }
+  if(el) el.classList.add('on');
 }
 
 function agregarAlCarrito(id){
@@ -4089,7 +4115,9 @@ function render(){
   let _foco=null;
   const _act=document.activeElement;
   if(_act && (_act.tagName==='INPUT'||_act.tagName==='TEXTAREA') && _act.closest('#app')){
-    _foco={ph:_act.getAttribute('placeholder'), id:_act.id||'', pos:_act.selectionStart};
+    // Guardamos también la pantalla actual: solo restauraremos el foco si NO
+    // cambiamos de pantalla (o sea, el usuario estaba escribiendo en un buscador).
+    _foco={ph:_act.getAttribute('placeholder'), id:_act.id||'', pos:_act.selectionStart, pag:STATE.pageNeg};
   }
   // El tema del negocio se aplica dentro del negocio; el login y el
   // panel del súper admin conservan el estilo de la marca Wallace.
@@ -4104,8 +4132,10 @@ function render(){
     return;
   }
   app.innerHTML=vistaNegocio();
-  // Restaurar el foco del buscador que estaba activo (no cerrar el teclado)
-  if(_foco && (_foco.ph||_foco.id)){
+  // Restaurar el foco del buscador SOLO si seguimos en la misma pantalla
+  // (el usuario estaba escribiendo). Si navegó a otra ventana, no reenfocamos
+  // para que el teclado del celular no se abra solo.
+  if(_foco && (_foco.ph||_foco.id) && _foco.pag===STATE.pageNeg){
     let el=null;
     if(_foco.id) el=document.getElementById(_foco.id);
     if(!el && _foco.ph){
