@@ -494,6 +494,15 @@
   }
 
   /* Responsive */
+
+  /* Mejor espaciado: títulos de tarjeta con aire, notas separadas */
+  .tarjeta > .t-tit:first-child{display:flex;margin-bottom:12px;}
+  .tarjeta .t-tit + .nota,.tarjeta .t-tit + .gris{margin-top:2px;margin-bottom:12px;}
+  .tarjeta .nota{line-height:1.6;}
+  .tarjeta + .tarjeta{margin-top:16px;}
+  .stats + .tarjeta{margin-top:4px;}
+  .grid2 > div > .oro.negrita:first-child{display:block;margin-bottom:10px;}
+
   @media(max-width:1000px){
     .venta-grid{grid-template-columns:1fr;}
     .carrito{position:static;}
