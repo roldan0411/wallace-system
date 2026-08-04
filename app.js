@@ -2783,6 +2783,79 @@ function eliminarCliente(id){
 // ============================================================
 //  DOMICILIARIOS
 // ============================================================
+// Cuadre de domiciliarios: cuánto debe entregar cada mensajero (fórmula visual como Portal Imperial)
+function cuadreDomi(){
+  ESCRIBIENDO=false;
+  const neg=STATE.negocio;
+  const vs=ventasJornada(true).filter(v=>v.tipo==='domicilio');
+  const grupos={};
+  vs.forEach(v=>{
+    const nom=v.domiciliario||'(sin asignar)';
+    if(!grupos[nom]) grupos[nom]={nombre:nom, pedidos:[], comidaEf:0, comidaBanco:0, comidaTarjeta:0, domEf:0, domBanco:0};
+    const g=grupos[nom];
+    g.pedidos.push(v);
+    const comida=v.subtotal||0;
+    const porBanco=v.domPorBanco||v.metodo==='banco';
+    if(v.metodo==='efectivo') g.comidaEf+=comida;
+    else if(v.metodo==='banco') g.comidaBanco+=comida;
+    else if(v.metodo==='tarjeta') g.comidaTarjeta+=comida;
+    else g.comidaEf+=comida;
+    const dom=v.valorDom||0;
+    if(dom>0){ if(porBanco) g.domBanco+=dom; else g.domEf+=dom; }
+  });
+  const lista=Object.values(grupos).sort((a,b)=>b.pedidos.length-a.pedidos.length);
+  const tot={pedidos:0,comidaEf:0,comidaBanco:0,domEf:0,domBanco:0};
+  lista.forEach(g=>{ tot.pedidos+=g.pedidos.length; tot.comidaEf+=g.comidaEf; tot.comidaBanco+=g.comidaBanco; tot.domEf+=g.domEf; tot.domBanco+=g.domBanco; });
+
+  if(!lista.length){
+    return `<div class="tarjeta"><span class="t-tit">${ic('truck')} Cuadre de Domiciliarios</span>
+      <p class="gris" style="margin-top:10px;">No hay domicilios pagados en esta jornada.</p></div>`;
+  }
+  return `
+    <div class="tarjeta">
+      <span class="t-tit">${ic('truck')} Cuadre de Domiciliarios <span class="pill pill-azul">Hoy</span></span>
+      <p class="gris" style="margin-top:6px;">Cuánto debe entregar cada mensajero y cuánto le corresponde por domicilios. Si eliminas un domicilio, se descuenta automáticamente de este cuadre.</p>
+    </div>
+    <div class="stats">
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Comida en efectivo</div><div class="stat-val">${fmtMoney(tot.comidaEf)}</div><div class="stat-sub">deben entregar los mensajeros</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('cash')}</div><div class="stat-lbl">Comida por banco</div><div class="stat-val">${fmtMoney(tot.comidaBanco)}</div><div class="stat-sub">ya está en la cuenta</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('truck')}</div><div class="stat-lbl">Domicilios (para ellos)</div><div class="stat-val">${fmtMoney(tot.domEf+tot.domBanco)}</div><div class="stat-sub">efectivo ${fmtMoney(tot.domEf)} · banco ${fmtMoney(tot.domBanco)}</div></div>
+      <div class="stat"><div class="stat-ico">${ic('report')}</div><div class="stat-lbl">Domicilios entregados</div><div class="stat-val">${tot.pedidos}</div><div class="stat-sub">${lista.length} mensajero(s)</div></div>
+    </div>
+    ${lista.map(g=>{
+      const entregaCajon=g.comidaEf;
+      const leTocaEf=g.domEf;
+      const leTocaBanco=g.domBanco;
+      const neto=entregaCajon-leTocaEf;
+      return `<div class="tarjeta">
+        <div class="t-cab"><span class="t-tit">${ic('truck')} ${escapeHtml(g.nombre)}</span><span class="pill pill-azul">${g.pedidos.length} domicilio(s)</span></div>
+        <div class="grid2">
+          <div>
+            <p class="oro negrita" style="margin-bottom:8px;">Valor de los pedidos (comida)</p>
+            <div class="linea"><span>En efectivo (le pagaron en la mano)</span><strong class="verde">${fmtMoney(g.comidaEf)}</strong></div>
+            <div class="linea"><span>Por banco / transferencia</span><strong class="azul">${fmtMoney(g.comidaBanco)}</strong></div>
+            ${g.comidaTarjeta>0?`<div class="linea"><span>Por tarjeta</span><strong>${fmtMoney(g.comidaTarjeta)}</strong></div>`:''}
+            <div class="linea total-linea"><span>Total en pedidos</span><strong>${fmtMoney(g.comidaEf+g.comidaBanco+g.comidaTarjeta)}</strong></div>
+          </div>
+          <div>
+            <p class="oro negrita" style="margin-bottom:8px;">Domicilios (le corresponden a él)</p>
+            <div class="linea"><span>Domicilios cobrados en efectivo</span><strong class="verde">${fmtMoney(g.domEf)}</strong></div>
+            <div class="linea"><span>Domicilios que entraron por banco</span><strong class="azul">${fmtMoney(g.domBanco)}</strong></div>
+            <div class="linea total-linea"><span>Total domicilios</span><strong class="oro">${fmtMoney(g.domEf+g.domBanco)}</strong></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(var(--acc-rgb),.08),rgba(245,197,24,.05));border:1px solid var(--linea2);border-radius:12px;">
+          <div style="flex:1;min-width:130px;"><div class="gris chico">DEBE ENTREGAR EN EL CAJÓN</div><div class="verde" style="font-size:22px;font-weight:800;">${fmtMoney(entregaCajon)}</div></div>
+          <div style="display:flex;align-items:center;font-size:26px;color:var(--gris);">−</div>
+          <div style="flex:1;min-width:130px;"><div class="gris chico">SE QUEDA CON (DOMICILIOS EFECTIVO)</div><div class="oro" style="font-size:22px;font-weight:800;">${fmtMoney(leTocaEf)}</div></div>
+          <div style="display:flex;align-items:center;font-size:26px;color:var(--gris);">=</div>
+          <div style="flex:1;min-width:130px;text-align:right;"><div class="gris chico">ENTREGA NETA</div><div style="font-size:26px;font-weight:900;color:var(--verde-c);text-shadow:var(--glow-txt);">${fmtMoney(neto)}</div></div>
+        </div>
+        ${leTocaBanco>0?`<p class="gris chico" style="margin-top:8px;">↳ Además se le deben pagar ${fmtMoney(leTocaBanco)} en efectivo del cajón, porque esos domicilios entraron por banco.</p>`:''}
+      </div>`;
+    }).join('')}`;
+}
+
 function domicilios(){
   ESCRIBIENDO=false;
   const doms=misDatos('domiciliarios');
@@ -2819,7 +2892,10 @@ function domicilios(){
       </table></div>
     </div>
     <div class="tarjeta">
-      <span class="t-tit">${ic('report')} Cuadre de domicilios de la jornada</span>
+      <div class="t-cab">
+        <span class="t-tit">${ic('report')} Domicilios de la jornada</span>
+        <button class="btn btn-sm btn-gold" onclick="irA('cuadredomi')">📊 Ver cuadre completo</button>
+      </div>
       <p class="nota">Detalle de cada domicilio y cómo se cobró. El domicilio en efectivo lo recibe el domiciliario directo; el que entra por banco se le paga del cajón.</p>
       <div class="tabla-wrap"><table class="tabla">
         <thead><tr><th>Pedido</th><th>Cliente</th><th>Domiciliario</th><th>Valor domicilio</th><th>Cómo entró</th></tr></thead>
@@ -3713,11 +3789,11 @@ function renderContenido(){
   const neg=STATE.negocio;
   const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
-    domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
+    domicilios:'Domicilios', cuadredomi:'Cuadre de Domiciliarios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
     tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría', reimpresiones:'Reimpresiones'};
   const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
-    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina,
+    clientes, domicilios, cuadredomi:cuadreDomi, reportes, contable, gastosneg, minegocio, citas, cocina,
     tiempos, historial, auditoria, reimpresiones};
   const fn=pantallas[STATE.pageNeg];
   let contenido='';
@@ -3768,6 +3844,7 @@ function armarMenu(){
   if(F.indexOf('cocina')>-1 && neg.usaCocina) ops.push({id:'tiempos', ic:'history', txt:'Tiempos de Entrega'});
   if(F.indexOf('citas')>-1 && neg.usaCitas) ops.push({id:'citas', ic:'calendar', txt:'Agendar'});
   if(F.indexOf('domicilios')>-1) ops.push({id:'domicilios', ic:'truck', txt:'Domicilios'});
+  if(F.indexOf('domicilios')>-1) ops.push({id:'cuadredomi', ic:'truck', txt:'Cuadre Domi'});
   if(F.indexOf('clientes')>-1) ops.push({id:'clientes', ic:'users', txt:'Clientes'});
   if((F.indexOf('pedidos')>-1||F.indexOf('ventas')>-1)) ops.push({id:'reimpresiones', ic:'history', txt:'Reimpresiones'});
   if(ops.length){ items.push({g:'OPERACIONES'}); ops.forEach(o=>items.push(o)); }
@@ -3792,6 +3869,7 @@ function armarMenu(){
     if(it.id==='tiempos') id='cocina';
     if(it.id==='historial') id='pedidos';
     if(it.id==='reimpresiones') id='pedidos';
+    if(it.id==='cuadredomi') id='domicilios';
     if(it.id==='auditoria') id='__solo_admin__';   // ya se filtró arriba por rol
     if(permitidas.indexOf(it.id)>-1 || permitidas.indexOf(id)>-1){
       if(grupo){ salida.push(grupo); grupo=null; }
@@ -4299,7 +4377,11 @@ let _reimpBusca='';
 function reimpresiones(){
   ESCRIBIENDO=false;
   const neg=STATE.negocio;
-  let vs=misDatos('ventas').filter(v=>v.estado!=='anulada')
+  const caja=misDatos('caja_actual');
+  const cajaAbierta=Array.isArray(caja)?caja[0]:caja;
+  // Solo los pedidos de la CAJA ACTUAL. Al cerrar caja y abrir otra, esta
+  // lista queda vacía y se llena solo con los pedidos de la nueva jornada.
+  let vs=ventasJornada(false).filter(v=>v.estado!=='anulada')
     .slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
   if(_reimpBusca){ const q=_reimpBusca.toLowerCase();
     vs=vs.filter(v=>(v.factura||'').toLowerCase().includes(q)||(v.cliNombre||'').toLowerCase().includes(q)||(v.mesa||'').toLowerCase().includes(q)); }
@@ -4308,8 +4390,8 @@ function reimpresiones(){
   return `
     <div class="tarjeta">
       <div class="t-cab">
-        <div><span class="t-tit">🖨️ Centro de Impresión</span>
-          <p class="gris">Reimprime facturas y comandas. Las cuentas sin cobrar salen marcadas como "cobro pendiente".</p></div>
+        <div><span class="t-tit">🖨️ Centro de Impresión <span class="pill ${cajaAbierta?'pill-verde':'pill-gold'}">${cajaAbierta?'Caja actual':'Sin caja abierta'}</span></span>
+          <p class="gris">Pedidos de la caja actual. Al cerrar caja, esta lista se reinicia para la nueva jornada. Las cuentas sin cobrar salen marcadas como "cobro pendiente".</p></div>
         <input type="text" class="busca" placeholder="🔍 Factura, cliente, mesa..." value="${escapeHtml(_reimpBusca)}" oninput="_reimpBusca=this.value;render()">
       </div>
       <div class="tabla-wrap"><table class="tabla">
@@ -4482,12 +4564,12 @@ function vistaNegocio(){
   const menu=armarMenu();
   const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
-    domicilios:'Domicilios', clientes:'Clientes', reportes:'Reportes',
+    domicilios:'Domicilios', cuadredomi:'Cuadre de Domiciliarios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
     tiempos:'Tiempos de Entrega', historial:'Historial', auditoria:'Auditoría', reimpresiones:'Reimpresiones',
     citas:'Agendar', cocina:'Cocina'};
   const pantallas={inicio, ventas:nuevaVenta, pedidos, inventario, insumos:pantallaInsumos, caja,
-    clientes, domicilios, reportes, contable, gastosneg, minegocio, citas, cocina,
+    clientes, domicilios, cuadredomi:cuadreDomi, reportes, contable, gastosneg, minegocio, citas, cocina,
     tiempos, historial, auditoria, reimpresiones};
   const fn=pantallas[STATE.pageNeg];
   let contenido='';
