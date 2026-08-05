@@ -3014,7 +3014,7 @@ function reportes(){
           </div>`:'<p class="gris">No hay propinas registradas hoy.</p>'}
         </div>`:''}
         <div>
-          <p class="oro negrita" style="margin-bottom:8px;">${ic('box')} ${pProds(true)} más vendidos hoy</p>
+          <p class="oro negrita" style="margin-bottom:8px;"><span class="ico-txt">${ic('box')}</span> ${pProds(true)} más vendidos hoy</p>
           ${topHoy.length?`<table class="tabla"><tbody>${topHoy.map(([n,q])=>`<tr><td>${escapeHtml(n)}</td><td class="oro negrita" style="text-align:right;">${q}</td></tr>`).join('')}</tbody></table>`:'<p class="gris">Aún no hay ventas hoy.</p>'}
         </div>
       </div>
