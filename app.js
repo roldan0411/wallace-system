@@ -2031,6 +2031,8 @@ function inicio(){
   }
 
   return `
+    <div class="stats">
+      <div class="stat verde"><div class="stat-lbl">Vendido en la jornada</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} venta(s)</div></div>
       <div class="stat gold"><div class="stat-lbl">Por cobrar</div><div class="stat-val">${fmtMoney(pend.reduce((a,v)=>a+(v.total||0),0))}</div><div class="stat-sub">${pend.length} pedido(s)</div></div>
       <div class="stat azul"><div class="stat-lbl">Últimos 7 días</div><div class="stat-val">${fmtMoney(sem)}</div><div class="stat-sub">semana</div></div>
       <div class="stat"><div class="stat-lbl">Este mes</div><div class="stat-val">${fmtMoney(mes)}</div><div class="stat-sub">acumulado</div></div>
