@@ -2069,22 +2069,22 @@ function caja(){
       <div class="stat azul"><div class="stat-ico azul">${ic('cash')}</div><div class="stat-lbl">Banco</div><div class="stat-val">${fmtMoney(metodos.banco)}</div><div class="stat-sub">transferencias</div></div>
       <div class="stat gold"><div class="stat-ico gold">${ic('cash')}</div><div class="stat-lbl">Tarjeta</div><div class="stat-val">${fmtMoney(metodos.tarjeta)}</div><div class="stat-sub">datáfono</div></div>
     </div>
-    <p class="nota" style="margin:-6px 0 14px;">💵 VENTA (solo comida) recibida por cada método. Total venta: <strong class="oro">${fmtMoney(totalVenta)}</strong>.${domBancoTotal>0?` Además entraron <strong>${fmtMoney(domBancoTotal)}</strong> de domicilios por banco (se le pagan al domiciliario en efectivo).`:''}</p>
+    <p class="nota" style="margin:-6px 0 14px;">💵 VENTA (solo ${pProds()}) recibida por cada método. Total venta: <strong class="oro">${fmtMoney(totalVenta)}</strong>.${domBancoTotal>0?` Además entraron <strong>${fmtMoney(domBancoTotal)}</strong> de domicilios por banco (se le pagan al domiciliario en efectivo).`:''}</p>
     <div class="grid2">
       <div class="tarjeta">
         <span class="t-tit">${ic('cash')} Resumen de caja — ${escapeHtml(c.cajero||'')}</span>
         <div class="linea"><span>Apertura</span><span class="gris chico">${fmtDate(c.apertura)}</span></div>
         <div class="linea"><span>Base inicial</span><strong>${fmtMoney(c.base||0)}</strong></div>
-        <div class="linea"><span>Ventas reales (solo comida)</span><strong class="oro">${fmtMoney(totalVenta)}</strong></div>
+        <div class="linea"><span>Ventas reales (solo ${pProds()})</span><strong class="oro">${fmtMoney(totalVenta)}</strong></div>
         <div class="linea"><span>Entradas extra</span><strong class="verde">${fmtMoney(entradas)}</strong></div>
         <div class="linea"><span>Gastos / Nómina</span><strong class="rojo">−${fmtMoney(gastos)}</strong></div>
         <div class="linea"><span>Retiros autorizados</span><strong class="rojo">−${fmtMoney(retiros)}</strong></div>
         <div class="linea total-linea" style="font-size:18px;"><span>Efectivo en Caja</span><strong class="oro">${fmtMoney(enCaja)}</strong></div>
-        <p class="nota" style="margin-top:8px;">Efectivo del cajón: base + comida en efectivo + entradas − gastos − retiros${(propBanco+domBanco)>0?' − propinas/domicilios por banco ('+fmtMoney(propBanco+domBanco)+', pagados en efectivo a su dueño)':''}. Solo la comida es del negocio. El banco/tarjeta no está en el cajón.</p>
+        <p class="nota" style="margin-top:8px;">Efectivo del cajón: base + ${pProds()} en efectivo + entradas − gastos − retiros${(propBanco+domBanco)>0?' − propinas/domicilios por banco ('+fmtMoney(propBanco+domBanco)+', pagados en efectivo a su dueño)':''}. Solo la venta es del negocio. El banco/tarjeta no está en el cajón.</p>
         ${esAdmin?`<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:var(--verde-c);">🔍 Ver desglose del efectivo (diagnóstico)</summary>
           <div style="margin-top:8px;font-size:12px;">
             <div class="linea" style="padding:4px 0;"><span>Base inicial</span><span>${fmtMoney(c.base||0)}</span></div>
-            <div class="linea" style="padding:4px 0;"><span>+ Comida en efectivo</span><span>${fmtMoney(metodos.efectivo)}</span></div>
+            <div class="linea" style="padding:4px 0;"><span>+ ${pProds(true)} en efectivo</span><span>${fmtMoney(metodos.efectivo)}</span></div>
             <div class="linea" style="padding:4px 0;"><span>+ Propinas/domicilios efectivo</span><span>${fmtMoney(propEf+domEf+recEf)}</span></div>
             <div class="linea" style="padding:4px 0;"><span>+ Entradas</span><span>${fmtMoney(entradas)}</span></div>
             <div class="linea" style="padding:4px 0;"><span>− Gastos</span><span>−${fmtMoney(gastos)}</span></div>
@@ -2099,13 +2099,21 @@ function caja(){
           <button class="btn btn-rojo" onclick="cerrarCaja()" style="margin-left:auto;">🔒 Cerrar Caja</button>
         </div>
       </div>
-      <div class="tarjeta">
+      ${(()=>{
+        const usaPropina=(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina);
+        const usaDomi=(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1);
+        const usaDatafono=(neg.pctDatafono||0)>0 || recargos>0;
+        const lineas=[];
+        if(usaPropina) lineas.push(`<div class="linea"><span>👤 Propinas (del ${pPersonal()})</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`);
+        if(usaDomi) lineas.push(`<div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>`);
+        if(usaDatafono) lineas.push(`<div class="linea"><span>💳 Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>`);
+        if(!lineas.length) return '';
+        return `<div class="tarjeta">
         <span class="t-tit">${ic('users')} No son ingreso del negocio</span>
         <p class="gris" style="margin-bottom:10px;">Estos valores se cobran pero pertenecen a terceros. No suman a las ventas reales.</p>
-        ${(neg.usaPropina!==undefined?neg.usaPropina:neg.usaCocina)?`<div class="linea"><span>👤 Propinas (del personal)</span><strong class="verde">${fmtMoney(propinas)}</strong></div>`:''}
-        ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?`<div class="linea"><span>🛵 Domicilios (del domiciliario)</span><strong class="azul">${fmtMoney(domis)}</strong></div>`:''}
-        <div class="linea"><span>💳 Recargos datáfono</span><strong class="oro">${fmtMoney(recargos)}</strong></div>
-      </div>
+        ${lineas.join('')}
+      </div>`;
+      })()}
     </div>
     ${movs.length?`<div class="tarjeta">
       <span class="t-tit">${ic('report')} Movimientos del día</span>
@@ -2889,8 +2897,8 @@ function cuadreDomi(){
       <p class="gris" style="margin-top:6px;">Cuánto debe entregar cada mensajero y cuánto le corresponde por domicilios. Si eliminas un domicilio, se descuenta automáticamente de este cuadre.</p>
     </div>
     <div class="stats">
-      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Comida en efectivo</div><div class="stat-val">${fmtMoney(tot.comidaEf)}</div><div class="stat-sub">deben entregar los mensajeros</div></div>
-      <div class="stat azul"><div class="stat-ico azul">${ic('cash')}</div><div class="stat-lbl">Comida por banco</div><div class="stat-val">${fmtMoney(tot.comidaBanco)}</div><div class="stat-sub">ya está en la cuenta</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">${pProds(true)} en efectivo</div><div class="stat-val">${fmtMoney(tot.comidaEf)}</div><div class="stat-sub">deben entregar los mensajeros</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('cash')}</div><div class="stat-lbl">${pProds(true)} por banco</div><div class="stat-val">${fmtMoney(tot.comidaBanco)}</div><div class="stat-sub">ya está en la cuenta</div></div>
       <div class="stat gold"><div class="stat-ico gold">${ic('truck')}</div><div class="stat-lbl">Domicilios (para ellos)</div><div class="stat-val">${fmtMoney(tot.domEf+tot.domBanco)}</div><div class="stat-sub">efectivo ${fmtMoney(tot.domEf)} · banco ${fmtMoney(tot.domBanco)}</div></div>
       <div class="stat"><div class="stat-ico">${ic('report')}</div><div class="stat-lbl">Domicilios entregados</div><div class="stat-val">${tot.pedidos}</div><div class="stat-sub">${lista.length} mensajero(s)</div></div>
     </div>
@@ -2903,7 +2911,7 @@ function cuadreDomi(){
         <div class="t-cab"><span class="t-tit">${ic('truck')} ${escapeHtml(g.nombre)}</span><span class="pill pill-azul">${g.pedidos.length} domicilio(s)</span></div>
         <div class="grid2">
           <div>
-            <p class="oro negrita" style="margin-bottom:8px;">Valor de los pedidos (comida)</p>
+            <p class="oro negrita" style="margin-bottom:8px;">Valor de los ${pPedidos()} (${pProds()})</p>
             <div class="linea"><span>En efectivo (le pagaron en la mano)</span><strong class="verde">${fmtMoney(g.comidaEf)}</strong></div>
             <div class="linea"><span>Por banco / transferencia</span><strong class="azul">${fmtMoney(g.comidaBanco)}</strong></div>
             ${g.comidaTarjeta>0?`<div class="linea"><span>Por tarjeta</span><strong>${fmtMoney(g.comidaTarjeta)}</strong></div>`:''}
