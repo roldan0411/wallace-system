@@ -1036,14 +1036,16 @@ function nuevaVenta(){
         </div>`:`<p class="gris">${_vBusca||_vCat!=='Todas'?'No se encontraron.':'Sin '+escapeHtml((neg.palabraProductos||'productos').toLowerCase())+'. Agrégalos en Inventario.'}</p>`}
       </div>
       <div class="tarjeta carrito">
-        <div class="t-cab">
-          <span class="t-tit">${ic('cart')} Pedido</span>
-          ${_carrito.length?`<button class="btn btn-sm btn-ghost" onclick="vaciarCarrito()" title="Vaciar">🗑</button>`:''}
+        <div class="carrito-cab">
+          <div class="t-cab" style="margin-bottom:${tiposCfg.length>1?'11px':'0'};">
+            <span class="t-tit">${ic('cart')} Pedido</span>
+            ${_carrito.length?`<button class="btn btn-sm btn-ghost" onclick="vaciarCarrito()" title="Vaciar">🗑</button>`:''}
+          </div>
+          ${tiposCfg.length>1?`<div class="tipos">
+            ${tiposCfg.map(t=>`<button class="tipo ${_vTipo===t?'on':''}" onclick="_vTipo='${t}';render()">${etiquetas[t]||t}</button>`).join('')}
+          </div>`:''}
+          ${camposCliente()}
         </div>
-        ${tiposCfg.length>1?`<div class="tipos">
-          ${tiposCfg.map(t=>`<button class="tipo ${_vTipo===t?'on':''}" onclick="_vTipo='${t}';render()">${etiquetas[t]||t}</button>`).join('')}
-        </div>`:''}
-        ${camposCliente()}
         <div class="items">
           ${_carrito.length? _carrito.map((i,idx)=>`<div class="item">
             <div class="item-info"><div class="item-nom">${escapeHtml(i.nombre)}</div><div class="item-uni">${fmtMoney(i.precio)} c/u</div></div>
@@ -1052,10 +1054,13 @@ function nuevaVenta(){
               <span>${i.qty}</span>
               <button onclick="cambiarQty(${idx},1)">+</button>
             </div>
-            <div class="item-tot">${neg.esLogistica?(i.qty+' und'):fmtMoney(i.precio*i.qty)}</div>
+            <div class="item-tot-wrap">
+              <div class="item-tot">${neg.esLogistica?(i.qty+' und'):fmtMoney(i.precio*i.qty)}</div>
+              <button class="item-quitar" onclick="quitarItemCarrito(${idx})">quitar</button>
+            </div>
           </div>`).join('') : '<div class="carrito-vacio">🛒<p>Toca un producto para agregarlo</p></div>'}
         </div>
-        ${_carrito.length?`
+        ${_carrito.length?`<div class="carrito-pie">
           ${neg.esLogistica?`
             <div class="total"><span>A DESPACHAR</span><span>${_carrito.reduce((a,i)=>a+i.qty,0)} und</span></div>
           `:`
@@ -1069,7 +1074,7 @@ function nuevaVenta(){
           <button class="btn btn-gold btn-block btn-grande" id="btn-confirmar" onclick="${neg.esLogistica?'registrarSalida()':(dosPasos?'confirmarPedido()':'cobrarDirecto()')}">
             ${neg.esLogistica?'📦 Registrar salida':(dosPasos?'✓ Confirmar pedido':'💵 Cobrar ahora')}
           </button>
-        `:''}
+        </div>`:''}
       </div>
     </div>`;
 }
@@ -1082,7 +1087,9 @@ function camposCliente(){
   }
   if(_vTipo==='domicilio'){
     const doms=misDatos('domiciliarios');
-    return `<input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value">
+    return `<div class="cli-busca-wrap">
+      <input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+      <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
       <input type="text" class="campo" placeholder="Teléfono" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
       <input type="text" class="campo" placeholder="Dirección" value="${escapeHtml(c.dir)}" oninput="_vCli.dir=this.value">
       <input type="text" class="campo" placeholder="Barrio" value="${escapeHtml(c.barrio)}" oninput="_vCli.barrio=this.value">
@@ -1094,7 +1101,9 @@ function camposCliente(){
       <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
   }
   if(_vTipo==='envio'){
-    return `<input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value">
+    return `<div class="cli-busca-wrap">
+      <input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+      <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
       <input type="text" class="campo" placeholder="Teléfono / WhatsApp" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
       <input type="text" class="campo" placeholder="Dirección" value="${escapeHtml(c.dir)}" oninput="_vCli.dir=this.value">
       <input type="text" class="campo" placeholder="Ciudad" value="${escapeHtml(c.ciudad)}" oninput="_vCli.ciudad=this.value">
@@ -1103,9 +1112,43 @@ function camposCliente(){
       <input type="number" class="campo" placeholder="Valor del envío" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;actualizarTotalVenta()">
       <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
   }
-  return `<input type="text" class="campo" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value">
+  return `<div class="cli-busca-wrap">
+    <input type="text" class="campo" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+    <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
     <input type="tel" class="campo" placeholder="Teléfono (obligatorio)" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
     <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
+}
+
+// ---------- Autocompletar / recomendar clientes ya registrados al tomar el pedido ----------
+function sugerirClientes(texto){
+  const cont=document.getElementById('cli-sugerencias');
+  if(!cont) return;
+  const q=(texto||'').trim().toLowerCase();
+  if(q.length<2){ cont.innerHTML=''; cont.classList.remove('abierta'); return; }
+  const clientes=misDatos('clientes');
+  const match=clientes.filter(c=>(c.nombre||'').toLowerCase().includes(q) || (c.tel||'').includes(q))
+    .sort((a,b)=>(b.pedidos||0)-(a.pedidos||0))   // primero los más frecuentes
+    .slice(0,6);
+  if(!match.length){ cont.innerHTML=''; cont.classList.remove('abierta'); return; }
+  cont.innerHTML=match.map(c=>`<div class="cli-sug-item" onmousedown="elegirClienteSugerido('${c.id}')">
+      <span class="cli-sug-nom">${escapeHtml(c.nombre||'(sin nombre)')}</span>
+      <span class="cli-sug-tel">${escapeHtml(c.tel||'')}</span>
+      ${c.dir?`<span class="cli-sug-dir">${escapeHtml(c.dir)}${c.barrio?' · '+escapeHtml(c.barrio):''}</span>`:''}
+      ${c.pedidos?`<span class="cli-sug-ped">${c.pedidos} pedido${c.pedidos===1?'':'s'}</span>`:''}
+    </div>`).join('');
+  cont.classList.add('abierta');
+}
+function ocultarSugerenciasCliente(){
+  const cont=document.getElementById('cli-sugerencias');
+  if(cont){ cont.innerHTML=''; cont.classList.remove('abierta'); }
+}
+function elegirClienteSugerido(id){
+  const c=misDatos('clientes').find(x=>x.id===id); if(!c) return;
+  _vCli.nombre=c.nombre||''; _vCli.tel=c.tel||''; _vCli.dir=c.dir||'';
+  _vCli.barrio=c.barrio||''; _vCli.ciudad=c.ciudad||''; _vCli.depto=c.depto||'';
+  ocultarSugerenciasCliente();
+  toast('Cliente: '+c.nombre+(c.pedidos?' ('+c.pedidos+' pedidos)':''),'success');
+  render();
 }
 
 // Actualiza SOLO el total y la línea de domicilio en la pantalla de venta,
@@ -1150,6 +1193,11 @@ function cambiarQty(idx,delta){
   if(!_carrito[idx]) return;
   _carrito[idx].qty+=delta;
   if(_carrito[idx].qty<=0) _carrito.splice(idx,1);
+  render();
+}
+function quitarItemCarrito(idx){
+  if(!_carrito[idx]) return;
+  _carrito.splice(idx,1);
   render();
 }
 function vaciarCarrito(){ _carrito=[]; _desc=0; _descMot=''; render(); }
