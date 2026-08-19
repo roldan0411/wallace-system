@@ -316,6 +316,7 @@ function escapeHtml(s){
 const PERFILES = {
   'Restaurante':{
     palabraProducto:'Plato', palabraProductos:'Platos',
+    palabraPedido:'Pedido', palabraPersonal:'Mesero',
     usaMesas:true, usaCocina:true, usaRecetas:true, usaCitas:false,
     flujoPedido:'dos_pasos',           // confirmar y luego cobrar
     tiposEntrega:['mesa','llevar','domicilio'],
@@ -323,6 +324,7 @@ const PERFILES = {
   },
   'Cafetería':{
     palabraProducto:'Producto', palabraProductos:'Productos',
+    palabraPedido:'Pedido', palabraPersonal:'Mesero',
     usaMesas:true, usaCocina:true, usaRecetas:true, usaCitas:false,
     flujoPedido:'dos_pasos',
     tiposEntrega:['mesa','llevar','domicilio'],
@@ -330,6 +332,7 @@ const PERFILES = {
   },
   'Tienda / Accesorios':{
     palabraProducto:'Artículo', palabraProductos:'Artículos',
+    palabraPedido:'Venta', palabraPersonal:'Vendedor',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
     flujoPedido:'directo',             // cobra de una vez
     tiposEntrega:['llevar','domicilio','envio'],
@@ -337,6 +340,7 @@ const PERFILES = {
   },
   'Barbería / Salón':{
     palabraProducto:'Servicio', palabraProductos:'Servicios',
+    palabraPedido:'Cita', palabraPersonal:'Profesional',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:true,
     flujoPedido:'directo',
     tiposEntrega:['llevar'],
@@ -344,6 +348,7 @@ const PERFILES = {
   },
   'Panadería':{
     palabraProducto:'Producto', palabraProductos:'Productos',
+    palabraPedido:'Pedido', palabraPersonal:'Vendedor',
     usaMesas:false, usaCocina:true, usaRecetas:true, usaCitas:false,
     flujoPedido:'directo',
     tiposEntrega:['llevar','domicilio'],
@@ -351,6 +356,7 @@ const PERFILES = {
   },
   'Ferretería':{
     palabraProducto:'Producto', palabraProductos:'Productos',
+    palabraPedido:'Venta', palabraPersonal:'Vendedor',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
     flujoPedido:'directo',
     tiposEntrega:['llevar','domicilio','envio'],
@@ -358,6 +364,7 @@ const PERFILES = {
   },
   'Logística / Bodega':{
     palabraProducto:'Producto', palabraProductos:'Productos',
+    palabraPedido:'Despacho', palabraPersonal:'Operario',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
     usaCaja:false, esLogistica:true,   // no maneja dinero: entradas y salidas de mercancía
     flujoPedido:'directo',
@@ -366,6 +373,7 @@ const PERFILES = {
   },
   'Otro':{
     palabraProducto:'Producto', palabraProductos:'Productos',
+    palabraPedido:'Pedido', palabraPersonal:'Personal',
     usaMesas:false, usaCocina:false, usaRecetas:false, usaCitas:false,
     flujoPedido:'directo',
     tiposEntrega:['llevar','domicilio'],
@@ -508,6 +516,13 @@ function ic(n){ return ICONS[n]||ICONS.dashboard; }
 function pProd(cap){ const n=STATE.negocio; let p=(n&&n.palabraProducto)?n.palabraProducto:'Producto'; return cap?p:p.toLowerCase(); }
 function pProds(cap){ const n=STATE.negocio; let p=(n&&n.palabraProductos)?n.palabraProductos:'Productos'; return cap?p:p.toLowerCase(); }
 function pPedido(cap){ const n=STATE.negocio; let p=(n&&n.palabraPedido)?n.palabraPedido:'Pedido'; return cap?p:p.toLowerCase(); }
+// Plural del pedido/venta según su terminación (vocal → +s, consonante → +es)
+function pPedidos(cap){
+  const base=pPedido(true);
+  const ult=base.slice(-1).toLowerCase();
+  const plural='aeiou'.indexOf(ult)>-1 ? base+'s' : base+'es';
+  return cap?plural:plural.toLowerCase();
+}
 function pPersonal(cap){ const n=STATE.negocio; let p=(n&&n.palabraPersonal)?n.palabraPersonal:'Personal'; return cap?p:p.toLowerCase(); }
 
 // ============================================================
@@ -898,6 +913,7 @@ function nuevoNegocio(){
       plan:d.plan, precioMes:parseInt(d.precio)||0, activo:true,
       logo:'', nit:'', tel:'', dir:'', eslogan:'',
       palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
+      palabraPedido:perfil.palabraPedido||'Pedido', palabraPersonal:perfil.palabraPersonal||'Personal',
       usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina,
       usaRecetas:perfil.usaRecetas, usaCitas:perfil.usaCitas,
       usaCaja: perfil.usaCaja!==false, esLogistica: !!perfil.esLogistica,
@@ -1021,7 +1037,7 @@ function nuevaVenta(){
   const dosPasos = neg.flujoPedido==='dos_pasos';
 
   return `
-    <div class="caja-aviso">🟢 Caja abierta por <strong>${escapeHtml(cajaAbierta.cajero||'—')}</strong> · base ${fmtMoney(cajaAbierta.base||0)}${usaSucursales(neg)?' · 📍 '+escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||''):''}</div>
+    ${usaSucursales(neg)?`<div class="caja-aviso">📍 ${escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||'')}</div>`:''}
     <div class="venta-grid">
       <div class="venta-izq">
         <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;render()">
@@ -1037,14 +1053,14 @@ function nuevaVenta(){
       </div>
       <div class="tarjeta carrito">
         <div class="carrito-cab">
-          <div class="t-cab" style="margin-bottom:${tiposCfg.length>1?'11px':'0'};">
-            <span class="t-tit">${ic('cart')} Pedido</span>
+          <div class="t-cab" style="margin-bottom:12px;">
+            <span class="t-tit">${ic('cart')} ${pPedido(true)}</span>
             ${_carrito.length?`<button class="btn btn-sm btn-ghost" onclick="vaciarCarrito()" title="Vaciar">🗑</button>`:''}
           </div>
           ${tiposCfg.length>1?`<div class="tipos">
             ${tiposCfg.map(t=>`<button class="tipo ${_vTipo===t?'on':''}" onclick="_vTipo='${t}';render()">${etiquetas[t]||t}</button>`).join('')}
           </div>`:''}
-          ${camposCliente()}
+          <div class="carrito-datos">${camposCliente()}</div>
         </div>
         <div class="items">
           ${_carrito.length? _carrito.map((i,idx)=>`<div class="item">
@@ -1089,8 +1105,8 @@ function camposCliente(){
     const doms=misDatos('domiciliarios');
     return `<div class="cli-busca-wrap">
       <input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
-      <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
-      <input type="text" class="campo" placeholder="Teléfono" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
+      <input type="tel" class="campo" placeholder="Teléfono" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+      <div id="cli-sugerencias" class="cli-sugerencias"></div>
       <input type="text" class="campo" placeholder="Dirección" value="${escapeHtml(c.dir)}" oninput="_vCli.dir=this.value">
       <input type="text" class="campo" placeholder="Barrio" value="${escapeHtml(c.barrio)}" oninput="_vCli.barrio=this.value">
       <input type="number" class="campo" placeholder="Valor del domicilio" value="${c.valorDom||''}" oninput="_vCli.valorDom=this.value;actualizarTotalVenta()">
@@ -1103,8 +1119,8 @@ function camposCliente(){
   if(_vTipo==='envio'){
     return `<div class="cli-busca-wrap">
       <input type="text" class="campo" placeholder="Nombre del cliente" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
-      <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
-      <input type="text" class="campo" placeholder="Teléfono / WhatsApp" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
+      <input type="tel" class="campo" placeholder="Teléfono / WhatsApp" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+      <div id="cli-sugerencias" class="cli-sugerencias"></div>
       <input type="text" class="campo" placeholder="Dirección" value="${escapeHtml(c.dir)}" oninput="_vCli.dir=this.value">
       <input type="text" class="campo" placeholder="Ciudad" value="${escapeHtml(c.ciudad)}" oninput="_vCli.ciudad=this.value">
       <input type="text" class="campo" placeholder="Departamento" value="${escapeHtml(c.depto)}" oninput="_vCli.depto=this.value">
@@ -1114,8 +1130,8 @@ function camposCliente(){
   }
   return `<div class="cli-busca-wrap">
     <input type="text" class="campo" placeholder="Nombre del cliente (opcional)" value="${escapeHtml(c.nombre)}" oninput="_vCli.nombre=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
-    <div id="cli-sugerencias" class="cli-sugerencias"></div></div>
-    <input type="tel" class="campo" placeholder="Teléfono (obligatorio)" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value" onblur="buscarCliente()">
+    <input type="tel" class="campo" placeholder="Teléfono (obligatorio)" value="${escapeHtml(c.tel)}" oninput="_vCli.tel=this.value;sugerirClientes(this.value)" onfocus="sugerirClientes(this.value)" onblur="setTimeout(ocultarSugerenciasCliente,180)">
+    <div id="cli-sugerencias" class="cli-sugerencias"></div>
     <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
 }
 
@@ -1486,7 +1502,7 @@ function pedidos(){
   return `
     <div class="tarjeta">
       <div class="t-cab">
-        <span class="t-tit">${ic('report')} Pedidos <span class="gris chico" style="font-weight:normal;">${cajaAbierta?'(caja actual)':'(hoy)'}</span></span>
+        <span class="t-tit">${ic('report')} ${pPedidos(true)} <span class="gris chico" style="font-weight:normal;">${cajaAbierta?'(caja actual)':'(hoy)'}</span></span>
         <div class="t-acc">
           <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pBusca)}" oninput="_pBusca=this.value">
           <button class="btn btn-sm" onclick="refrescarDeLaNube()">🔄 Actualizar</button>
@@ -1975,7 +1991,7 @@ function inicio(){
       </div>
     </div>
     ${pend.length?`<div class="tarjeta tarjeta-pend">
-      <span class="t-tit">⏳ Pedidos por cobrar</span>
+      <span class="t-tit">⏳ ${pPedidos(true)} por cobrar</span>
       <div class="tabla-wrap"><table class="tabla">
         <thead><tr><th>Pedido</th><th>Cliente</th><th>Total</th><th>Quién lo tomó</th><th></th></tr></thead>
         <tbody>${pend.slice(0,8).map(v=>`<tr>
@@ -2703,7 +2719,7 @@ function pantallaInsumos(){
             </div></td>
           </tr>`;
         }).join('')}</tbody>
-      </table></div>`:`<p class="gris">${_insBusca?'No se encontraron insumos.':'Aún no hay insumos. Agrega el primero (arroz, pollo, aceite…) y luego los asignas a los platos con una receta.'}</p>`}
+      </table></div>`:`<p class="gris">${_insBusca?'No se encontraron insumos.':'Aún no hay insumos. Agrega el primero (arroz, pollo, aceite…) y luego los asignas a los '+pProds()+' con una receta.'}</p>`}
     </div>`;
 }
 
@@ -3850,7 +3866,7 @@ function renderContenido(){
   const cont=document.querySelector('.main .contenido');
   if(!cont){ render(); return; }   // por si el layout aún no existe, redibujar completo
   const neg=STATE.negocio;
-  const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
+  const titulos={inicio:'Dashboard', ventas:'+ '+pPedido(true), pedidos:pPedidos(true),
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', cuadredomi:'Cuadre de Domiciliarios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
@@ -3890,8 +3906,8 @@ function armarMenu(){
   const items=[];
   items.push({g:'PRINCIPAL'});
   items.push({id:'inicio', ic:'dashboard', txt:'Dashboard'});
-  if(F.indexOf('ventas')>-1) items.push({id:'ventas', ic:'cart', txt:'Nueva Venta'});
-  items.push({id:'pedidos', ic:'report', txt:'Pedidos'});
+  if(F.indexOf('ventas')>-1) items.push({id:'ventas', ic:'cart', txt:'+ '+pPedido(true)});
+  items.push({id:'pedidos', ic:'report', txt:pPedidos(true)});
   if(F.indexOf('catalogo')>-1){
     if(neg.usaRecetas){
       // Restaurante: el menú de platos y el inventario de insumos son cosas distintas
@@ -4625,7 +4641,7 @@ function auditoria(){
 function vistaNegocio(){
   const neg=STATE.negocio, u=STATE.user;
   const menu=armarMenu();
-  const titulos={inicio:'Dashboard', ventas:'Nueva Venta', pedidos:'Pedidos',
+  const titulos={inicio:'Dashboard', ventas:'+ '+pPedido(true), pedidos:pPedidos(true),
     inventario:neg.usaRecetas?'Menú':'Inventario', insumos:'Insumos', caja:'Caja', cocina:'Cocina', citas:'Agendar',
     domicilios:'Domicilios', cuadredomi:'Cuadre de Domiciliarios', clientes:'Clientes', reportes:'Reportes',
     contable:'Registro Contable', gastosneg:'Gastos del Negocio', minegocio:'Mi Negocio',
