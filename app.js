@@ -1465,9 +1465,17 @@ function pedidos(){
       ||(v.mesa||'').toLowerCase().includes(q));
   }
   vs=vs.sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0));
-  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío'};
+  const etiq={mesa:'Mesa',llevar:'Para llevar',domicilio:'Domicilio',envio:'Envío',entrega:'Entrega',despacho:'Despacho'};
   const usaCocina=neg.usaCocina;
+  const esLog=neg.esLogistica;
+  // Columnas que dependen del tipo de negocio
+  const tiposCfg=(neg.tiposEntrega&&neg.tiposEntrega.length)?neg.tiposEntrega:['llevar'];
+  const colTipo = tiposCfg.length>1;                 // solo si hay más de un tipo de entrega
+  const usaMesas = neg.usaMesas;
+  const usaDomi = (neg.usaDomicilios!==undefined?neg.usaDomicilios:tiposCfg.indexOf('domicilio')>-1);
+  const colDinero = !esLog;                          // logística no muestra dinero
   const doms=misDatos('domiciliarios');
+  const uniDe=v=>(v.items||[]).reduce((a,i)=>a+(i.qty||0),0);
   // Badge de cocina
   const cocBadge=(e)=>{
     const m={pendiente:['pill-gold','Pendiente'],preparando:['pill-azul','Preparando'],listo:['pill-verde','Listo'],entregado:['pill','Entregado']};
@@ -1477,42 +1485,54 @@ function pedidos(){
     if(!doms.length) return '—';
     return `<select class="busca" style="min-width:auto;padding:5px 8px;" onchange="asignarDomiciliario('${v.id}',this.value)"><option value="">Asignar…</option>${doms.map(d=>`<option ${v.domiciliario===d.nombre?'selected':''}>${escapeHtml(d.nombre)}</option>`).join('')}</select>`;
   };
+  // Encabezados dinámicos
+  const cols=[];
+  cols.push(esLog?pPedido(true)+' / '+pPersonal(true):pPedido(true)+(usaDomi?' / Mensajero':''));
+  if(colTipo) cols.push('Tipo');
+  cols.push('Cliente'+(usaMesas?'/Mesa':''));
+  cols.push(colDinero?'Total':'Unidades');
+  if(colDinero) cols.push('Cobro');
+  if(usaCocina) cols.push('Cocina');
+  cols.push('Estado');
+  if(usaDomi) cols.push('Domiciliario');
+  cols.push('Acciones');
+  const nCols=cols.length;
   const fila=(v)=>{
     const abierta=v.estado==='abierta';
-    return `<tr class="${abierta?'fila-pend':''}">
-    <td><strong class="oro">${escapeHtml(v.factura||'—')}</strong>${v.editadoPor?`<br><span class="gris chico">editado: ${escapeHtml(v.editadoPor)}</span>`:''}</td>
-    <td>${etiq[v.tipo]||'—'}${v.mesa?'<br><span class="gris chico">'+escapeHtml(v.mesa)+'</span>':''}</td>
-    <td>${escapeHtml(v.cliNombre||v.mesa||'—')}${v.cliTel?`<br><span class="gris chico">${escapeHtml(v.cliTel)}</span>`:''}</td>
-    <td class="negrita">${fmtMoney(v.total)}</td>
-    <td>${abierta?'<span class="pill pill-gold">Abierta</span>':'<span class="pill pill-verde">Pagada</span>'}${v.estado==='pagada'&&v.metodo?`<br><span class="gris chico">${escapeHtml(v.metodo)}</span>`:''}</td>
-    <td>${usaCocina?cocBadge(v.estadoCocina):'—'}</td>
-    <td><select class="busca" style="min-width:auto;padding:5px 8px;" onchange="setEstadoPedido('${v.id}',this.value)"><option value="activo" ${v.estadoPedido!=='entregado'?'selected':''}>Activo</option><option value="entregado" ${v.estadoPedido==='entregado'?'selected':''}>Entregado</option></select></td>
-    <td>${v.tipo==='domicilio'?selDom(v):'—'}</td>
-    <td class="acciones">
-      ${abierta&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-verde" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
+    let tds='';
+    tds+=`<td><strong class="oro">${escapeHtml(v.factura||'—')}</strong>${v.editadoPor?`<br><span class="gris chico">editado: ${escapeHtml(v.editadoPor)}</span>`:''}</td>`;
+    if(colTipo) tds+=`<td>${etiq[v.tipo]||'—'}${v.mesa?'<br><span class="gris chico">'+escapeHtml(v.mesa)+'</span>':''}</td>`;
+    tds+=`<td>${escapeHtml(v.cliNombre||v.mesa||'—')}${v.cliTel?`<br><span class="gris chico">${escapeHtml(v.cliTel)}</span>`:''}</td>`;
+    tds+=colDinero?`<td class="negrita">${fmtMoney(v.total)}</td>`:`<td class="negrita">${uniDe(v)} und</td>`;
+    if(colDinero) tds+=`<td>${abierta?'<span class="pill pill-gold">Abierta</span>':'<span class="pill pill-verde">Pagada</span>'}${v.estado==='pagada'&&v.metodo&&v.metodo!=='—'?`<br><span class="gris chico">${escapeHtml(v.metodo)}</span>`:''}</td>`;
+    if(usaCocina) tds+=`<td>${cocBadge(v.estadoCocina)}</td>`;
+    tds+=`<td><select class="busca" style="min-width:auto;padding:5px 8px;" onchange="setEstadoPedido('${v.id}',this.value)"><option value="activo" ${v.estadoPedido!=='entregado'?'selected':''}>Activo</option><option value="entregado" ${v.estadoPedido==='entregado'?'selected':''}>Entregado</option></select></td>`;
+    if(usaDomi) tds+=`<td>${v.tipo==='domicilio'?selDom(v):'—'}</td>`;
+    tds+=`<td class="acciones">
+      ${abierta&&colDinero&&tienePermiso('cobrar')?`<button class="btn btn-sm btn-verde" onclick="cobrarPedido('${v.id}')" title="Cobrar">💵 Cobrar</button>`:''}
       ${tienePermiso('editar')?`<button class="btn btn-sm" onclick="editarPedido('${v.id}')" title="Editar">✏️</button>`:''}
       ${usaCocina&&tienePermiso('comanda')?`<button class="btn btn-sm" onclick="reimprimirComanda('${v.id}')" title="Comanda de cocina">👨‍🍳</button>`:''}
-      ${tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${v.estado==='pagada'?'Reimprimir factura':'Imprimir cuenta (cobro pendiente)'}">🖨️</button>`:''}
-      ${v.estado==='pagada'&&tienePermiso('cambiarpago')?`<button class="btn btn-sm" onclick="cambiarFormaPago('${v.id}')" title="Cambiar forma de pago">💳</button>`:''}
+      ${tienePermiso('imprimir')?`<button class="btn btn-sm" onclick="imprimirFactura('${v.id}')" title="${esLog?'Reimprimir remisión':(v.estado==='pagada'?'Reimprimir factura':'Imprimir cuenta (cobro pendiente)')}">🖨️</button>`:''}
+      ${colDinero&&v.estado==='pagada'&&tienePermiso('cambiarpago')?`<button class="btn btn-sm" onclick="cambiarFormaPago('${v.id}')" title="Cambiar forma de pago">💳</button>`:''}
       ${tienePermiso('anular')?`<button class="btn btn-sm btn-rojo" onclick="anularPedido('${v.id}')" title="Anular">🚫</button>`:''}
       ${tienePermiso('eliminar')?`<button class="btn btn-sm btn-rojo" onclick="eliminarDefinitivo('${v.id}')" title="Eliminar por completo">🗑️</button>`:''}
-    </td>
-  </tr>`;};
+    </td>`;
+    return `<tr class="${abierta?'fila-pend':''}">${tds}</tr>`;};
 
   return `
     <div class="tarjeta">
       <div class="t-cab">
         <span class="t-tit">${ic('report')} ${pPedidos(true)} <span class="gris chico" style="font-weight:normal;">${cajaAbierta?'(caja actual)':'(hoy)'}</span></span>
         <div class="t-acc">
-          <input type="text" class="busca" placeholder="🔍 Factura, cliente, teléfono..." value="${escapeHtml(_pBusca)}" oninput="_pBusca=this.value">
+          <input type="text" class="busca" placeholder="🔍 ${esLog?'Remisión':'Factura'}, cliente${usaDomi?', teléfono':''}..." value="${escapeHtml(_pBusca)}" oninput="_pBusca=this.value">
           <button class="btn btn-sm" onclick="refrescarDeLaNube()">🔄 Actualizar</button>
-          <button class="btn btn-gold" onclick="irA('ventas')">+ Nueva</button>
+          <button class="btn btn-gold" onclick="irA('ventas')">+ ${pPedido(true)}</button>
         </div>
       </div>
       <div class="tabla-wrap"><table class="tabla">
-        <thead><tr><th>Pedido / Mensajero</th><th>Tipo</th><th>Cliente/Mesa</th><th>Total</th><th>Cobro</th><th>Cocina</th><th>Pedido</th><th>Domiciliario</th><th>Acciones</th></tr></thead>
+        <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
         <tbody>${vs.length? vs.slice(0,100).map(fila).join('')
-          : '<tr><td colspan="9" class="gris">Sin pedidos en esta jornada.</td></tr>'}</tbody>
+          : `<tr><td colspan="${nCols}" class="gris">Sin ${pPedidos()} en esta jornada.</td></tr>`}</tbody>
       </table></div>
     </div>`;
 }
@@ -1967,9 +1987,50 @@ function inicio(){
   const ultimas=misDatos('ventas').filter(v=>v.estado!=='anulada')
     .slice().sort((a,b)=>new Date(b.fecha||0)-new Date(a.fecha||0)).slice(0,10);
 
-  return `
+  // En logística no hay dinero: se mide en unidades de mercancía movida (salidas)
+  const uniDe=v=>(v.items||[]).reduce((a,i)=>a+(i.qty||0),0);
+  const uniHoy=hoy.reduce((a,v)=>a+uniDe(v),0);
+  const uniSem=vs.filter(v=>new Date(v.fecha)>=d7).reduce((a,v)=>a+uniDe(v),0);
+  const uniMes=vs.filter(v=>(v.fecha||'').substring(0,7)===h.substring(0,7)).reduce((a,v)=>a+uniDe(v),0);
+
+  if(neg.esLogistica){
+    const diasU=[];
+    for(let i=6;i>=0;i--){
+      const d=new Date(); d.setDate(d.getDate()-i);
+      const k=d.toISOString().split('T')[0];
+      diasU.push({lbl:['D','L','M','X','J','V','S'][d.getDay()],
+        tot:vs.filter(v=>(v.fecha||'').startsWith(k)).reduce((a,v)=>a+uniDe(v),0)});
+    }
+    const mxU=Math.max.apply(null,diasU.map(d=>d.tot).concat([1]));
+    return `
     <div class="stats">
-      <div class="stat verde"><div class="stat-lbl">Vendido en la jornada</div><div class="stat-val">${fmtMoney(totHoy)}</div><div class="stat-sub">${hoy.length} venta(s)</div></div>
+      <div class="stat verde"><div class="stat-lbl">Despachado en la jornada</div><div class="stat-val">${uniHoy} und</div><div class="stat-sub">${hoy.length} ${pPedidos()}</div></div>
+      <div class="stat azul"><div class="stat-lbl">Últimos 7 días</div><div class="stat-val">${uniSem} und</div><div class="stat-sub">semana</div></div>
+      <div class="stat"><div class="stat-lbl">Este mes</div><div class="stat-val">${uniMes} und</div><div class="stat-sub">acumulado</div></div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('report')} Unidades despachadas por día</span>
+      <div class="barras">${diasU.map(d=>`<div class="barra">
+        <div class="b-val">${d.tot>0?d.tot:''}</div>
+        <div class="b-fill" style="height:${Math.max(4,(d.tot/mxU)*130)}px"></div>
+        <div class="b-lbl">${d.lbl}</div></div>`).join('')}</div>
+    </div>
+    <div class="tarjeta">
+      <span class="t-tit">${ic('history')} Últimos ${pPedidos()}</span>
+      ${ultimas.length?`<div class="tabla-wrap"><table class="tabla">
+        <thead><tr><th>${pPedido(true)}</th><th>Cliente</th><th>Unidades</th><th>Quién</th><th>Fecha</th></tr></thead>
+        <tbody>${ultimas.map(v=>`<tr>
+          <td><strong class="oro">${escapeHtml(v.factura)}</strong></td>
+          <td>${escapeHtml(v.cliNombre||'—')}</td>
+          <td class="negrita">${uniDe(v)} und</td>
+          <td class="gris">${escapeHtml(v.vendedor||'—')}</td>
+          <td class="gris chico">${fmtDate(v.fecha)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:'<p class="gris">Aún no hay salidas registradas.</p>'}
+    </div>`;
+  }
+
+  return `
       <div class="stat gold"><div class="stat-lbl">Por cobrar</div><div class="stat-val">${fmtMoney(pend.reduce((a,v)=>a+(v.total||0),0))}</div><div class="stat-sub">${pend.length} pedido(s)</div></div>
       <div class="stat azul"><div class="stat-lbl">Últimos 7 días</div><div class="stat-val">${fmtMoney(sem)}</div><div class="stat-sub">semana</div></div>
       <div class="stat"><div class="stat-lbl">Este mes</div><div class="stat-val">${fmtMoney(mes)}</div><div class="stat-sub">acumulado</div></div>
@@ -3186,7 +3247,7 @@ function contable(){
       </div>
     </div>
     <div class="stats">
-      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas del mes (comida)</div><div class="stat-val">${fmtMoney(totalVentas)}</div><div class="stat-sub">${totalPrev>0?(pctV>=0?'▲ +':'▼ ')+pctV+'% vs mes anterior':delMes.length+' venta(s)'}</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas del mes</div><div class="stat-val">${fmtMoney(totalVentas)}</div><div class="stat-sub">${totalPrev>0?(pctV>=0?'▲ +':'▼ ')+pctV+'% vs mes anterior':delMes.length+' venta(s)'}</div></div>
       <div class="stat rojo"><div class="stat-ico rojo">${ic('cash')}</div><div class="stat-lbl">Gastos del mes</div><div class="stat-val">${fmtMoney(egresos)}</div><div class="stat-sub">caja + negocio (sin retiros)</div></div>
       <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Utilidad estimada</div><div class="stat-val">${fmtMoney(utilidad)}</div><div class="stat-sub">ventas − egresos</div></div>
       <div class="stat azul"><div class="stat-ico azul">${ic('history')}</div><div class="stat-lbl">Cierres del mes</div><div class="stat-val">${cierres.length}</div><div class="stat-sub">${sumaDif===0?'sin descuadres':(sumaDif>0?'sobró '+fmtMoney(sumaDif):'faltó '+fmtMoney(Math.abs(sumaDif)))}</div></div>
@@ -3657,6 +3718,7 @@ function pantallaConfig(negId){
         <label class="chk"><input type="checkbox" id="c-domis" ${(neg.usaDomicilios!==undefined?neg.usaDomicilios:(neg.tiposEntrega||[]).indexOf('domicilio')>-1)?'checked':''}> Maneja domicilios</label>
         <label class="chk"><input type="checkbox" id="c-recetas" ${neg.usaRecetas?'checked':''}> Usa recetas (descuenta insumos)</label>
         <label class="chk"><input type="checkbox" id="c-citas" ${neg.usaCitas?'checked':''}> Usa agenda</label>
+        <label class="chk"><input type="checkbox" id="c-logistica" ${neg.esLogistica?'checked':''}> Modo logística (registra entradas/salidas SIN cobrar dinero)</label>
         <label class="chk"><input type="checkbox" id="c-sonidos" ${neg.sonidos!==false?'checked':''}> Sonidos</label>
         <label class="chk"><input type="checkbox" id="c-alerta" ${neg.alertaStock!==false?'checked':''}> Avisar stock bajo</label>
       </div>
@@ -3711,6 +3773,7 @@ function guardarConfig(negId){
   n.usaMesas=chk('c-mesas'); n.usaCocina=chk('c-cocina');
   n.usaPropina=chk('c-propina'); n.usaDomicilios=chk('c-domis');
   n.usaRecetas=chk('c-recetas'); n.usaCitas=chk('c-citas');
+  n.esLogistica=chk('c-logistica');
   n.sonidos=chk('c-sonidos'); n.alertaStock=chk('c-alerta');
   n.tipoFactura=val('c-fact'); n.pctDatafono=parseFloat(val('c-pct'))||0;
   n.tema=val('c-tema')||'oscuro';
