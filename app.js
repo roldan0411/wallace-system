@@ -723,6 +723,7 @@ function panelSuperAdmin(){
         <span class="t-tit">${ic('building')} Negocios</span>
         <div class="t-acc">
           <input type="text" class="busca" placeholder="🔍 Buscar negocio..." value="${escapeHtml(STATE.buscaNegocio||'')}" oninput="STATE.buscaNegocio=this.value;render()">
+          <button class="btn btn-ghost" onclick="crearNegocioDemo()" title="Crea un negocio de ejemplo ya lleno para mostrar">✨ Crear demo</button>
           <button class="btn btn-gold" onclick="nuevoNegocio()">${ic('plus')} Crear negocio</button>
         </div>
       </div>
@@ -730,7 +731,7 @@ function panelSuperAdmin(){
         <thead><tr><th>Negocio</th><th>Tipo</th><th>Flujo</th><th>Plan</th><th>Precio/mes</th><th>Usuarios</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
         ${lista.length? lista.map(n=>`<tr>
-          <td><strong>${escapeHtml(n.nombre)}</strong>${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
+          <td><strong>${escapeHtml(n.nombre)}</strong>${n.esDemo?' <span class="pill pill-azul" style="font-size:9px;">DEMO</span>':''}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
           <td>${escapeHtml(n.tipo)}</td>
           <td><span class="pill ${n.flujoPedido==='dos_pasos'?'pill-gold':''}">${n.flujoPedido==='dos_pasos'?'Confirmar → Cobrar':'Cobro directo'}</span></td>
           <td>${escapeHtml(n.plan||'—')}</td>
@@ -933,6 +934,139 @@ function nuevoNegocio(){
     render();
   }});
 }
+
+// ============================================================
+//  NEGOCIOS DE DEMOSTRACIÓN — crean un negocio ya lleno para mostrar/vender
+// ============================================================
+const DEMO_PLANTILLAS = {
+  'Restaurante':{
+    tipo:'Restaurante', sufijo:'Sabor & Sazón',
+    productos:[
+      ['Bandeja Paisa',28000,'Platos fuertes',40],['Mojarra Frita',32000,'Platos fuertes',25],
+      ['Churrasco',35000,'Platos fuertes',30],['Sancocho de Gallina',24000,'Sopas',20],
+      ['Ajiaco Santafereño',22000,'Sopas',18],['Arroz con Pollo',18000,'Platos fuertes',35],
+      ['Hamburguesa Clásica',16000,'Comidas rápidas',50],['Perro Caliente',12000,'Comidas rápidas',45],
+      ['Limonada de Coco',8000,'Bebidas',60],['Jugo Natural',6000,'Bebidas',55],
+      ['Gaseosa',4000,'Bebidas',80],['Cerveza',6000,'Bebidas',70]
+    ],
+    clientes:[['Carlos Ramírez','3104567890'],['Mesa VIP - Empresa XYZ','3209876543'],['Luisa Fernanda','3157778899']]
+  },
+  'Tienda / Accesorios':{
+    tipo:'Tienda / Accesorios', sufijo:'ManillasNet',
+    productos:[
+      ['Manilla Personalizada',15000,'Manillas',120],['Manilla de Cuero',22000,'Manillas',80],
+      ['Collar Acero Inoxidable',35000,'Collares',45],['Cadena Enchapada',28000,'Collares',60],
+      ['Aretes Topos',12000,'Aretes',150],['Anillo Ajustable',18000,'Anillos',90],
+      ['Reloj Digital',45000,'Relojes',30],['Gorra Estampada',25000,'Ropa',55],
+      ['Llavero Personalizado',8000,'Accesorios',200],['Set Regalo San Valentín',55000,'Combos',25]
+    ],
+    clientes:[['María José','3112223344'],['Andrés López','3005556677'],['Tatiana Gómez','3181112233']]
+  },
+  'Barbería / Salón':{
+    tipo:'Barbería / Salón', sufijo:'Estilo Urbano',
+    productos:[
+      ['Corte Clásico',18000,'Cortes',null],['Corte + Barba',28000,'Cortes',null],
+      ['Barba y Perfilado',15000,'Barba',null],['Tinte de Cabello',45000,'Color',null],
+      ['Mechas',65000,'Color',null],['Cejas',8000,'Detalles',null],
+      ['Mascarilla Facial',25000,'Spa',null],['Cera para Cabello',22000,'Productos',40],
+      ['Shampoo Anticaspa',28000,'Productos',30],['Aceite para Barba',32000,'Productos',25]
+    ],
+    clientes:[['Julián Mesa','3145678901'],['Ricardo Peña','3167890123'],['Sebastián Ruiz','3009012345']]
+  }
+};
+
+function crearNegocioDemo(){
+  abrirModal({titulo:'Crear negocio de demostración', textoBoton:'Crear demo', campos:[
+    {id:'tipo', label:'¿Qué tipo de negocio quieres mostrar?', tipo:'select',
+      opciones:Object.keys(DEMO_PLANTILLAS).map(t=>({valor:t,label:DEMO_PLANTILLAS[t].sufijo+' ('+t+')'}))}
+  ], extraHTML:`<p class="nota">Se creará un negocio <strong>ya lleno</strong>: con ${escapeHtml('productos, clientes y ventas del día')} listos para mostrar. Ideal para demostraciones de venta. Usuario: <strong>demo</strong> · Clave: <strong>demo123</strong></p>`,
+  onGuardar:(d)=>{
+    const plant=DEMO_PLANTILLAS[d.tipo]; if(!plant){ toast('Plantilla no encontrada','error'); return; }
+    const perfil=JSON.parse(JSON.stringify(PERFILES[plant.tipo]||PERFILES['Otro']));
+    // Usuario único: demo, demo2, demo3...
+    let userBase='demo', userFinal=userBase, k=1;
+    const usuarios=DB.get('usuarios')||[];
+    const sadmins=DB.get('superadmins')||[];
+    while(usuarios.some(u=>u.usuario===userFinal)||sadmins.some(s=>s.usuario===userFinal)){ k++; userFinal=userBase+k; }
+    const negId=uid();
+    const negocios=DB.get('negocios')||[];
+    negocios.push({
+      id:negId, nombre:plant.sufijo, tipo:plant.tipo, ciudad:'Bucaramanga',
+      plan:'Premium', precioMes:149900, activo:true,
+      logo:'', nit:'901.234.567-8', tel:'3001234567', dir:'Cra 27 #36-15', eslogan:'Demo de Wallace System',
+      palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
+      palabraPedido:perfil.palabraPedido||'Pedido', palabraPersonal:perfil.palabraPersonal||'Personal',
+      usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina,
+      usaRecetas:false, usaCitas:perfil.usaCitas,
+      usaCaja:perfil.usaCaja!==false, esLogistica:!!perfil.esLogistica,
+      flujoPedido:perfil.flujoPedido,
+      tiposEntrega:perfil.tiposEntrega.slice(),
+      funciones:perfil.funciones.slice(),
+      tipoFactura:'pos', pctDatafono:0, sonidos:true, tema:'claro',
+      sucursales:[], creado:now(), esDemo:true
+    });
+    DB.set('negocios',negocios);
+    // Usuario admin del demo
+    usuarios.push({id:uid(), negocioId:negId, nombre:'Administrador Demo',
+      usuario:userFinal, pass:'demo123', rol:'admin', activo:true, creado:now()});
+    DB.set('usuarios',usuarios);
+
+    // --- Productos ---
+    const prods=plant.productos.map(p=>({
+      id:uid(), nombre:p[0], precio:p[1], categoria:p[2],
+      stock:p[3], stockMin:p[3]!=null?5:null, agotado:false, usaLotes:false, lotes:[],
+      imagen:'', creado:now()
+    }));
+    DB.set(claveDe(negId,'productos'), prods);
+
+    // --- Clientes ---
+    const clis=plant.clientes.map((c,i)=>({
+      id:uid(), nombre:c[0], tel:c[1], dir:'', barrio:'', pedidos:2+i, total:0, creado:now()
+    }));
+    DB.set(claveDe(negId,'clientes'), clis);
+
+    // --- Caja abierta ---
+    const cajaId=uid();
+    DB.set(claveDe(negId,'caja_actual'), {id:cajaId, cajero:'Administrador Demo', base:50000, apertura:now(), abiertaPor:'demo'});
+
+    // --- Ventas del día (5 ventas de ejemplo) ---
+    const ventas=[]; const movimientos=[];
+    const metodos=['efectivo','efectivo','banco','tarjeta','efectivo'];
+    for(let i=0;i<5;i++){
+      const nItems=1+Math.floor(Math.random()*3);
+      const items=[]; let subtotal=0;
+      for(let j=0;j<nItems;j++){
+        const pr=prods[Math.floor(Math.random()*prods.length)];
+        const qty=1+Math.floor(Math.random()*2);
+        items.push({prodId:pr.id, nombre:pr.nombre, precio:pr.precio, qty});
+        subtotal+=pr.precio*qty;
+      }
+      const hora=new Date(); hora.setHours(9+i*2, 15+i*7, 0);
+      ventas.push({
+        id:uid(), factura:'F-'+String(i+1).padStart(5,'0'),
+        items, subtotal, subtotalBruto:subtotal, descuento:0, valorDom:0, propina:0, recargo:0,
+        total:subtotal, metodo:metodos[i], estado:'pagada',
+        tipo:perfil.tiposEntrega[0]||'llevar', cajaId,
+        vendedor:'Administrador Demo', fecha:hora.toISOString(),
+        obs:'', mesa:'', cliNombre:clis[i%clis.length].nombre, cliTel:clis[i%clis.length].tel,
+        estadoPedido:'entregado', cobrado:hora.toISOString()
+      });
+    }
+    DB.set(claveDe(negId,'ventas'), ventas);
+
+    // --- Movimientos de inventario (entradas iniciales) ---
+    prods.filter(p=>p.stock!=null).slice(0,5).forEach(p=>{
+      movimientos.push({id:uid(), productoId:p.id, nombre:p.nombre, tipo:'entrada',
+        cantidad:p.stock, motivo:'Inventario inicial', por:'Administrador Demo', fecha:now()});
+    });
+    DB.set(claveDe(negId,'movimientos'), movimientos);
+
+    cerrarModal();
+    toast('✅ Demo creado: '+plant.sufijo+' (usuario: '+userFinal+' / demo123)','success');
+    render();
+  }});
+}
+
 function toggleNegocio(id){
   const negocios=DB.get('negocios')||[];
   const n=negocios.find(x=>x.id===id); if(!n) return;
