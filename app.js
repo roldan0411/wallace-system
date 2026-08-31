@@ -1163,7 +1163,7 @@ function crearNegocioDemo(){
   abrirModal({titulo:'Crear negocio de demostración', textoBoton:'Crear demo', campos:[
     {id:'tipo', label:'¿Qué tipo de negocio quieres mostrar?', tipo:'select',
       opciones:Object.keys(DEMO_PLANTILLAS).map(t=>({valor:t,label:DEMO_PLANTILLAS[t].sufijo+' ('+t+')'}))}
-  ], extraHTML:`<p class="nota">Se creará un negocio <strong>ya lleno</strong>: con productos, clientes y ventas del día listos para mostrar. Ideal para demostraciones de venta. Clave del admin: <strong>demo123</strong></p>
+  ], extraHTML:`<p class="nota">Se creará un negocio <strong>ya lleno</strong>: con productos, clientes y <strong>ventas de los últimos 10 días</strong> (para que las gráficas de seguimiento se vean con historial). Ideal para demostraciones de venta. Clave del admin: <strong>demo123</strong></p>
     <button type="button" class="btn btn-ghost btn-block btn-sm" style="margin-top:10px;" onclick="crearVariosDemos()">⚡ O crea 5 negocios demo variados de una vez</button>`,
   onGuardar:(d)=>{
     crearDemoDeTipo(d.tipo, true);
@@ -1228,35 +1228,48 @@ function crearDemoDeTipo(tipoDemo, cerrarYToast){
     const cajaId=uid();
     DB.set(claveDe(negId,'caja_actual'), {id:cajaId, cajero:'Administrador Demo', base:50000, apertura:now(), abiertaPor:'demo'});
 
-    // --- Ventas del día (5 ventas de ejemplo) ---
+    // --- Ventas de los últimos 10 días (para que las gráficas de seguimiento se vean llenas) ---
     const ventas=[]; const movimientos=[];
-    const metodos=['efectivo','efectivo','banco','tarjeta','efectivo'];
-    for(let i=0;i<5;i++){
-      const nItems=1+Math.floor(Math.random()*3);
-      const items=[]; let subtotal=0;
-      for(let j=0;j<nItems;j++){
-        const pr=prods[Math.floor(Math.random()*prods.length)];
-        const qty=1+Math.floor(Math.random()*2);
-        items.push({prodId:pr.id, nombre:pr.nombre, precio:pr.precio, qty});
-        subtotal+=pr.precio*qty;
+    const metodosPosibles=['efectivo','efectivo','efectivo','banco','tarjeta'];  // efectivo más frecuente
+    const DIAS_HISTORIAL=10;
+    let numFactura=0;
+    for(let dia=DIAS_HISTORIAL; dia>=0; dia--){
+      // Cantidad de ventas del día: varía para que la gráfica no sea plana (fines de semana más movidos)
+      const fechaDia=new Date(); fechaDia.setDate(fechaDia.getDate()-dia);
+      const finDeSemana=(fechaDia.getDay()===0||fechaDia.getDay()===6);
+      const ventasDelDia = (finDeSemana?5:3) + Math.floor(Math.random()*4);   // 3-6 entre semana, 5-8 fin de semana
+      for(let i=0;i<ventasDelDia;i++){
+        numFactura++;
+        const nItems=1+Math.floor(Math.random()*3);
+        const items=[]; let subtotal=0;
+        for(let j=0;j<nItems;j++){
+          const pr=prods[Math.floor(Math.random()*prods.length)];
+          const qty=1+Math.floor(Math.random()*2);
+          items.push({prodId:pr.id, nombre:pr.nombre, precio:pr.precio, qty});
+          subtotal+=pr.precio*qty;
+        }
+        const hora=new Date(fechaDia);
+        hora.setHours(8+Math.floor(Math.random()*12), Math.floor(Math.random()*60), 0);
+        const esHoy=(dia===0);
+        ventas.push({
+          id:uid(), factura:'F-'+String(numFactura).padStart(5,'0'),
+          items, subtotal, subtotalBruto:subtotal, descuento:0, valorDom:0, propina:0, recargo:0,
+          total:subtotal, metodo:metodosPosibles[Math.floor(Math.random()*metodosPosibles.length)], estado:'pagada',
+          tipo:perfil.tiposEntrega[0]||'llevar',
+          cajaId: esHoy?cajaId:null,          // solo las de hoy pertenecen a la caja actual
+          vendedor:'Administrador Demo', fecha:hora.toISOString(),
+          obs:'', mesa:'', cliNombre:clis[numFactura%clis.length].nombre, cliTel:clis[numFactura%clis.length].tel,
+          estadoPedido:'entregado', cobrado:hora.toISOString()
+        });
       }
-      const hora=new Date(); hora.setHours(9+i*2, 15+i*7, 0);
-      ventas.push({
-        id:uid(), factura:'F-'+String(i+1).padStart(5,'0'),
-        items, subtotal, subtotalBruto:subtotal, descuento:0, valorDom:0, propina:0, recargo:0,
-        total:subtotal, metodo:metodos[i], estado:'pagada',
-        tipo:perfil.tiposEntrega[0]||'llevar', cajaId,
-        vendedor:'Administrador Demo', fecha:hora.toISOString(),
-        obs:'', mesa:'', cliNombre:clis[i%clis.length].nombre, cliTel:clis[i%clis.length].tel,
-        estadoPedido:'entregado', cobrado:hora.toISOString()
-      });
     }
     DB.set(claveDe(negId,'ventas'), ventas);
 
-    // --- Movimientos de inventario (entradas iniciales) ---
-    prods.filter(p=>p.stock!=null).slice(0,5).forEach(p=>{
+    // --- Movimientos de inventario (entradas repartidas en días pasados) ---
+    prods.filter(p=>p.stock!=null).slice(0,6).forEach((p,idx)=>{
+      const f=new Date(); f.setDate(f.getDate()-(DIAS_HISTORIAL-idx));  // entradas escalonadas
       movimientos.push({id:uid(), productoId:p.id, nombre:p.nombre, tipo:'entrada',
-        cantidad:p.stock, motivo:'Inventario inicial', por:'Administrador Demo', fecha:now()});
+        cantidad:p.stock, motivo:'Inventario inicial', por:'Administrador Demo', fecha:f.toISOString()});
     });
     DB.set(claveDe(negId,'movimientos'), movimientos);
 
