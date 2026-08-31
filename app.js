@@ -670,12 +670,15 @@ function seed(){
 // ============================================================
 function panelSuperAdmin(){
   const negocios=DB.get('negocios')||[];
-  const activos=negocios.filter(n=>n.activo).length;
-  const ingreso=negocios.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
-  const usuarios=(DB.get('usuarios')||[]).length;
+  // Los negocios DEMO son de práctica (dinero ficticio): NO cuentan en las métricas reales
+  const reales=negocios.filter(n=>!n.esDemo);
+  const idsReales={}; reales.forEach(n=>idsReales[n.id]=true);
+  const activos=reales.filter(n=>n.activo).length;
+  const ingreso=reales.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
+  const usuarios=(DB.get('usuarios')||[]).filter(u=>idsReales[u.negocioId]).length;
   let ventasHoy=0, ventasTot=0, top={nombre:'—',total:0};
   const hoy=today();
-  negocios.forEach(n=>{
+  reales.forEach(n=>{
     // Las ventas viven en la clave plana data_<negocio>_ventas (igual que Portal
     // Imperial). Antes se buscaba en claves por sucursal que nunca se escriben,
     // por eso el súper admin veía todo en cero.
@@ -758,9 +761,9 @@ function panelSuperAdmin(){
   </div>
   <div class="contenido">
     <div class="stats">
-      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${negocios.length} en total</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} en total</div></div>
       <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso mensual</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
-      <div class="stat naranja"><div class="stat-ico naranja">${ic('history')}</div><div class="stat-lbl">Suspendidos</div><div class="stat-val">${negocios.length-activos}</div><div class="stat-sub">no pagan / pausados</div></div>
+      <div class="stat naranja"><div class="stat-ico naranja">${ic('history')}</div><div class="stat-lbl">Suspendidos</div><div class="stat-val">${reales.length-activos}</div><div class="stat-sub">no pagan / pausados</div></div>
       <div class="stat azul"><div class="stat-ico azul">${ic('users')}</div><div class="stat-lbl">Usuarios totales</div><div class="stat-val">${usuarios}</div><div class="stat-sub">empleados en el sistema</div></div>
     </div>
     <div class="stats">
