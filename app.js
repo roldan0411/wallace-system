@@ -692,6 +692,56 @@ function panelSuperAdmin(){
   const q=(STATE.buscaNegocio||'').toLowerCase();
   const lista=q?negocios.filter(n=>(n.nombre||'').toLowerCase().includes(q)||(n.tipo||'').toLowerCase().includes(q)||(n.ciudad||'').toLowerCase().includes(q)):negocios;
 
+  // ===== PANEL PARA VENDEDORES (equipo comercial): solo demos =====
+  if(STATE.user.rolSuper==='vendedor'){
+    const demos=(q?lista:negocios).filter(n=>n.esDemo);
+    const misDemos=demos.filter(n=>!n.demoDe || n.demoDe===STATE.user.id);   // sus demos (o todos los demos si no hay dueño marcado)
+    return `
+    <div class="topbar">
+      <h1><span class="sa-emblema">${window.WALLACE_LOGO||''}</span>
+        <span class="sa-marca">Panel de <span>Ventas</span></span>
+        <span class="pill pill-azul">Vendedor</span></h1>
+      <div class="tb-der">
+        <span class="fb-dot off" id="fb-status" title="Conexión"></span>
+        <span class="reloj" id="reloj"></span>
+        <button class="btn btn-sm" onclick="cambiarMiPassSuper()">🔑 Mi contraseña</button>
+        <button class="btn btn-ghost btn-sm" onclick="logout()">${ic('logout')} Salir</button>
+      </div>
+    </div>
+    <div class="contenido">
+      <div class="tarjeta" style="background:linear-gradient(135deg,rgba(var(--acc-rgb),.12),transparent);">
+        <span class="t-tit">👋 Hola, ${escapeHtml(STATE.user.nombre)}</span>
+        <p class="gris" style="margin-top:6px;">Aquí puedes crear negocios de demostración para mostrarle el sistema a tus clientes. Crea uno, entra y muéstralo funcionando. Estos demos son solo de práctica y no afectan a los clientes reales.</p>
+      </div>
+      <div class="stats">
+        <div class="stat azul"><div class="stat-ico azul">${ic('box')}</div><div class="stat-lbl">Tus demos</div><div class="stat-val">${misDemos.length}</div><div class="stat-sub">para mostrar</div></div>
+      </div>
+      <div class="tarjeta">
+        <div class="t-cab">
+          <span class="t-tit">${ic('building')} Mis demostraciones</span>
+          <div class="t-acc">
+            <button class="btn btn-ghost" onclick="crearNegocioDemo()">✨ Crear demo</button>
+          </div>
+        </div>
+        <div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Negocio demo</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+          ${misDemos.length? misDemos.map(n=>`<tr>
+            <td><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul" style="font-size:9px;">DEMO</span>${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
+            <td>${escapeHtml(n.tipo)}</td>
+            <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
+            <td class="acciones">
+              <button class="btn btn-sm btn-verde" onclick="entrarComoNegocio('${n.id}')">Entrar</button>
+              <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Pausar':'Activar'}</button>
+              <button class="btn btn-sm btn-rojo" onclick="eliminarDemoVendedor('${n.id}')" title="Borrar este demo">🗑️</button>
+            </td>
+          </tr>`).join('') : '<tr><td colspan="4" class="gris">Aún no tienes demos. Crea el primero con "✨ Crear demo".</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+    </div>`;
+  }
+
   return `
   <div class="topbar">
     <h1><span class="sa-emblema">${window.WALLACE_LOGO||''}</span>
@@ -810,7 +860,7 @@ function pantallaSuperAdmins(){
         <tbody>${sas.map(s=>`<tr>
           <td class="negrita">${escapeHtml(s.nombre)}</td>
           <td>${escapeHtml(s.usuario)}</td>
-          <td>${s.rolSuper==='dueno'?'<span class="pill pill-oro">Dueño</span>':'<span class="pill pill-azul">Ayudante</span>'}</td>
+          <td>${s.rolSuper==='dueno'?'<span class="pill pill-oro">Dueño</span>':s.rolSuper==='vendedor'?'<span class="pill pill-verde">Vendedor</span>':'<span class="pill pill-azul">Ayudante</span>'}</td>
           <td class="gris chico">${s.creado?fmtDate(s.creado):'—'}</td>
           <td class="acciones">
             <button class="btn btn-sm" onclick="editarSuperAdmin('${s.id}')">Editar</button>
@@ -830,7 +880,7 @@ function editarSuperAdmin(id){
     {id:'usuario', label:'Usuario para entrar', valor:s?s.usuario:'', requerido:true},
     {id:'pass', label:'Contraseña', valor:s?s.pass:'', requerido:true},
     {id:'rolSuper', label:'Rol', tipo:'select', valor:s?s.rolSuper:'ayudante',
-      opciones:[{valor:'ayudante',label:'Ayudante (gestiona negocios)'},{valor:'dueno',label:'Dueño (control total)'}]}
+      opciones:[{valor:'vendedor',label:'Vendedor (solo crea y muestra demos)'},{valor:'ayudante',label:'Ayudante (gestiona negocios)'},{valor:'dueno',label:'Dueño (control total)'}]}
   ], onGuardar:(d)=>{
     const usuario=d.usuario.trim();
     // No permitir usuarios repetidos (ni con empleados de negocios)
@@ -885,6 +935,7 @@ function cambiarMiPassSuper(){
 
 // ---------- Crear negocio ----------
 function nuevoNegocio(){
+  if(STATE.user&&STATE.user.rolSuper==='vendedor'){ toast('Como vendedor solo puedes crear demos','error'); return; }
   abrirModal({titulo:'Crear negocio', textoBoton:'Crear', campos:[
     {id:'nombre', label:'Nombre del negocio', requerido:true, placeholder:'Ej: MANILLASNET'},
     {id:'tipo', label:'Tipo de negocio', tipo:'select', opciones:Object.keys(PERFILES).map(t=>({valor:t,label:t}))},
@@ -1202,7 +1253,7 @@ function crearDemoDeTipo(tipoDemo, cerrarYToast){
       tiposEntrega:perfil.tiposEntrega.slice(),
       funciones:perfil.funciones.slice(),
       tipoFactura:'pos', pctDatafono:0, sonidos:true, tema:'claro',
-      sucursales:[], creado:now(), esDemo:true
+      sucursales:[], creado:now(), esDemo:true, demoDe:(STATE.user&&STATE.user.id)||null
     });
     DB.set('negocios',negocios);
     // Usuario admin del demo
@@ -1325,9 +1376,38 @@ function eliminarNegocio(id){
     }});
   },'Sí, continuar');
 }
+// Un vendedor (o admin) borra un demo. Solo permite borrar DEMOS, nunca negocios reales.
+function eliminarDemoVendedor(id){
+  const negocios=DB.get('negocios')||[];
+  const n=negocios.find(x=>x.id===id); if(!n) return;
+  if(!n.esDemo){ toast('Solo se pueden borrar negocios de demostración','error'); return; }
+  // Un vendedor solo borra sus propios demos
+  if(STATE.user.rolSuper==='vendedor' && n.demoDe && n.demoDe!==STATE.user.id){
+    toast('Este demo no es tuyo','error'); return;
+  }
+  confirmarModal('¿Borrar el demo "'+escapeHtml(n.nombre)+'"? Se eliminan sus datos de ejemplo. Esto no afecta a ningún cliente real.',()=>{
+    DB.set('negocios', (DB.get('negocios')||[]).filter(x=>x.id!==id));
+    DB.set('usuarios', (DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
+    const TABLAS=['productos','ventas','clientes','caja_actual','movimientos','insumos','citas','domiciliarios','gastos_negocio','cierres','contable','auditoria','factura_seq','config'];
+    TABLAS.forEach(t=>{
+      const clave='data_'+id+'_'+t;
+      DB.set(clave, null);
+      try{ localStorage.removeItem('ws_'+clave); }catch(e){}
+      delete CACHE[clave];
+    });
+    try{ Object.keys(CACHE).forEach(k=>{ if(k.indexOf('data_'+id+'_')===0){ DB.set(k,null); delete CACHE[k]; } }); }catch(e){}
+    toast('Demo "'+n.nombre+'" borrado','info');
+    render();
+  },'Borrar demo');
+}
 function entrarComoNegocio(id){
   const neg=(DB.get('negocios')||[]).find(n=>n.id===id); if(!neg) return;
+  // Seguridad: un vendedor solo puede entrar a DEMOS, nunca a negocios reales de clientes
+  if(STATE.user.rolSuper==='vendedor' && !neg.esDemo){
+    toast('Como vendedor solo puedes entrar a negocios de demostración','error'); return;
+  }
   STATE.negocio=neg;
+  STATE._superUser=STATE.user;   // recordar quién es el super-admin (para volver con su rol)
   STATE.user={nombre:'Supervisor', rol:'admin', negocioId:id, esSupervisor:true};
   STATE.esSuperAdmin=false;
   STATE.modoSupervision=true;
@@ -1339,7 +1419,9 @@ function entrarComoNegocio(id){
 function volverSuperAdmin(){
   STATE.esSuperAdmin=true; STATE.modoSupervision=false;
   STATE.negocio=null; STATE.sucursal=null;
-  STATE.user={nombre:'Súper Administrador', rol:'superadmin'};
+  // Restaurar el super-admin original (conserva su rolSuper: dueno/ayudante/vendedor)
+  STATE.user=STATE._superUser||{nombre:'Súper Administrador', rol:'superadmin', rolSuper:'dueno'};
+  STATE._superUser=null;
   STATE.page='';
   render();
 }
