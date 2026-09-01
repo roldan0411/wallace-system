@@ -301,6 +301,13 @@ function uid(){ return 'id'+Date.now().toString(36)+Math.random().toString(36).s
 function now(){ return new Date().toISOString(); }
 function today(){ return new Date().toISOString().split('T')[0]; }
 function fmtMoney(n){ return '$ '+(Math.round(n||0)).toLocaleString('es-CO'); }
+// Formato corto para etiquetas de gráficas: 1.2M, 950k, 500
+function fmtCorto(n){
+  n=Math.round(n||0);
+  if(n>=1000000) return (n/1000000).toFixed(n>=10000000?0:1).replace('.0','')+'M';
+  if(n>=1000) return (n/1000).toFixed(0)+'k';
+  return String(n);
+}
 function fmtDate(f){
   if(!f) return '—';
   const d=new Date(f);
@@ -2474,7 +2481,7 @@ function inicio(){
       <div class="tarjeta">
         <span class="t-tit">${ic('report')} Ventas por día</span>
         <div class="barras">${dias.map(d=>`<div class="barra">
-          <div class="b-val">${d.tot>0?(d.tot/1000).toFixed(0)+'k':''}</div>
+          <div class="b-val">${d.tot>0?fmtCorto(d.tot):''}</div>
           <div class="b-fill" style="height:${Math.max(4,(d.tot/mx)*130)}px"></div>
           <div class="b-lbl">${d.lbl}</div></div>`).join('')}</div>
       </div>
@@ -3528,10 +3535,14 @@ function reportes(){
   const mx=Math.max.apply(null,dias.map(d=>d.tot).concat([1]));
   // Gráfico 12 meses
   const meses=[];
+  const MESNOM=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
   for(let i=11;i>=0;i--){
-    const d=new Date(); d.setMonth(d.getMonth()-i);
+    const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-i);
     const k=d.toISOString().substring(0,7);
-    meses.push({lbl:['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][d.getMonth()],
+    // Mostrar el año corto en enero o en el primer mes del gráfico, para distinguir años
+    const yy=String(d.getFullYear()).slice(2);
+    const etq=(d.getMonth()===0||i===11)?MESNOM[d.getMonth()]+' '+yy:MESNOM[d.getMonth()];
+    meses.push({lbl:etq,
       tot:vs.filter(v=>(v.fecha||'').substring(0,7)===k).reduce((a,v)=>a+(v.subtotal||0),0)});
   }
   const mxM=Math.max.apply(null,meses.map(m=>m.tot).concat([1]));
@@ -3594,12 +3605,12 @@ function reportes(){
     </div>
     <div class="grid2">
       <div class="tarjeta"><span class="t-tit">${ic('report')} Ventas por Día (7 días)</span>
-        <div class="barras">${dias.map(d=>`<div class="barra"><div class="b-val">${d.tot>0?(d.tot/1000).toFixed(0)+'k':''}</div><div class="b-fill" style="height:${Math.max(4,(d.tot/mx)*130)}px"></div><div class="b-lbl">${d.lbl}</div></div>`).join('')}</div></div>
+        <div class="barras">${dias.map(d=>`<div class="barra"><div class="b-val">${d.tot>0?fmtCorto(d.tot):''}</div><div class="b-fill" style="height:${Math.max(4,(d.tot/mx)*130)}px"></div><div class="b-lbl">${d.lbl}</div></div>`).join('')}</div></div>
       <div class="tarjeta"><span class="t-tit">${ic('report')} Ventas Mensuales (12 meses)</span>
-        <div class="barras">${meses.map(m=>`<div class="barra"><div class="b-val">${m.tot>0?(m.tot/1000).toFixed(0)+'k':''}</div><div class="b-fill" style="height:${Math.max(4,(m.tot/mxM)*130)}px"></div><div class="b-lbl">${m.lbl}</div></div>`).join('')}</div></div>
+        <div class="barras">${meses.map(m=>`<div class="barra"><div class="b-val">${m.tot>0?fmtCorto(m.tot):''}</div><div class="b-fill" style="height:${Math.max(4,(m.tot/mxM)*130)}px"></div><div class="b-lbl">${m.lbl}</div></div>`).join('')}</div></div>
     </div>
     <div class="tarjeta"><span class="t-tit">${ic('history')} Horas Pico (últimos 30 días)</span>
-      ${horasActivas.length?`<div class="barras">${horasActivas.map(x=>`<div class="barra"><div class="b-val">${(x.tot/1000).toFixed(0)}k</div><div class="b-fill" style="height:${Math.max(4,(x.tot/maxHora)*130)}px"></div><div class="b-lbl">${x.h}H</div></div>`).join('')}</div>
+      ${horasActivas.length?`<div class="barras">${horasActivas.map(x=>`<div class="barra"><div class="b-val">${fmtCorto(x.tot)}</div><div class="b-fill" style="height:${Math.max(4,(x.tot/maxHora)*130)}px"></div><div class="b-lbl">${x.h}H</div></div>`).join('')}</div>
         <p class="nota" style="margin-top:8px;">Te ayuda a saber a qué horas necesitas más personal.</p>`:'<p class="gris">Sin datos.</p>'}
     </div>
     <div class="grid2">
