@@ -24,7 +24,7 @@
     --acc-txt:#ffffff;
   }
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Inter',system-ui,sans-serif;color:var(--txt);min-height:100vh;-webkit-font-smoothing:antialiased;
+  body{font-family:'Inter',system-ui,sans-serif;color:var(--txt);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden;
     background:radial-gradient(900px 520px at 85% -10%,rgba(var(--acc-rgb),.09),transparent 60%),
                radial-gradient(760px 460px at -10% 110%,rgba(19,45,70,.55),transparent 60%),
                var(--bg);}
@@ -565,6 +565,14 @@
     h1{font-size:20px;}
     .prods{grid-template-columns:repeat(2,1fr);}
     .venta-izq .busca-grande{font-size:14px;}
+    /* Encabezados de tarjeta: que el buscador y botones se apilen y ocupen el ancho */
+    .t-cab{flex-wrap:wrap;gap:8px;}
+    .t-acc{width:100%;flex-wrap:wrap;gap:8px;}
+    .t-acc .busca{min-width:0;flex:1;width:100%;}
+    .t-acc .btn{flex:1;}
+    /* Evitar que cualquier cosa se salga del ancho de la pantalla */
+    .contenido,.tarjeta,.stats{max-width:100%;}
+    .stat-val{overflow-wrap:break-word;}
   }
 </style>
 </head>
