@@ -575,6 +575,19 @@
     /* Evitar que cualquier cosa se salga del ancho de la pantalla */
     .contenido,.tarjeta,.stats{max-width:100%;}
     .stat-val{overflow-wrap:break-word;}
+    /* Panel super-admin: topbar con muchos botones */
+    .topbar{padding:12px 14px;gap:10px;}
+    .topbar h1{font-size:17px;}
+    .sa-marca{font-size:16px;}
+    .sa-emblema{width:28px;height:28px;}
+    .tb-der{gap:7px;flex-wrap:wrap;justify-content:flex-end;}
+    .tb-der .btn{font-size:11px;padding:7px 9px;}
+    .reloj{font-size:12px;width:100%;text-align:right;order:-1;}
+    /* Tablas anchas (panel admin): deslizar en horizontal sin aplastar celdas */
+    .tabla{font-size:12.5px;min-width:640px;}
+    .tabla th,.tabla td{padding:8px 9px;white-space:nowrap;}
+    .tabla .acciones{white-space:nowrap;}
+    .acciones .btn{padding:6px 8px;font-size:11px;}
   }
 </style>
 </head>
