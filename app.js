@@ -733,14 +733,14 @@ function panelSuperAdmin(){
             <button class="btn btn-ghost" onclick="crearNegocioDemo()">✨ Crear demo</button>
           </div>
         </div>
-        <div class="tabla-wrap"><table class="tabla">
+        <div class="tabla-wrap"><table class="tabla tabla-cards">
           <thead><tr><th>Negocio demo</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
           ${misDemos.length? misDemos.map(n=>`<tr>
-            <td><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul" style="font-size:9px;">DEMO</span>${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
-            <td>${escapeHtml(n.tipo)}</td>
-            <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
-            <td class="acciones">
+            <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul" style="font-size:9px;">DEMO</span>${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
+            <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
+            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
+            <td class="acciones" data-label="Acciones">
               <button class="btn btn-sm btn-verde" onclick="entrarComoNegocio('${n.id}')">Entrar</button>
               <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" onclick="toggleNegocio('${n.id}')">${n.activo?'Pausar':'Activar'}</button>
               <button class="btn btn-sm btn-rojo" onclick="eliminarDemoVendedor('${n.id}')" title="Borrar este demo">🗑️</button>
@@ -787,18 +787,18 @@ function panelSuperAdmin(){
           <button class="btn btn-gold" onclick="nuevoNegocio()">${ic('plus')} Crear negocio</button>
         </div>
       </div>
-      <div class="tabla-wrap"><table class="tabla">
+      <div class="tabla-wrap"><table class="tabla tabla-cards">
         <thead><tr><th>Negocio</th><th>Tipo</th><th>Flujo</th><th>Plan</th><th>Precio/mes</th><th>Usuarios</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
         ${lista.length? lista.map(n=>`<tr>
-          <td><strong>${escapeHtml(n.nombre)}</strong>${n.esDemo?' <span class="pill pill-azul" style="font-size:9px;">DEMO</span>':''}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
-          <td>${escapeHtml(n.tipo)}</td>
-          <td><span class="pill ${n.flujoPedido==='dos_pasos'?'pill-gold':''}">${n.flujoPedido==='dos_pasos'?'Confirmar → Cobrar':'Cobro directo'}</span></td>
-          <td>${escapeHtml(n.plan||'—')}</td>
-          <td>${fmtMoney(n.precioMes)}</td>
-          <td>${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
-          <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
-          <td class="acciones">
+          <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong>${n.esDemo?' <span class="pill pill-azul" style="font-size:9px;">DEMO</span>':''}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
+          <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
+          <td data-label="Flujo"><span class="pill ${n.flujoPedido==='dos_pasos'?'pill-gold':''}">${n.flujoPedido==='dos_pasos'?'Confirmar → Cobrar':'Cobro directo'}</span></td>
+          <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
+          <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
+          <td data-label="Usuarios">${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+          <td class="acciones" data-label="Acciones">
             <button class="btn btn-sm btn-verde" onclick="entrarComoNegocio('${n.id}')">Entrar</button>
             <button class="btn btn-sm" onclick="configNegocio('${n.id}')">Configurar</button>
             <button class="btn btn-sm" onclick="usuariosNegocio('${n.id}')">Usuarios</button>
