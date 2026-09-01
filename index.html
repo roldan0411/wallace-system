@@ -588,23 +588,17 @@
     .tabla th,.tabla td{padding:8px 9px;white-space:nowrap;}
     .tabla .acciones{white-space:nowrap;}
     .acciones .btn{padding:6px 8px;font-size:11px;}
-    /* Tabla de negocios: en celular se vuelve TARJETAS apiladas (sin scroll lateral) */
-    .tabla-cards{min-width:0;width:100%;font-size:13px;}
-    .tabla-cards thead{display:none;}
-    .tabla-cards,.tabla-cards tbody,.tabla-cards tr,.tabla-cards td{display:block;width:100%;}
-    .tabla-cards tr{background:rgba(255,255,255,.03);border:1px solid var(--linea2);border-radius:12px;
-      padding:12px 14px;margin-bottom:12px;}
-    .tabla-cards td{padding:5px 0;white-space:normal;border:none;display:flex;justify-content:space-between;
-      align-items:center;gap:12px;text-align:right;}
-    .tabla-cards td::before{content:attr(data-label);font-weight:700;color:var(--gris);font-size:11px;
-      text-transform:uppercase;letter-spacing:.3px;text-align:left;flex-shrink:0;}
-    .tabla-cards td[data-label="Negocio"]{font-size:15px;border-bottom:1px solid var(--linea2);
-      padding-bottom:9px;margin-bottom:5px;}
-    .tabla-cards td[data-label="Negocio"]::before{display:none;}
-    .tabla-cards td.acciones{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:7px;
-      padding-top:11px;margin-top:6px;border-top:1px solid var(--linea2);text-align:left;}
-    .tabla-cards td.acciones::before{width:100%;margin-bottom:3px;}
-    .tabla-cards td.acciones .btn{flex:1;min-width:calc(50% - 4px);padding:9px 6px;font-size:12px;}
+    /* Tabla de negocios: info se desliza, pero los BOTONES quedan FIJOS a la derecha */
+    .tabla-cards .acciones,.tabla-cards th:last-child{
+      position:sticky;right:0;z-index:2;
+      background:linear-gradient(90deg,rgba(26,31,42,0),#1b202b 22%);
+      box-shadow:-14px 0 16px -6px rgba(0,0,0,.55);padding-left:14px;}
+    .tabla-cards th:last-child{background:#1b202b;}
+    .tabla-cards .acciones{display:flex;gap:6px;align-items:center;}
+    .tabla-cards .acciones .btn{padding:8px 10px;font-size:12px;flex-shrink:0;}
+    body.tema-claro .tabla-cards .acciones,body.tema-claro .tabla-cards th:last-child{
+      background:linear-gradient(90deg,rgba(255,255,255,0),#ffffff 22%);}
+    body.tema-claro .tabla-cards th:last-child{background:#ffffff;}
   }
 </style>
 </head>
