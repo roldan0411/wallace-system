@@ -1453,6 +1453,11 @@ let _guardando=false;   // bloquea doble clic
 function nuevaVenta(){
   const neg=STATE.negocio;
   ESCRIBIENDO=true;   // proteger: no refrescar mientras arma el pedido
+  // Venta rápida: si usa cliente predeterminado y aún no hay datos, precargarlos
+  if(neg.usaClienteFijo && !_vCli.nombre && !_vCli.tel && !STATE.editandoVentaId){
+    _vCli.nombre=neg.clienteFijoNombre||'Consumidor Final';
+    _vCli.tel=neg.clienteFijoTel||'0000000';
+  }
   const caja=misDatos('caja_actual');
   const cajaAbierta = Array.isArray(caja) ? caja[0] : caja;
   if((neg.funciones||[]).indexOf('caja')>-1 && !cajaAbierta){
@@ -1480,6 +1485,7 @@ function nuevaVenta(){
     ${usaSucursales(neg)?`<div class="caja-aviso">📍 ${escapeHtml((sucursalesDe(neg).find(s=>s.id===sucursalActual())||{}).nombre||'')}</div>`:''}
     <div class="venta-grid">
       <div class="venta-izq">
+        ${neg.usaCodBarras?`<input type="text" id="escaner-venta" class="busca-grande" style="border-color:var(--verde);box-shadow:0 0 14px rgba(var(--acc-rgb),.25);" placeholder="📷 Escanea el código de barras aquí..." onkeydown="if(event.key==='Enter'){escanearProducto(this.value);this.value='';event.preventDefault();}" autocomplete="off">`:''}
         <input type="text" class="busca-grande" placeholder="🔍 Buscar ${escapeHtml((neg.palabraProducto||'producto').toLowerCase())}..." value="${escapeHtml(_vBusca)}" oninput="_vBusca=this.value;render()">
         ${cats.length>1?`<div class="cats">${cats.map(c=>`<button class="cat ${_vCat===c?'on':''}" onclick="_vCat='${escapeHtml(c)}';render()">${escapeHtml(c)}</button>`).join('')}</div>`:''}
         ${productos.length?`<div class="prods">
@@ -1537,6 +1543,14 @@ function nuevaVenta(){
 
 function camposCliente(){
   const c=_vCli;
+  const neg=STATE.negocio;
+  // Venta rápida: cliente fijo. Solo mostramos una etiqueta compacta y las
+  // observaciones; no se piden datos del cliente (salvo domicilio/envío).
+  if(neg && neg.usaClienteFijo && _vTipo!=='domicilio' && _vTipo!=='envio'){
+    return `<div class="cli-fijo">👤 ${escapeHtml(c.nombre||neg.clienteFijoNombre||'Consumidor Final')} <span class="gris chico">· venta rápida</span></div>
+      ${_vTipo==='mesa'?`<input type="text" class="campo" placeholder="Número de mesa" value="${escapeHtml(_vMesa)}" oninput="_vMesa=this.value">`:''}
+      <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
+  }
   if(_vTipo==='mesa'){
     return `<input type="text" class="campo" placeholder="Número de mesa" value="${escapeHtml(_vMesa)}" oninput="_vMesa=this.value">
       <input type="text" class="campo" placeholder="Observaciones..." value="${escapeHtml(_vObs)}" oninput="_vObs=this.value">`;
@@ -1619,6 +1633,24 @@ function actualizarTotalVenta(){
   if(elDom) elDom.innerHTML = valorDom>0?`<div class="linea"><span>${_vTipo==='envio'?'Envío':'Domicilio'}</span><span>${fmtMoney(valorDom)}</span></div>`:'';
 }
 
+// Escanear con pistola: busca el producto por su código de barras y lo agrega al carrito
+function escanearProducto(codigo){
+  codigo=(codigo||'').trim();
+  if(!codigo) return;
+  const productos=misDatos('productos');
+  const p=productos.find(x=>x.codBarras && String(x.codBarras).trim()===codigo);
+  if(!p){
+    toast('Código no registrado: '+codigo+'. Asígnalo a un producto en Inventario.','error');
+    sonidoError();
+    // Mantener el foco en el escáner para seguir pistoleando
+    setTimeout(()=>{ const e=document.getElementById('escaner-venta'); if(e) e.focus(); },50);
+    return;
+  }
+  agregarAlCarrito(p.id);
+  // Devolver el foco al escáner para el siguiente producto
+  setTimeout(()=>{ const e=document.getElementById('escaner-venta'); if(e) e.focus(); },50);
+}
+
 function agregarAlCarrito(id){
   const neg=STATE.negocio;
   const p=misDatos('productos').find(x=>x.id===id); if(!p) return;
@@ -1660,7 +1692,14 @@ function vaciarCarrito(){ _carrito=[]; _desc=0; _descMot=''; render(); }
 function limpiarPedido(){
   _carrito=[]; _vObs=''; _desc=0; _descMot=''; _vMesa='';
   STATE.editandoVentaId=null;
-  _vCli={nombre:'',tel:'',dir:'',barrio:'',ciudad:'',depto:'',transportadora:'',domiciliario:'',valorDom:0};
+  const neg=STATE.negocio;
+  // Venta rápida: precargar el cliente predeterminado (tiendas de alto flujo)
+  if(neg && neg.usaClienteFijo){
+    _vCli={nombre:neg.clienteFijoNombre||'Consumidor Final', tel:neg.clienteFijoTel||'0000000',
+      dir:'',barrio:'',ciudad:'',depto:'',transportadora:'',domiciliario:'',valorDom:0};
+  } else {
+    _vCli={nombre:'',tel:'',dir:'',barrio:'',ciudad:'',depto:'',transportadora:'',domiciliario:'',valorDom:0};
+  }
 }
 function abrirDescuento(){
   const bruto=_carrito.reduce((a,i)=>a+i.precio*i.qty,0);
@@ -1731,6 +1770,9 @@ function armarVenta(estado){
 // Valida datos mínimos del cliente según el tipo de pedido.
 // Teléfono obligatorio en Llevar y Domicilio (para poder guardar el cliente).
 function validarClientePedido(){
+  const neg=STATE.negocio;
+  // Con cliente predeterminado (venta rápida) no se piden datos del cliente
+  if(neg && neg.usaClienteFijo && _vTipo!=='domicilio' && _vTipo!=='envio') return true;
   const tel=(_vCli.tel||'').trim();
   if((_vTipo==='llevar'||_vTipo==='domicilio'||_vTipo==='envio')){
     if(!tel){ toast('El teléfono es obligatorio para '+(_vTipo==='llevar'?'pedidos para llevar':'domicilios')+' (así se guarda el cliente)','error'); return false; }
@@ -2941,6 +2983,10 @@ function editarProducto(id){
     {id:'precio', label:'Precio de venta', tipo:'number', valor:p?String(p.precio):'', requerido:true},
     {id:'categoria', label:'Categoría', valor:p?(p.categoria||''):'', placeholder:cats.length?cats.join(', '):'Ej: Bebidas'}
   ];
+  // Código de barras: si el negocio usa lector, se pide el código (se escanea con la pistola)
+  if(neg.usaCodBarras){
+    campos.push({id:'codbarras', label:'📷 Código de barras (escanéalo con la pistola)', valor:p?(p.codBarras||''):'', placeholder:'Escanea o escribe el código'});
+  }
   // Solo los negocios SIN recetas manejan stock por producto.
   // En restaurante el plato no tiene stock propio: se controla por sus insumos.
   const usaLotes = !!(p && p.usaLotes);
@@ -2981,6 +3027,7 @@ function editarProducto(id){
         nombre:d.nombre, precio:parseFloat(d.precio)||0,
         categoria:(d.categoria||'General').trim()||'General'
       };
+      if(neg.usaCodBarras && d.codbarras!==undefined){ datos.codBarras=(d.codbarras||'').trim(); }
       if(esResto){
         datos.stock=null;                                  // el plato no lleva stock propio
         datos.receta=_recetaTmp.filter(r=>r.insumoId && r.cantidad>0);
@@ -4185,6 +4232,19 @@ function pantallaConfig(negId){
       </div>
     </div>
     <div class="tarjeta">
+      <span class="t-tit">⚡ Venta rápida (tiendas de alto flujo)</span>
+      <p class="nota">Para tiendas, papelerías, minimarkets: el cajero solo escanea o toca productos y cobra, sin escribir datos del cliente en cada venta.</p>
+      <div class="checks">
+        <label class="chk"><input type="checkbox" id="c-clientefijo" ${neg.usaClienteFijo?'checked':''}> Usar cliente predeterminado (no pedir datos en cada venta)</label>
+        <label class="chk"><input type="checkbox" id="c-barras" ${neg.usaCodBarras?'checked':''}> Usar lector de código de barras (pistola USB)</label>
+      </div>
+      <div class="form2" style="margin-top:12px;">
+        <div class="m-row"><label>Nombre del cliente predeterminado</label><input id="c-cfnom" class="campo" value="${escapeHtml(neg.clienteFijoNombre||'Consumidor Final')}" placeholder="Ej: Consumidor Final"></div>
+        <div class="m-row"><label>Teléfono predeterminado</label><input id="c-cftel" class="campo" value="${escapeHtml(neg.clienteFijoTel||'0000000')}" placeholder="Ej: 0000000"></div>
+      </div>
+      <p class="nota">Con el cliente predeterminado activado, en Nueva Venta ya vienen esos datos puestos y el teléfono deja de ser obligatorio. Con el lector activado, aparece una barra para escanear productos y agregarlos solos al carrito.</p>
+    </div>
+    <div class="tarjeta">
       <span class="t-tit">Sucursales</span>
       <p class="gris">Cada sucursal maneja su <strong>caja, pedidos y cierres</strong> por separado. El inventario, clientes, gastos y contabilidad se comparten.</p>
       ${(neg.sucursales||[]).length?(neg.sucursales||[]).map((s,i)=>`<div class="suc-fila">
@@ -4220,6 +4280,10 @@ function guardarConfig(negId){
   n.usaPropina=chk('c-propina'); n.usaDomicilios=chk('c-domis');
   n.usaRecetas=chk('c-recetas'); n.usaCitas=chk('c-citas');
   n.esLogistica=chk('c-logistica');
+  n.usaClienteFijo=chk('c-clientefijo');
+  n.usaCodBarras=chk('c-barras');
+  n.clienteFijoNombre=val('c-cfnom').trim()||'Consumidor Final';
+  n.clienteFijoTel=val('c-cftel').trim()||'0000000';
   n.sonidos=chk('c-sonidos'); n.alertaStock=chk('c-alerta');
   n.tipoFactura=val('c-fact'); n.pctDatafono=parseFloat(val('c-pct'))||0;
   n.tema=val('c-tema')||'oscuro';
