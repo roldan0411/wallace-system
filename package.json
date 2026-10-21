@@ -3,11 +3,26 @@
   "version": "1.0.0",
   "description": "Wallace POS - Sistema POS multi-negocio para restaurantes y todo tipo de negocios",
   "scripts": {
-    "start": "npx serve -s . -l $PORT"
+    "start": "npx serve -s . -l $PORT",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test:firebase": "node scripts/probar-firebase.mjs",
+    "reglas:transicion": "firebase deploy --only database -P pruebas --config firebase.transicion.json",
+    "reglas:cerradas": "firebase deploy --only database -P pruebas",
+    "emulador": "node scripts/emulador.mjs",
+    "publicar:sandbox": "node scripts/publicar-sandbox.mjs && firebase deploy --only hosting -P pruebas --config firebase.hosting.json"
   },
   "dependencies": {
     "serve": "^14.2.1"
   },
   "author": "WALLACE COMPANY SYSTEM - Ing. Roldan Aldana",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "type": "module",
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
+    "firebase": "^12.19.0",
+    "firebase-tools": "^15.33.0",
+    "puppeteer-core": "^25.12.0"
+  }
 }

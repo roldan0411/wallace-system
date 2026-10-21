@@ -1,12 +1,14 @@
 // ============================================================
-//  LOGO DE WALLACE SYSTEM (esmeralda) — SVG vectorial
+//  INTERFAZ · Logo de Wallace System (esmeralda), SVG vectorial
 //  WALLACE COMPANY SYSTEM — Ing. Roldán Aldana
+//  Se muestra en el login y en el panel del super-admin. Antes era logo.js en
+//  la raíz: un script clásico que lo dejaba como variable global.
+//  Adaptador de entrada: módulo ES. Lo que exporta lo importan otros módulos
+//  y lo llaman los data-click del HTML generado (nucleo/eventos.js). Lo carga
+//  ui/manifiesto.js (cargarInterfaz). Doc: Documentation/README.md
 // ============================================================
-// Logo por defecto para negocios que no suben el suyo (vacío = usa el nombre)
-window.LOGO_DEFAULT = '';
 
-// Logo de la marca Wallace System (se usa en el login)
-window.WALLACE_LOGO = `
+export const WALLACE_LOGO = `
 <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block;">
   <defs>
     <radialGradient id="wsGlow" cx="50%" cy="45%" r="62%">

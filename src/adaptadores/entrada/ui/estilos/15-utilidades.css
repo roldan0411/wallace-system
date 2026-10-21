@@ -1,0 +1,108 @@
+/* ============================================================
+ ESTILOS · Utilidades (15 de 15): una clase = una propiedad. Reemplazan los
+ style="…" de las plantillas de pantalla. Llevan !important para conservar la
+ prioridad que tenía el estilo en línea. Las plantillas de IMPRESIÓN (facturas,
+ comandas, cierres, informes) siguen con estilos en línea: se abren en una
+ ventana que no carga este CSS.
+ ============================================================ */
+.borde-1-solid-linea2{border:1px solid var(--linea2) !important;}
+.borde-abajo-1-solid-linea2{border-bottom:1px solid var(--linea2) !important;}
+.borde-arriba-1-solid-linea2{border-top:1px solid var(--linea2) !important;}
+.borde-color-verde{border-color:var(--acento) !important;}
+.borde-ninguno{border:none !important;}
+.color-fff{color:var(--blanco) !important;}
+.color-gris{color:var(--gris) !important;}
+.color-rojo{color:var(--rojo) !important;}
+.color-verde-c{color:var(--acento-c) !important;}
+.cursor-mano{cursor:pointer !important;}
+.d-flex{display:flex !important;}
+.flex-1{flex:1 !important;}
+.flex-2{flex:2 !important;}
+.flex-wrap{flex-wrap:wrap !important;}
+.fondo-acc-rgb-08{background:rgba(var(--acento-rgb),.08) !important;}
+.fondo-linear-gradient-135deg-acc-rgb-08-245-197-24-05{background:linear-gradient(135deg,rgba(var(--acento-rgb),.08),rgba(var(--oro-rgb),.05)) !important;}
+.fondo-linear-gradient-135deg-acc-rgb-12-transparent{background:linear-gradient(135deg,rgba(var(--acento-rgb),.12),transparent) !important;}
+.fondo-ninguno{background:none !important;}
+.fs-9{font-size:var(--fs-9) !important;}
+.fs-12{font-size:var(--fs-12) !important;}
+.fs-15{font-size:var(--fs-15) !important;}
+.fs-17{font-size:var(--fs-17) !important;}
+.fs-18{font-size:var(--fs-18) !important;}
+.fs-19{font-size:var(--fs-19) !important;}
+.fs-22{font-size:var(--fs-22) !important;}
+.fs-26{font-size:var(--fs-26) !important;}
+.fw-800{font-weight:800 !important;}
+.fw-900{font-weight:900 !important;}
+.fw-normal{font-weight:normal !important;}
+.gap-6{gap:6px !important;}
+.gap-8{gap:8px !important;}
+.gap-10{gap:10px !important;}
+.h-46{height:46px !important;}
+.items-centro{align-items:center !important;}
+.items-estirar{align-items:stretch !important;}
+.justify-centro{justify-content:center !important;}
+.lh-1_5{line-height:1.5 !important;}
+.lh-1_6{line-height:1.6 !important;}
+.lh-1_7{line-height:1.7 !important;}
+.lh-1_8{line-height:1.8 !important;}
+.m-0{margin:0 !important;}
+.m-0-0-6{margin:0 0 6px !important;}
+.m-4-0-10{margin:4px 0 10px !important;}
+.m-6-0-10{margin:6px 0 10px !important;}
+.m-10-0{margin:10px 0 !important;}
+.m-16-auto{margin:16px auto !important;}
+.m-n4-0-12{margin:-4px 0 12px !important;}
+.m-n6-0-14{margin:-6px 0 14px !important;}
+.maxh-280{max-height:280px !important;}
+.maxw-280{max-width:280px !important;}
+.mb-0{margin-bottom:0 !important;}
+.mb-6{margin-bottom:6px !important;}
+.mb-8{margin-bottom:8px !important;}
+.mb-10{margin-bottom:10px !important;}
+.mb-12{margin-bottom:12px !important;}
+.mb-18{margin-bottom:18px !important;}
+.minw-70{min-width:70px !important;}
+.minw-90{min-width:90px !important;}
+.minw-130{min-width:130px !important;}
+.minw-140{min-width:140px !important;}
+.minw-auto{min-width:auto !important;}
+.ml-auto{margin-left:auto !important;}
+.mt-3{margin-top:3px !important;}
+.mt-4{margin-top:4px !important;}
+.mt-5{margin-top:5px !important;}
+.mt-6{margin-top:6px !important;}
+.mt-8{margin-top:8px !important;}
+.mt-10{margin-top:10px !important;}
+.mt-12{margin-top:12px !important;}
+.mt-14{margin-top:14px !important;}
+.mt-16{margin-top:16px !important;}
+.mt-18{margin-top:18px !important;}
+.mt-n6{margin-top:-6px !important;}
+.oculto{display:none !important;}
+.overflow-y-auto{overflow-y:auto !important;}
+.p-0-2{padding:0 2px !important;}
+.p-2-0{padding:2px 0 !important;}
+.p-4-0{padding:4px 0 !important;}
+.p-5{padding:5px !important;}
+.p-5-0{padding:5px 0 !important;}
+.p-5-6-5-11{padding:5px 6px 5px 11px !important;}
+.p-5-8{padding:5px 8px !important;}
+.p-6-0{padding:6px 0 !important;}
+.p-8-0{padding:8px 0 !important;}
+.p-10-12{padding:10px 12px !important;}
+.p-11-14{padding:11px 14px !important;}
+.p-12-14{padding:12px 14px !important;}
+.p-12-15{padding:12px 15px !important;}
+.p-14{padding:14px !important;}
+.p-14-16{padding:14px 16px !important;}
+.p-40{padding:40px !important;}
+.pt-14{padding-top:14px !important;}
+.radio-10{border-radius:var(--radio-10) !important;}
+.radio-12{border-radius:var(--radio-12) !important;}
+.sombra-0-0-14-acc-rgb-25{box-shadow:0 0 14px rgba(var(--acento-rgb),.25) !important;}
+.sombra-txt-glow-txt{text-shadow:var(--glow-txt) !important;}
+.txt-centro{text-align:center !important;}
+.txt-der{text-align:right !important;}
+.txt-izq{text-align:left !important;}
+.w-110{width:110px !important;}
+.ws-pre-line{white-space:pre-line !important;}

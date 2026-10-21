@@ -8,3 +8,10 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # Los módulos ES de src/ no llevan ?v= (ver ui/manifiesto.js): el navegador
+    # pregunta cada vez si cambiaron (respuesta 304 si no), así nunca mezcla
+    # módulos viejos y nuevos tras publicar.
+    headers:
+      - path: /src/*
+        name: Cache-Control
+        value: no-cache

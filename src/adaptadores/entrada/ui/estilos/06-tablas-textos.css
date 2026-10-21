@@ -1,0 +1,43 @@
+/* ============================================================
+   ESTILOS · Tablas, píldoras, colores de texto, líneas de resumen, grilla
+   Parte 6 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* Tablas */
+.tabla-wrap{overflow-x:auto;border-radius:var(--radio-11);}
+.tabla{width:100%;border-collapse:collapse;font-size:var(--fs-13-5);}
+.tabla th{text-align:left;padding:12px 14px;color:var(--acento);font-size:var(--fs-11);letter-spacing:.8px;
+  text-transform:uppercase;font-weight:700;border-bottom:1px solid rgba(var(--acento-rgb),.25);white-space:nowrap;}
+.tabla td{padding:13px 14px;border-bottom:1px solid var(--linea2);vertical-align:middle;}
+.tabla tr:last-child td{border-bottom:none;}
+.tabla tbody tr:hover td{background:rgba(var(--acento-rgb),.04);}
+.fila-pend{background:rgba(var(--acento-rgb),.06);}
+.acciones{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+
+/* Píldoras */
+.pill{display:inline-block;padding:4px 11px;border-radius:var(--radio-20);font-size:var(--fs-11);font-weight:700;
+  background:var(--panel2);border:1px solid var(--linea2);}
+.pill-verde{background:rgba(var(--acento-rgb),.14);color:var(--acento-c);border-color:rgba(var(--acento-rgb),.45);box-shadow:0 0 10px rgba(var(--acento-rgb),.18);}
+.pill-rojo{background:rgba(var(--rojo-rgb),.12);color:var(--rojo);border-color:rgba(var(--rojo-rgb),.4);box-shadow:0 0 10px rgba(var(--rojo-rgb),.14);}
+.pill-azul{background:rgba(var(--azul-rgb),.14);color:var(--azul);border-color:rgba(var(--azul-rgb),.4);}
+.pill-gold{background:rgba(var(--oro-rgb),.13);color:var(--oro-c);border-color:rgba(var(--oro-rgb),.45);box-shadow:0 0 10px rgba(var(--oro-rgb),.2);}
+.pill-oro{background:linear-gradient(135deg,rgba(var(--oro-rgb),.22),rgba(var(--oro-o-rgb),.16));color:var(--oro-c);
+  border:1px solid rgba(var(--oro-rgb),.5);box-shadow:0 0 12px rgba(var(--oro-rgb),.25);}
+.pill.grande{font-size:var(--fs-14);padding:7px 15px;}
+
+/* Colores de texto */
+.verde{color:var(--acento-c);} .rojo{color:var(--rojo);} .azul{color:var(--azul);}
+.oro{color:var(--acento-c);text-shadow:0 0 8px rgba(var(--acento-rgb),.3);} .gris{color:var(--gris);} .negrita{font-weight:700;}
+.chico{font-size:var(--fs-11-5);} .centrado{text-align:center;}
+
+/* Líneas de resumen */
+.linea{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;
+  border-bottom:1px solid var(--linea2);font-size:var(--fs-14);}
+.linea:last-child{border-bottom:none;}
+.linea.desc{color:var(--rojo);}
+.total-linea{border-top:2px solid var(--acento);border-bottom:none;margin-top:6px;padding-top:12px;font-weight:800;font-size:var(--fs-15);
+  color:var(--acento-c);text-shadow:0 0 10px rgba(var(--acento-rgb),.3);}
+.mini-x{background:none;border:none;color:var(--rojo);cursor:pointer;font-size:var(--fs-16);padding:0 4px;}
+
+/* Grid 2 columnas */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}

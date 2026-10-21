@@ -1,0 +1,26 @@
+# Datos reales de producción: NUNCA versionar (contraseñas, clientes, ventas)
+*-rtdb-export.json
+respaldo-wallace-*.json
+importar-pruebas*.json
+
+# Firebase CLI
+.firebase/
+firebase-debug.log
+database-debug.log
+ui-debug.log
+
+# Node
+node_modules/
+
+# Claude Code: preferencias locales de cada persona
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Capturas de regresión visual (scripts/capturas.mjs)
+capturas/
+
+# Archivo temporal de la recuperación de acceso de un super-admin (conexion-firebase.md, sección 5)
+perfil.json
+
+# Carpeta que se publica en Firebase Hosting del sandbox (scripts/publicar-sandbox.mjs)
+.publicar/

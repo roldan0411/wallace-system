@@ -1,5 +1,7 @@
 # Wallace System — Sistema multi-negocio (SaaS)
+
 ### Un solo sistema que cualquier restaurante, barbería o tienda puede usar
+
 **WALLACE COMPANY SYSTEM — Ing. Roldán Aldana · wallacecompany11@gmail.com**
 
 ---
@@ -19,6 +21,7 @@ configura cada negocio y controla quién paga.
 ## Se adapta a cualquier tipo de negocio
 
 Al crear un negocio, se elige el tipo y el sistema se configura solo:
+
 - **Restaurante / Cafetería:** mesas, cocina, recetas. "Plato".
 - **Comida rápida:** cocina, domicilios. "Producto".
 - **Barbería / Salón:** citas/turnos. "Servicio".
@@ -44,19 +47,28 @@ Al crear un negocio, se elige el tipo y el sistema se configura solo:
 ## Nube o local
 
 - **Sin Firebase:** funciona en el navegador (modo local), ideal para probar.
-- **Con Firebase:** sincroniza en la nube, multi-dispositivo. Llena `firebase-config.js`.
+- **Con Firebase:** sincroniza en la nube, multi-dispositivo. `firebase-config.js` elige la base según el dominio (producción solo desde el dominio público).
+- **Seguridad:** cada persona inicia sesión con Firebase Authentication y las reglas de la base (`database.rules.json`) solo le entregan los datos de su negocio. Detalle en `Documentation/-02-corrections` (S1).
 
-## Acceso demo
+## Primer ingreso
 
-- **Super-admin:** superadmin / super123
-- **Negocio de ejemplo — admin:** admin / admin123
+- No hay usuarios ni contraseñas de demostración en el código. En una instalación nueva, la app pide crear la cuenta del **dueño del sistema**.
+- Los negocios demo (Panel → ✨ Crear demo) usan `demo`, `demo2`… con contraseña `demo123`.
+
+## Desarrollo
+
+```bash
+npm install
+npm test                 # reglas del negocio (segundos)
+npm run test:firebase    # reglas de seguridad + migración + interfaz en emuladores (Java 11+ y Chrome)
+npm run emulador         # la app completa contra emuladores locales → http://localhost:3000/?emulador
+```
 
 ## Desplegar
 
-1. Copia los 7 archivos a la carpeta con git.
-2. `git add . && git commit -m "wallace pos" && git push`
-3. En Render (u hosting) se despliega solo.
-4. Para la nube: llena firebase-config.js con tu proyecto Firebase.
+1. Sitio estático: `index.html`, `src/` y `firebase-config.js` (y `prueba.html` + `prueba.js` para diagnóstico).
+2. `git push` → Render lo publica solo (`render.yaml`).
+3. Reglas de la base: `npm run reglas:transicion` / `npm run reglas:cerradas` (proyecto de pruebas; ver `Documentation/-00-execution-protocol`).
 
 ---
 
