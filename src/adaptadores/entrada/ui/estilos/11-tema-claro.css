@@ -1,0 +1,90 @@
+/* ============================================================
+   ESTILOS · Tema claro (por negocio) y ajustes de legibilidad
+   Parte 11 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* ============ TEMA CLARO (elegible por negocio) ============ */
+body.tema-claro{
+  background:radial-gradient(900px 520px at 85% -10%,rgba(var(--acento-rgb),.08),transparent 60%),var(--bg);
+  color:var(--txt);
+}
+body.tema-claro ::-webkit-scrollbar-thumb{background:var(--claro-scroll);}
+body.tema-claro ::-webkit-scrollbar-thumb:hover{background:var(--claro-scroll-hover);}
+body.tema-claro select option{background:var(--panel);color:var(--txt);}
+body.tema-claro .sidebar{background:var(--panel);border-right:1px solid var(--linea2);}
+body.tema-claro .topbar{background:rgba(var(--blanco-rgb),.94);border-bottom:1px solid rgba(var(--acento-rgb),.25);}
+body.tema-claro .reloj{color:var(--acento-o);text-shadow:none;}
+body.tema-claro .tarjeta{background:var(--panel);box-shadow:var(--sombra);}
+body.tema-claro .tarjeta-pend{background:linear-gradient(135deg,rgba(var(--acento-rgb),.07),var(--panel));}
+body.tema-claro .alerta{background:linear-gradient(135deg,rgba(var(--rojo-rgb),.06),var(--panel));}
+body.tema-claro .stat{background:var(--panel);border:1px solid var(--linea2);}
+body.tema-claro .stat-val{color:var(--navy);text-shadow:none;}
+body.tema-claro .stat-ico{background:rgba(var(--navy-rgb),.06);color:var(--navy);}
+body.tema-claro .nav-item.on{box-shadow:none;text-shadow:none;color:var(--acento-o);}
+body.tema-claro .campo,body.tema-claro .busca,body.tema-claro .busca-grande,
+body.tema-claro .m-row input,body.tema-claro .m-row select,body.tema-claro .m-row textarea,
+body.tema-claro .chk,body.tema-claro .tipo,body.tema-claro .logo-vista,body.tema-claro .cobro-caja{
+  background:var(--panel2);color:var(--txt);}
+body.tema-claro .campo:focus,body.tema-claro .busca:focus,body.tema-claro .busca-grande:focus{background:var(--panel);}
+body.tema-claro .campo::placeholder,body.tema-claro .busca::placeholder,body.tema-claro .busca-grande::placeholder{color:var(--claro-placeholder);}
+body.tema-claro .btn{background:var(--panel2);color:var(--txt);}
+body.tema-claro .btn:hover{background:var(--claro-hover);}
+body.tema-claro .btn-gold{background:linear-gradient(135deg,var(--oro-c),var(--oro-o));color:var(--tinta-oro);}
+body.tema-claro .btn-verde{background:linear-gradient(135deg,var(--acento),var(--acento-o));color:var(--acento-txt);}
+body.tema-claro .btn-rojo{color:var(--blanco);}
+body.tema-claro .btn-naranja{color:var(--tinta-naranja);}
+body.tema-claro .prod{background:var(--panel);}
+body.tema-claro .item-qty button{background:var(--panel2);color:var(--txt);}
+body.tema-claro .modal{background:var(--panel);border:1px solid var(--linea2);box-shadow:0 24px 70px rgba(var(--navy-rgb),.28);}
+body.tema-claro .modal-fondo{background:rgba(var(--navy-rgb),.35);}
+body.tema-claro .toast{background:var(--panel);color:var(--txt);}
+body.tema-claro .caja-aviso{background:rgba(var(--acento-rgb),.07);color:var(--txt2);}
+body.tema-claro .oro,body.tema-claro .verde{text-shadow:none;}
+body.tema-claro .total,body.tema-claro .total-linea,body.tema-claro .stat-grande{color:var(--acento-o);text-shadow:none;}
+body.tema-claro .c-total strong{color:var(--acento-o);text-shadow:none;}
+body.tema-claro .prod-pre{color:var(--acento-o);text-shadow:none;}
+body.tema-claro .side-tipo{color:var(--acento-o);}
+body.tema-claro .t-tit svg,body.tema-claro .prod-ico svg,body.tema-claro .topbar h1 svg{color:var(--acento-o);filter:none;}
+body.tema-claro .pill-verde{color:var(--acento-o);}
+body.tema-claro .pill-gold,body.tema-claro .pill-oro{color:var(--oro-texto);}
+body.tema-claro .banner-prueba{color:var(--oro-texto);}
+body.tema-claro .banner-prueba.urgente,body.tema-claro .banner-prueba.vencida{color:var(--rojo-o);}
+body.tema-claro .c-marca span{color:var(--acento-o);text-shadow:none;}
+body.tema-claro .tabla th{color:var(--acento-o);}
+body.tema-claro .fb-dot.ok{background:var(--acento);}
+
+body.tema-claro .verde,body.tema-claro .oro{color:var(--acento-o) !important;text-shadow:none;}
+body.tema-claro .prod-pre,body.tema-claro .total,body.tema-claro .total-linea{color:var(--acento-o) !important;}
+body.tema-claro .pill-verde{background:rgba(var(--acento-rgb),.14);color:var(--acento-o) !important;border-color:rgba(var(--acento-rgb),.4);}
+body.tema-claro .stat-val{color:var(--navy) !important;}
+
+
+/* ===== Botones siempre legibles (arregla letra blanca invisible) ===== */
+.btn-verde{color:var(--tinta-verde) !important;}          /* verde claro -> texto oscuro */
+.btn-gold{color:var(--tinta-oro) !important;}
+.btn-naranja{color:var(--tinta-naranja) !important;}
+.btn-rojo{color:var(--blanco) !important;}
+.cat.on,.tipo.on{color:var(--tinta-verde) !important;}
+body.tema-claro .btn{background:var(--bg);color:var(--txt) !important;border:1px solid rgba(var(--navy-rgb),.12);}
+body.tema-claro .btn:hover{background:var(--claro-hover-2);}
+body.tema-claro .btn-ghost{background:transparent;color:var(--txt) !important;}
+body.tema-claro .btn-sm{color:var(--txt);}
+body.tema-claro .btn-verde{color:var(--tinta-verde) !important;}
+body.tema-claro .btn-gold{color:var(--tinta-oro) !important;}
+body.tema-claro .btn-naranja{color:var(--tinta-naranja) !important;}
+body.tema-claro .btn-rojo{color:var(--blanco) !important;}
+/* avatar / iniciales del menú: texto legible sobre el color */
+.side-ini,.avatar{color:var(--tinta-verde) !important;}
+
+/* ===== Rojos legibles sobre fondo blanco (tema claro) ===== */
+body.tema-claro .rojo{color:var(--rojo-o) !important;}
+body.tema-claro .mini-x{color:var(--rojo-o) !important;font-weight:800;}
+body.tema-claro .pill-rojo{background:rgba(var(--rojo-o-rgb),.12);color:var(--rojo-oo) !important;border-color:rgba(var(--rojo-o-rgb),.45);}
+body.tema-claro .stat-ico.rojo{background:rgba(var(--rojo-o-rgb),.12);color:var(--rojo-o) !important;}
+body.tema-claro .alerta{border-left-color:var(--rojo-o);}
+body.tema-claro .btn-rojo{background:linear-gradient(135deg,var(--rojo-medio),var(--rojo-oo));color:var(--blanco) !important;box-shadow:0 2px 10px rgba(var(--rojo-oo-rgb),.3);}
+.mini-x{font-weight:800;}
+
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important;}
+}

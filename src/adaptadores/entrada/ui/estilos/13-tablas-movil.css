@@ -1,0 +1,33 @@
+/* ============================================================
+   ESTILOS · Tablas convertidas en tarjetas en celular
+   Parte 13 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* ===== Tablas como tarjetas en celular (todo el sistema) ===== */
+@media(max-width:760px){
+  .tabla-cards{min-width:0 !important;width:100%;}
+  .tabla-cards thead{display:none;}
+  .tabla-cards,.tabla-cards tbody,.tabla-cards tr,.tabla-cards td{display:block;width:100%;}
+  .tabla-cards tr{background:rgba(var(--blanco-rgb),.03);border:1px solid var(--linea2);
+    border-radius:var(--radio-13);padding:13px 15px;margin-bottom:12px;}
+  .tabla-cards tbody tr:hover td{background:transparent;}
+  .tabla-cards td{padding:5px 0;border:none;white-space:normal;
+    display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:var(--fs-13-5);}
+  .tabla-cards td[data-label]::before{content:attr(data-label);flex-shrink:0;font-size:var(--fs-11);
+    font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--gris);}
+  .tabla-cards td .tc-v{text-align:right;min-width:0;overflow-wrap:anywhere;}
+  .tabla-cards td .tc-v select,.tabla-cards td .tc-v input{width:auto;max-width:100%;}
+  .tabla-cards td.tc-title{display:block;font-size:var(--fs-16);font-weight:800;padding:2px 0 9px;margin-bottom:5px;
+    border-bottom:1px solid var(--linea2);overflow-wrap:anywhere;}
+  .tabla-cards td.tc-hide,.tabla-cards td.tc-vacio{display:none !important;}
+  .tabla-cards td.acciones,.tabla-cards td.tc-actions{display:grid !important;
+    grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:7px;
+    padding-top:12px;margin-top:7px;border-top:1px solid var(--linea2);}
+  .tabla-cards td.acciones:empty{display:none !important;}
+  .tabla-cards td.acciones .btn{width:100%;min-height:42px;justify-content:center;
+    white-space:normal;padding:7px 5px;font-size:var(--fs-12);overflow:hidden;}
+  .tabla-cards td.acciones .btn[data-corto]::after{content:attr(data-corto);font-size:var(--fs-11-5);}
+  .tabla-cards tr.tc-solo{background:transparent;border:none;text-align:center;}
+  .tabla-cards tr.tc-solo td{display:block;}
+  body.tema-claro .tabla-cards tr{background:var(--panel);box-shadow:var(--sombra);}
+}

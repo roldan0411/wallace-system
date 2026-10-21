@@ -1,0 +1,61 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "data": {
+      ".read": true,
+      ".write": true,
+      "negocios_r": {
+        "$negId": {
+          ".validate": "$negId.matches(/^[A-Za-z0-9-]{1,64}$/)",
+          "logo": {
+            ".validate": "newData.isString() && (newData.val() === '' || (newData.val().length <= 400000 && newData.val().matches(/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/=]+$/)))"
+          }
+        }
+      },
+      "$clave": {
+        "$reg": {
+          "id": {
+            ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,64}$/)"
+          },
+          "logo": {
+            ".validate": "newData.isString() && (newData.val() === '' || (newData.val().length <= 400000 && newData.val().matches(/^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/=]+$/)))"
+          }
+        }
+      }
+    },
+    "login": {
+      ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false",
+      "$usuario": {
+        ".read": true,
+        ".write": "auth != null && (!data.exists() || (root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false))",
+        ".validate": "!newData.exists() || (newData.child('correo').isString() && newData.child('uid').isString())"
+      }
+    },
+    "perfiles": {
+      ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists()) || (root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false))",
+        ".validate": "!newData.exists() || (newData.child('rol').isString() && newData.child('usuario').isString())",
+        "debeCambiarPass": {
+          ".write": "auth != null && auth.uid === $uid && newData.val() === false",
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
+    "recuperaciones": {
+      ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false",
+      "$usuario": {
+        ".write": "(auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false) || (newData.exists() && root.child('login').child($usuario).exists() && newData.child('estado').val() === 'pendiente' && newData.child('fecha').val() === now && !newData.child('resueltaPor').exists() && !newData.child('resueltaEn').exists() && (!data.exists() || data.child('estado').val() !== 'pendiente' || data.child('fecha').val() < now - 3600000))",
+        ".validate": "newData.child('usuario').val() === $usuario && newData.child('estado').isString() && newData.child('fecha').isNumber()",
+        "contacto": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "$otro": {
+          ".validate": "$otro === 'usuario' || $otro === 'estado' || $otro === 'fecha' || $otro === 'resueltaPor' || $otro === 'resueltaEn'"
+        }
+      }
+    }
+  }
+}

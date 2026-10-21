@@ -1,0 +1,34 @@
+/* ============================================================
+   ESTILOS · Cocina (KDS) con cronómetro y logo del negocio
+   Parte 8 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* Cocina (KDS) con cronómetro */
+.kds-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:12px;}
+.kds-card{background:linear-gradient(170deg,var(--modal),var(--elevada));border:1px solid var(--linea2);
+  border-top:5px solid var(--gris);border-radius:var(--radio-14);padding:14px;box-shadow:var(--sombra);}
+.kds-card.krono-verde{border-top-color:var(--acento);}
+.kds-card.krono-amar{border-top-color:var(--naranja);}
+.kds-card.krono-rojo{border-top-color:var(--rojo);box-shadow:0 0 18px rgba(var(--rojo-rgb),.18),var(--sombra);}
+.kds-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.kds-ref{font-family:var(--fuente-titulos);font-weight:800;font-size:var(--fs-16);color:var(--acento-c);}
+.kds-krono{font-family:var(--fuente-titulos);font-weight:800;font-size:var(--fs-18);}
+.krono-verde .kds-krono{color:var(--acento-c);}
+.krono-amar .kds-krono{color:var(--naranja);}
+.krono-rojo .kds-krono{color:var(--rojo);}
+.kds-tipo{font-size:var(--fs-13);color:var(--txt2);margin-bottom:8px;font-weight:600;}
+.kds-items{margin:8px 0;}
+.kds-item{padding:5px 0;border-bottom:1px solid var(--linea2);font-size:var(--fs-14);}
+.kds-item:last-child{border-bottom:none;}
+.kds-nota{margin-top:8px;padding:7px 11px;background:rgba(var(--naranja-rgb),.12);border-left:3px solid var(--naranja);
+  border-radius:var(--radio-7);font-size:var(--fs-12);color:var(--txt2);}
+.kds-acc{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;}
+body.tema-claro .kds-card{background:var(--panel);}
+
+/* Logo del negocio */
+.logo-zona{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-top:14px;}
+.logo-vista{width:130px;height:130px;border:2px dashed rgba(var(--acento-rgb),.35);border-radius:var(--radio-14);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--campo);flex-shrink:0;}
+.logo-vista img{max-width:100%;max-height:100%;object-fit:contain;}
+.logo-vacio{color:var(--gris);font-size:var(--fs-12);}
+.logo-acc{display:flex;flex-direction:column;gap:8px;align-items:flex-start;}

@@ -1,0 +1,295 @@
+// ============================================================
+//  INTERFAZ · Panel del super-admin
+//  Métricas, lista de negocios, panel del vendedor y respaldo.
+//  Adaptador de entrada: módulo ES. Lo que exporta lo importan otros módulos
+//  y lo llaman los data-click del HTML generado (nucleo/eventos.js). Lo carga
+//  ui/manifiesto.js (cargarInterfaz). Doc: Documentation/01-super-admin-panel/01-super-admin-panel.md
+// ============================================================
+import { STATE, escapeHtml, fmtDate, fmtMoney } from '../nucleo/estado.js';
+import { BOTON, MSJ } from '../nucleo/textos.js';
+import { esAdminSistema } from '../nucleo/permisos.js';
+import { abrirModal, cerrarModal, confirmarModal, ic, reportarError, toast } from '../nucleo/componentes.js';
+import { WALLACE_LOGO } from '../nucleo/logo.js';
+import { render } from '../nucleo/navegacion.js';
+import { conCuentasFirebase } from '../usuarios/sesion.js';
+import { tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
+import { pillPrueba, tarjetaPorVencer } from './pruebas.js';
+import { resumenDe } from '../reportes/resumen.js';
+
+
+// ============================================================
+//  PANEL DE SUPER-ADMIN
+// ============================================================
+export function panelSuperAdmin(){
+  const negocios=DB.get('negocios')||[];
+  // Los negocios DEMO son de práctica (dinero ficticio): NO cuentan en las métricas reales
+  const reales=negocios.filter(n=>!n.esDemo);
+  const idsReales={}; reales.forEach(n=>idsReales[n.id]=true);
+  const activos=reales.filter(n=>n.activo).length;
+  const ingreso=reales.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
+  const usuarios=(DB.get('usuarios')||[]).filter(u=>idsReales[u.negocioId]).length;
+  let ventasHoy=0, ventasTot=0, top={nombre:'—',total:0};
+  const hoy=today();
+  // R1: las cifras salen del resumen que publica cada negocio (reportes/resumen.js),
+  // no de descargar las ventas de todos los negocios
+  let sinCifras=0;
+  reales.forEach(n=>{
+    const r=resumenDe(n.id);
+    if(!r){ sinCifras++; return; }
+    const suma=r.total||0;
+    ventasTot+=suma;
+    ventasHoy+=(r.dias||{})[hoy]||0;
+    if(suma>top.total) top={nombre:n.nombre, total:suma};
+  });
+  const q=(STATE.buscaNegocio||'').toLowerCase();
+  let lista=q?negocios.filter(n=>(n.nombre||'').toLowerCase().includes(q)||(n.tipo||'').toLowerCase().includes(q)
+      ||(n.ciudad||'').toLowerCase().includes(q)||(n.vendedorNombre||'').toLowerCase().includes(q)):negocios;
+  // Filtro por vendedor a cargo
+  if(STATE.filtroVendedor){
+    lista = STATE.filtroVendedor==='sin' ? lista.filter(n=>!n.vendedorId) : lista.filter(n=>n.vendedorId===STATE.filtroVendedor);
+  }
+  const sas=DB.get('superadmins')||[];
+  const nombreVend=id=>{ const v=sas.find(x=>x.id===id); return v?v.nombre:''; };
+  const antig=n=>{ if(!n.creado) return '—'; const d=Math.floor((Date.now()-new Date(n.creado).getTime())/86400000);
+    return d<30?d+' d':(Math.floor(d/30)+' mes'+(Math.floor(d/30)===1?'':'es')); };
+
+  // ===== PANEL PARA VENDEDORES (equipo comercial): solo demos =====
+  if(STATE.user.rolSuper==='vendedor'){
+    const misClientes=negocios.filter(n=>!n.esDemo && n.vendedorId===STATE.user.id);
+    const demos=(q?lista:negocios).filter(n=>n.esDemo);
+    const misDemos=demos.filter(n=>!n.demoDe || n.demoDe===STATE.user.id);   // sus demos (o todos los demos si no hay dueño marcado)
+    return `
+    <div class="topbar">
+      <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
+        <span class="sa-marca">Panel de <span>Ventas</span></span>
+        <span class="pill pill-azul">Vendedor</span></h1>
+      <div class="tb-der">
+        <span class="fb-dot off" id="fb-status" title="Conexión"></span>
+        <span class="reloj" id="reloj"></span>
+        <button class="btn btn-sm" data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
+        <button class="btn btn-ghost btn-sm" data-click="logout()">${ic('logout')} Salir</button>
+      </div>
+    </div>
+    <div class="contenido">
+      <div class="tarjeta fondo-linear-gradient-135deg-acc-rgb-12-transparent">
+        <span class="t-tit">👋 Hola, ${escapeHtml(STATE.user.nombre)}</span>
+        <p class="gris mt-6">Aquí puedes crear negocios de demostración para mostrarle el sistema a tus clientes, o un negocio a prueba para un cliente nuevo. Las demos son solo de práctica y no afectan a los clientes reales.</p>
+      </div>
+      ${tarjetaPorVencer()}
+      <div class="stats">
+        <div class="stat azul"><div class="stat-ico azul">${ic('box')}</div><div class="stat-lbl">Tus demos</div><div class="stat-val">${misDemos.length}</div><div class="stat-sub">para mostrar</div></div>
+        <div class="stat verde"><div class="stat-ico verde">${ic('building')}</div><div class="stat-lbl">Clientes a tu cargo</div><div class="stat-val">${misClientes.length}</div><div class="stat-sub">${misClientes.filter(n=>n.activo).length} activo(s)</div></div>
+        <div class="stat gold"><div class="stat-ico gold">${ic('cash')}</div><div class="stat-lbl">Tu cartera al mes</div><div class="stat-val">${fmtMoney(misClientes.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0))}</div><div class="stat-sub">de los que están activos</div></div>
+      </div>
+      ${misClientes.length?`<div class="tarjeta">
+        <span class="t-tit">${ic('building')} Tus clientes</span>
+        <p class="gris">Negocios reales que tú vendiste. No puedes entrar a sus datos, solo ver cómo van.</p>
+        <div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Negocio</th><th>Ciudad</th><th>Plan</th><th>Desde</th><th>Estado</th></tr></thead>
+          <tbody>${misClientes.map(n=>`<tr>
+            <td><strong>${escapeHtml(n.nombre)}</strong>${pillPrueba(n)}</td>
+            <td class="gris">${escapeHtml(n.ciudad||'—')}</td>
+            <td>${escapeHtml(n.plan||'—')}<br><span class="gris chico">${fmtMoney(n.precioMes||0)}/mes</span></td>
+            <td class="gris chico">${n.creado?(n.creado||'').split('T')[0]:'—'}</td>
+            <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`:''}
+      <div class="tarjeta">
+        <div class="t-cab">
+          <span class="t-tit">${ic('building')} Mis demostraciones</span>
+          <div class="t-acc">
+            <button class="btn btn-ghost" data-click="crearNegocioDemo()">✨ Crear demo</button>
+            <button class="btn btn-gold" data-click="nuevoNegocio()">${ic('plus')} Negocio a prueba</button>
+          </div>
+        </div>
+        <div class="tabla-wrap"><table class="tabla tabla-cards">
+          <thead><tr><th>Negocio demo</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+          ${misDemos.length? misDemos.map(n=>`<tr>
+            <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul fs-9">DEMO</span>${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
+            <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
+            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
+            <td class="acciones" data-label="Acciones">
+              <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
+              <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Pausar':'Activar'}</button>
+              <button class="btn btn-sm btn-rojo" data-click="eliminarDemoVendedor('${escapeHtml(n.id)}')" title="Borrar este demo">🗑️</button>
+            </td>
+          </tr>`).join('') : '<tr><td colspan="4" class="gris">Aún no tienes demos. Crea el primero con "✨ Crear demo".</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div class="topbar">
+    <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
+      <span class="sa-marca">Panel de <span>Super-Admin</span></span>
+      <span class="pill pill-oro">Dueño del sistema</span></h1>
+    <div class="tb-der">
+      <span class="fb-dot off" id="fb-status" title="Conexión"></span>
+      <span class="reloj" id="reloj"></span>
+      <button class="btn btn-sm" data-click="descargarRespaldo()">💾 Respaldo</button>
+      ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm" data-click="elegirRespaldo()" title="Restaurar un negocio desde un respaldo">♻️ Restaurar</button>
+        <input type="file" id="resp-archivo" accept=".json,application/json" class="oculto" data-change="cargarRespaldo(this)">`:''}
+      ${sinCifras?`<button class="btn btn-sm btn-naranja" data-click="calcularResumenes()" title="Negocios sin cifras publicadas todavía">📊 Calcular cifras (${sinCifras})</button>`:''}
+      ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irAdministradores()">👥 Administradores</button>`:''}
+      ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="abrirMigracion()">🔐 Cuentas</button>`:''}
+      ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="pasarAMiCorreo()" title="Entrar con tu correo real y poder recuperar la contraseña por correo">📧 Mi correo</button>`:''}
+      <button class="btn btn-sm" data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
+      <button class="btn btn-ghost btn-sm" data-click="logout()">${ic('logout')} Salir</button>
+    </div>
+  </div>
+  <div class="contenido">
+    ${tarjetaRecuperaciones()}
+    ${tarjetaPorVencer()}
+    <div class="stats">
+      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} en total</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso mensual</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
+      <div class="stat naranja"><div class="stat-ico naranja">${ic('history')}</div><div class="stat-lbl">Suspendidos</div><div class="stat-val">${reales.length-activos}</div><div class="stat-sub">no pagan / pausados</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('users')}</div><div class="stat-lbl">Usuarios totales</div><div class="stat-val">${usuarios}</div><div class="stat-sub">empleados en el sistema</div></div>
+    </div>
+    <div class="stats">
+      <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Ventas hoy (todos)</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">movimiento del sistema</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas históricas</div><div class="stat-val">${fmtMoney(ventasTot)}</div><div class="stat-sub">todos los negocios</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('building')}</div><div class="stat-lbl">Negocio con más ventas</div><div class="stat-val fs-19">${escapeHtml(top.nombre)}</div><div class="stat-sub">${fmtMoney(top.total)}</div></div>
+    </div>
+    ${(()=>{ const sas2=DB.get('superadmins')||[];
+      const porVend={};
+      reales.forEach(n=>{ const k=n.vendedorId||'sin'; if(!porVend[k]) porVend[k]={n:0,mes:0,activos:0};
+        porVend[k].n++; if(n.activo){ porVend[k].activos++; porVend[k].mes+=(n.precioMes||0); } });
+      const filas=Object.keys(porVend);
+      if(filas.length<=1 && filas[0]==='sin') return '';
+      return `<div class="tarjeta">
+        <span class="t-tit">${ic('users')} Cartera por vendedor</span>
+        <p class="gris">Cuántos clientes atiende cada uno y cuánto factura su cartera al mes.</p>
+        <div class="tabla-wrap"><table class="tabla">
+          <thead><tr><th>Vendedor</th><th>Negocios</th><th>Activos</th><th>Factura al mes</th></tr></thead>
+          <tbody>${filas.map(k=>{
+            const v=sas2.find(x=>x.id===k);
+            return `<tr>
+              <td><strong>${k==='sin'?'<span class="rojo">Sin asignar</span>':escapeHtml(v?v.nombre:'(eliminado)')}</strong>${v&&v.rolSuper==='vendedor'?' <span class="pill pill-verde chico">vendedor</span>':''}</td>
+              <td class="negrita">${porVend[k].n}</td>
+              <td class="verde">${porVend[k].activos}</td>
+              <td class="oro negrita">${fmtMoney(porVend[k].mes)}</td>
+            </tr>`;}).join('')}</tbody>
+        </table></div>
+      </div>`; })()}
+    <div class="tarjeta">
+      <div class="t-cab">
+        <span class="t-tit">${ic('building')} Negocios</span>
+        <div class="t-acc">
+          <input type="text" class="busca" placeholder="🔍 Buscar negocio, ciudad o vendedor..." value="${escapeHtml(STATE.buscaNegocio||'')}" data-input="buscarNegocios(this.value)">
+          <select class="busca" data-change="filtrarVendedor(this.value)">
+            <option value="">Todos los vendedores</option>
+            <option value="sin" ${STATE.filtroVendedor==='sin'?'selected':''}>Sin asignar</option>
+            ${sas.map(v=>`<option value="${escapeHtml(v.id)}" ${STATE.filtroVendedor===v.id?'selected':''}>${escapeHtml(v.nombre)}</option>`).join('')}
+          </select>
+          <button class="btn btn-ghost" data-click="crearNegocioDemo()" title="Crea un negocio de ejemplo ya lleno para mostrar">✨ Crear demo</button>
+          <button class="btn btn-gold" data-click="nuevoNegocio()">${ic('plus')} Crear negocio</button>
+        </div>
+      </div>
+      <div class="tabla-wrap"><table class="tabla tabla-cards">
+        <thead><tr><th>Negocio</th><th>Tipo</th><th>Vendedor</th><th>Desde</th><th>Plan</th><th>Precio/mes</th><th>Usuarios</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <tbody>
+        ${lista.length? lista.map(n=>`<tr>
+          <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong>${n.esDemo?' <span class="pill pill-azul fs-9">DEMO</span>':''}${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
+          <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
+          <td data-label="Vendedor">${n.vendedorId?escapeHtml(nombreVend(n.vendedorId)||n.vendedorNombre||'—'):'<span class="pill pill-rojo chico">Sin asignar</span>'}</td>
+          <td data-label="Desde" class="gris chico">${n.creado?(n.creado||'').split('T')[0]:'—'}<br>${antig(n)}</td>
+          <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
+          <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
+          <td data-label="Usuarios">${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+          <td class="acciones" data-label="Acciones">
+            <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
+            <button class="btn btn-sm" data-click="configNegocio('${escapeHtml(n.id)}')">Configurar</button>
+            <button class="btn btn-sm" data-click="usuariosNegocio('${escapeHtml(n.id)}')">Usuarios</button>
+            <button class="btn btn-sm" data-click="reporteMensualNegocio('${escapeHtml(n.id)}')" title="Informe mensual en PDF">📄 Informe</button>
+            <button class="btn btn-sm" data-click="asignarVendedor('${escapeHtml(n.id)}')" title="Asignar vendedor a cargo">👤 Vendedor</button>
+            <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Suspender':'Activar'}</button>
+            ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(n.id)}')" title="Eliminar empresa">🗑️</button>`:''}
+          </td>
+        </tr>`).join('') : '<tr><td colspan="8" class="gris">No hay negocios. Crea el primero.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+// ---------- Respaldo (copia de seguridad de TODO el sistema) ----------
+export function descargarRespaldo(){
+  if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaDescargarEl,'error'); return; }
+  toast(MSJ.preparandoRespaldo,'info');
+  const bajar=(data, parcial)=>{
+    try{
+      const respaldo={
+        sistema:'Wallace System',
+        fecha:new Date().toISOString(),
+        parcial:!!parcial,
+        datos:data
+      };
+      const blob=new Blob([JSON.stringify(respaldo,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      const f=new Date();
+      const nombre='respaldo-wallace-'+(parcial?'PARCIAL-':'')+f.getFullYear()+'-'
+        +String(f.getMonth()+1).padStart(2,'0')+'-'
+        +String(f.getDate()).padStart(2,'0')+'.json';
+      a.href=url; a.download=nombre;
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },500);
+      toast('Respaldo descargado: '+nombre,'success');
+    }catch(e){ reportarError('el respaldo', e); toast(MSJ.noSePudoGenerarElRespaldo,'error'); }
+  };
+  Datos.exportarTodo().then(r=>{
+    // Sin la nube, la copia del equipo NO es un respaldo completo (con cuentas, el panel casi no tiene
+    // datos de los negocios): se pregunta y el archivo dice PARCIAL
+    if(r.origen==='local' && FB_READY){
+      confirmarModal(MSJ.respaldoParcialSinNube, ()=>bajar(r.datos, true), 'Bajar parcial');
+      return;
+    }
+    bajar(r.datos, false);
+  }).catch(e=>reportarError('el respaldo', e));
+}
+// ---------- Restaurar UN negocio desde un respaldo (solo el dueño del sistema) ----------
+export function elegirRespaldo(){
+  if(!(STATE.user && STATE.user.rolSuper==='dueno' && esAdminSistema())){ toast(MSJ.soloElDuenoDelSistemaRestaura,'error'); return; }
+  const e=document.getElementById('resp-archivo'); if(e){ e.value=''; e.click(); }
+}
+export function cargarRespaldo(input){
+  const f=input && input.files && input.files[0]; if(!f) return;
+  const lector=new FileReader();
+  lector.onload=()=>{
+    let r=null; try{ r=JSON.parse(lector.result); }catch(e){}
+    if(!r || r.sistema!=='Wallace System' || !r.datos){ toast(MSJ.esteArchivoNoEsUnRespaldo,'error'); return; }
+    elegirNegocioARestaurar(r);
+  };
+  lector.readAsText(f);
+}
+export function negociosDelRespaldo(datos){
+  const l=datos.negocios_r ? Object.values(datos.negocios_r) : (Array.isArray(datos.negocios)?datos.negocios:Object.values(datos.negocios||{}));
+  return l.filter(n=>n && n.id);
+}
+export function elegirNegocioARestaurar(r){
+  const negs=negociosDelRespaldo(r.datos);
+  if(!negs.length){ toast(MSJ.elRespaldoNoTieneNegocios,'error'); return; }
+  abrirModal({titulo:'♻️ Restaurar un negocio', textoBoton:BOTON.restaurar, campos:[
+    {id:'neg', label:'Negocio', tipo:'select', opciones:negs.map(n=>({valor:n.id, label:n.nombre||n.id}))},
+    {id:'confirma', label:'Escribe el nombre del negocio para confirmar', requerido:true}
+  ], extraHTML:`<p class="nota">Respaldo del <strong>${escapeHtml(fmtDate(r.fecha))}</strong>${r.parcial?' · <span class="rojo">PARCIAL</span>':''}. Se <strong>reemplazan</strong> los datos de ese negocio (ventas, caja, inventario, clientes…) por los del respaldo; lo que se hizo después se pierde. Las cuentas de acceso no se tocan. Descarga un respaldo actual antes, por si acaso.</p>`,
+  onGuardar:d=>{
+    const n=negs.find(x=>x.id===d.neg); if(!n) return;
+    if((d.confirma||'').trim()!==(n.nombre||n.id)){ toast(MSJ.elNombreNoCoincide,'error'); return; }
+    restaurarNegocioDesde(r.datos, n.id).then(ok=>{ if(ok) cerrarModal(); });
+  }});
+}
+export function restaurarNegocioDesde(datos, negId){
+  return Datos.restaurarNegocio(negId, datos).then(res=>{
+    toast('Negocio restaurado ('+res.claves+' tablas)','success'); render(); return true;
+  }).catch(e=>{ reportarError('restaurar el negocio', e); toast(MSJ.noSePudoRestaurar,'error'); return false; });
+}
+export function irPanel(){ STATE.page=''; render(); }
+export function buscarNegocios(v){ STATE.buscaNegocio=v; render(); }
+export function filtrarVendedor(v){ STATE.filtroVendedor=v; render(); }

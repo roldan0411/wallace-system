@@ -1,0 +1,72 @@
+/* ============================================================
+   ESTILOS · Ajustes para pantallas angostas (responsive)
+   Parte 14 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* Responsive */
+
+/* Mejor espaciado: títulos de tarjeta con aire, notas separadas */
+.tarjeta > .t-tit:first-child{display:flex;margin-bottom:12px;}
+.tarjeta .t-tit + .nota,.tarjeta .t-tit + .gris{margin-top:2px;margin-bottom:12px;}
+.tarjeta .nota{line-height:1.6;}
+.tarjeta + .tarjeta{margin-top:16px;}
+.stats + .tarjeta{margin-top:4px;}
+.grid2 > div > .oro.negrita:first-child{display:block;margin-bottom:10px;}
+
+@media(max-width:1000px){
+  .venta-grid{grid-template-columns:1fr;}
+  .carrito{position:static;max-height:none;}
+  .items{flex:none;}
+  .grid2{grid-template-columns:1fr;}
+  .form2{grid-template-columns:1fr;}
+}
+@media(max-width:820px){
+  .app-grid{grid-template-columns:1fr;}
+  .sidebar{position:fixed;left:-280px;top:0;width:260px;z-index:90;transition:left .25s;box-shadow:8px 0 34px rgba(var(--negro-rgb),.6);}
+  .sidebar.abierto{left:0;}
+  .menu-btn{display:block;}
+  .contenido{padding:18px 16px;}
+  .topbar{padding:14px 16px;}
+  .stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}
+  /* Gráficas: barras más angostas y con menos separación para que quepan */
+  .barras{gap:5px;padding-bottom:4px;}
+  .barra{min-width:22px;}
+  .tabla-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .prods{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));}
+}
+@media(max-width:480px){
+  .contenido{padding:14px 11px;}
+  .tarjeta{padding:16px 14px;}
+  .stats{grid-template-columns:repeat(2,1fr);gap:10px;}
+  .stat{padding:13px;}
+  .stat-val{font-size:var(--fs-20);}
+  .t-tit{font-size:var(--fs-15);}
+  .barras{gap:4px;}
+  .barra{min-width:18px;}
+  .b-val{font-size:var(--fs-8-5);}
+  .b-lbl{font-size:var(--fs-9);}
+  h1{font-size:var(--fs-20);}
+  .prods{grid-template-columns:repeat(2,1fr);}
+  .venta-izq .busca-grande{font-size:var(--fs-14);}
+  /* Encabezados de tarjeta: que el buscador y botones se apilen y ocupen el ancho */
+  .t-cab{flex-wrap:wrap;gap:8px;}
+  .t-acc{width:100%;flex-wrap:wrap;gap:8px;}
+  .t-acc .busca{min-width:0;flex:1 1 100%;width:100%;}
+  .t-acc .btn{flex:1;}
+  /* Evitar que cualquier cosa se salga del ancho de la pantalla */
+  .contenido,.tarjeta,.stats{max-width:100%;}
+  .stat-val{overflow-wrap:break-word;}
+  /* Panel super-admin: topbar con muchos botones */
+  .topbar{padding:12px 14px;gap:10px;}
+  .topbar h1{font-size:var(--fs-17);}
+  .sa-marca{font-size:var(--fs-16);}
+  .sa-emblema{width:28px;height:28px;}
+  .tb-der{gap:7px;flex-wrap:wrap;justify-content:flex-end;}
+  .tb-der .btn{font-size:var(--fs-11);padding:7px 9px;}
+  .reloj{font-size:var(--fs-12);width:100%;text-align:right;order:-1;}
+  /* Otras tablas anchas: deslizar en horizontal */
+  .tabla{font-size:var(--fs-12-5);min-width:640px;}
+  .tabla th,.tabla td{padding:8px 9px;white-space:nowrap;}
+  .tabla .acciones{white-space:nowrap;}
+  .acciones .btn{padding:6px 8px;font-size:var(--fs-11);}
+}

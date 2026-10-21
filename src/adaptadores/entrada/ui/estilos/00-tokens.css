@@ -1,0 +1,134 @@
+/* ============================================================
+   ESTILOS · Tokens del tema (TODOS los valores de color, fuente, tamaño y radio)
+   Parte 0: se carga antes que los demás. Los demás CSS no llevan colores ni
+   tamaños escritos a mano: usan estos tokens con var(--nombre).
+   Doc: Documentation/-03-architecture/tema.md
+
+   Tres tipos de token:
+   · ACENTO DEL NEGOCIO (--acento, --acento-c, --acento-o, --acento-rgb, --acento-txt):
+     tema.js los cambia en <body> según el color que eligió cada negocio.
+   · TOKENS QUE CAMBIAN CON EL TEMA CLARO (--bg, --panel, --panel2, --txt, --txt2,
+     --gris, --linea2, --sombra, --sombra-g): se redefinen en body.tema-claro (abajo).
+   · CONSTANTES: valen igual en los dos temas y en todos los negocios.
+   ============================================================ */
+:root{
+  --acento:#01c38e; --acento-c:#2ee6ab; --acento-o:#00a878;
+  --navy:#132d46; --navy-o:#0e2135;
+  --oro:#f5c518; --oro-c:#ffd84d; --oro-o:#d9a80e;
+  --rojo:#ff5c6a; --azul:#4cc9f0; --naranja:#ff9f3c;
+  --bg:#12151d; --panel:#1a1e29; --panel2:#222836;
+  --txt:#eef2f6; --txt2:#c6cfd9; --gris:#8792a1;
+  --linea:rgba(var(--acento-rgb),.35); --linea2:rgba(var(--blanco-rgb),.07);
+  --sombra:0 4px 18px rgba(var(--negro-rgb),.45);
+  --sombra-g:0 10px 34px rgba(var(--negro-rgb),.6);
+  --glow:0 0 16px rgba(var(--acento-rgb),.45);
+  --glow-txt:0 0 12px rgba(var(--acento-rgb),.5);
+  --gold:var(--oro);
+  --acento-rgb:1,195,142;
+  --acento-txt:#ffffff;
+
+  /* Marca Wallace System (fija: no cambia con el color del negocio) */
+  --marca:#01c38e;
+  --marca-c:#2ee6ab;
+  --marca-c2:#4ae5a7;
+  --marca-palido:#eafcf5;
+  --marca-rgb:1,195,142; --marca-c-rgb:46,230,171; --marca-c2-rgb:74,229,167;
+
+  /* Estados (rojo = error/anular, oro = aviso, naranja, azul = información) */
+  --rojo-o:#d63a49; --rojo-oo:#c0293a; --rojo-medio:#e04455;
+  --rojo-rgb:255,92,106; --rojo-o-rgb:214,58,73; --rojo-oo-rgb:192,41,58;
+  --oro-rgb:245,197,24; --oro-o-rgb:217,168,14; --oro-texto:#a67c00; --ambar:#e0a83a;
+  --naranja-c:#ffb254; --naranja-o:#f28018; --naranja-rgb:255,159,60; --naranja-suave-rgb:255,180,84;
+  --coral:#ff8f6e;
+  --azul-rgb:76,201,240; --navy-rgb:19,45,70;
+
+  /* Texto oscuro sobre botones de color (legible sobre verde, oro y naranja) */
+  --tinta-verde:#062318; --tinta-oro:#231a00; --tinta-naranja:#2b1500;
+
+  /* Superficies del tema oscuro */
+  --campo:#141821; --campo-foco:#171c26; --placeholder:#67707e;
+  --tarjeta:#1a1f2a; --tarjeta-2:#212734;
+  --elevada:#1b202b; --elevada-2:#232937; --elevada-0:#20263200;
+  --modal:#242a38; --sidebar-1:#191e28; --sidebar-2:#151923;
+  --hover:#2a3140; --hover-2:#39424f;
+  --panel-oscuro-rgb:26,30,41; --fondo-modal-rgb:6,8,12;
+
+  /* Superficies y detalles del tema claro (se usan dentro de body.tema-claro) */
+  --claro-scroll:#c6ccd8; --claro-scroll-hover:#aab2c2;
+  --claro-placeholder:#98a2b5; --claro-hover:#e8ecf3; --claro-hover-2:#e2e7ef;
+
+  /* Blanco, negro y transparente */
+  --blanco:#ffffff; --negro:#000000; --transparente:#00000000;
+  --blanco-rgb:255,255,255; --negro-rgb:0,0,0;
+
+  /* Pantalla de inicio de sesión (paleta propia) */
+  --login-fondo-1:#0c1a1d; --login-fondo-2:#0a1322; --login-fondo-3:#100e1d;
+  --login-caja-1:#16242c; --login-caja-2:#111a25;
+  --login-azul:#296feb; --login-violeta:#6a39aa;
+  --login-azul-rgb:41,111,235; --login-violeta-rgb:106,57,170; --login-campo-rgb:9,16,24;
+  --login-sub:#93b4c8; --login-pie:#5a8fd4; --login-etiqueta:#a7c4d6; --login-placeholder:#5a6f7d;
+
+  /* Fuentes */
+  --fuente-texto:'Inter',system-ui,sans-serif;
+  --fuente-titulos:'Montserrat',sans-serif;
+
+  /* Tamaños de letra que usa la interfaz hoy (26 pasos: consolidarlos es parte del rediseño) */
+  --fs-8:8px;
+  --fs-8-5:8.5px;
+  --fs-9:9px;
+  --fs-9-5:9.5px;
+  --fs-10:10px;
+  --fs-10-5:10.5px;
+  --fs-11:11px;
+  --fs-11-5:11.5px;
+  --fs-12:12px;
+  --fs-12-5:12.5px;
+  --fs-13:13px;
+  --fs-13-5:13.5px;
+  --fs-14:14px;
+  --fs-15:15px;
+  --fs-16:16px;
+  --fs-17:17px;
+  --fs-18:18px;
+  --fs-19:19px;
+  --fs-20:20px;
+  --fs-21:21px;
+  --fs-22:22px;
+  --fs-26:26px;
+  --fs-32:32px;
+  --fs-33:33px;
+  --fs-36:36px;
+  --fs-42:42px;
+
+  /* Radios de las esquinas */
+  --radio-6:6px;
+  --radio-7:7px;
+  --radio-8:8px;
+  --radio-9:9px;
+  --radio-10:10px;
+  --radio-11:11px;
+  --radio-12:12px;
+  --radio-13:13px;
+  --radio-14:14px;
+  --radio-16:16px;
+  --radio-18:18px;
+  --radio-20:20px;
+  --radio-22:22px;
+  --radio-26:26px;
+  --radio-pildora:99px; --radio-circulo:50%;
+}
+/* F23: los tokens hechos con el acento se recalculan en <body>, donde tema.js pone el color
+   del negocio (en :root se calculaban una sola vez con el verde por defecto) */
+body{
+  --linea:rgba(var(--acento-rgb),.35);
+  --glow:0 0 16px rgba(var(--acento-rgb),.45);
+  --glow-txt:0 0 12px rgba(var(--acento-rgb),.5);
+}
+/* Tema claro (elegible por negocio): solo cambia estos tokens; los demás quedan iguales */
+body.tema-claro{
+  --bg:#eef1f6; --panel:#ffffff; --panel2:#f3f5f9;
+  --txt:#1a1e29; --txt2:#3a4250; --gris:#69748a;
+  --linea2:rgba(var(--navy-rgb),.10);
+  --sombra:0 2px 12px rgba(var(--navy-rgb),.08);
+  --sombra-g:0 10px 30px rgba(var(--navy-rgb),.16);
+}

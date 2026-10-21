@@ -1,0 +1,38 @@
+/* ============================================================
+   ESTILOS · Cliente fijo y autocompletar clientes en Nueva Venta
+   Parte 5 de 15. Se cargan en orden desde index.html: el orden importa
+   (una regla posterior pisa a una anterior). Antes estaban dentro de <style>.
+   ============================================================ */
+/* Cliente fijo (venta rápida) */
+.cli-fijo{padding:11px 14px;background:rgba(var(--acento-rgb),.1);border:1px solid rgba(var(--acento-rgb),.3);
+  border-radius:var(--radio-10);margin-bottom:9px;font-size:var(--fs-14);font-weight:700;color:var(--acento-c);}
+
+/* Autocompletar clientes en Nueva Venta */
+.cli-busca-wrap{display:flex;flex-direction:column;}
+.cli-busca-wrap .campo{margin-bottom:9px;}
+.cli-sugerencias{display:none;margin:-2px 0 9px;
+  background:var(--tarjeta);border:1px solid var(--acento);border-radius:var(--radio-10);overflow:hidden;
+  box-shadow:0 8px 24px rgba(var(--negro-rgb),.4),0 0 14px rgba(var(--acento-rgb),.18);max-height:230px;overflow-y:auto;}
+.cli-sugerencias.abierta{display:block;}
+.cli-sug-item{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 13px;cursor:pointer;
+  border-bottom:1px solid rgba(var(--blanco-rgb),.06);}
+.cli-sug-item:last-child{border-bottom:none;}
+.cli-sug-item:hover,.cli-sug-item:active{background:rgba(var(--acento-rgb),.14);}
+.cli-sug-nom{font-weight:700;font-size:var(--fs-13);}
+.cli-sug-tel{font-size:var(--fs-12);color:var(--acento-c);text-align:right;white-space:nowrap;}
+.cli-sug-dir{grid-column:1/-1;font-size:var(--fs-11);color:var(--gris);}
+.cli-sug-ped{grid-column:1/-1;font-size:var(--fs-10-5);color:var(--ambar);font-weight:600;}
+.m-row{margin-bottom:13px;}
+.m-row label{display:block;font-size:var(--fs-12);color:var(--gris);margin-bottom:5px;font-weight:600;}
+.m-row input,.m-row select,.m-row textarea{width:100%;padding:11px 14px;background:var(--campo);
+  border:1px solid var(--linea2);border-radius:var(--radio-10);color:var(--txt);}
+.m-row input:focus,.m-row select:focus,.m-row textarea:focus{outline:none;border-color:var(--acento);
+  box-shadow:0 0 0 3px rgba(var(--acento-rgb),.15);}
+.form2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;}
+.chk{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--campo);
+  border:1px solid var(--linea2);border-radius:var(--radio-10);cursor:pointer;font-size:var(--fs-13);}
+.chk input{width:16px;height:16px;accent-color:var(--acento);cursor:pointer;}
+.nota{font-size:var(--fs-12);color:var(--gris);margin-top:-4px;margin-bottom:10px;}
+.suc-fila{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+.suc-fila .campo{margin-bottom:0;}
