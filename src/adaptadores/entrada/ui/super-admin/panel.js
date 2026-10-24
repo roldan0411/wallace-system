@@ -15,6 +15,7 @@ import { conCuentasFirebase } from '../usuarios/sesion.js';
 import { tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
 import { pillPrueba, tarjetaPorVencer } from './pruebas.js';
 import { resumenDe } from '../reportes/resumen.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 
 // ============================================================
@@ -126,7 +127,7 @@ export function panelSuperAdmin(){
   <div class="topbar">
     <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
       <span class="sa-marca">Panel de <span>Super-Admin</span></span>
-      <span class="pill pill-oro">Dueño del sistema</span></h1>
+      <span class="pill pill-oro">${STATE.user.rolSuper==='ayudante'?'Ayudante del sistema':'Dueño del sistema'}</span></h1>
     <div class="tb-der">
       <span class="fb-dot off" id="fb-status" title="Conexión"></span>
       <span class="reloj" id="reloj"></span>
@@ -135,6 +136,7 @@ export function panelSuperAdmin(){
         <input type="file" id="resp-archivo" accept=".json,application/json" class="oculto" data-change="cargarRespaldo(this)">`:''}
       ${sinCifras?`<button class="btn btn-sm btn-naranja" data-click="calcularResumenes()" title="Negocios sin cifras publicadas todavía">📊 Calcular cifras (${sinCifras})</button>`:''}
       ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irAdministradores()">👥 Administradores</button>`:''}
+      ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irHistorialSistema()" title="Quién hizo qué en el sistema">🕘 Historial</button>`:''}
       ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="abrirMigracion()">🔐 Cuentas</button>`:''}
       ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="pasarAMiCorreo()" title="Entrar con tu correo real y poder recuperar la contraseña por correo">📧 Mi correo</button>`:''}
       <button class="btn btn-sm" data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
@@ -201,7 +203,7 @@ export function panelSuperAdmin(){
           <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
           <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
           <td data-label="Usuarios">${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
-          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
           <td class="acciones" data-label="Acciones">
             <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
             <button class="btn btn-sm" data-click="configNegocio('${escapeHtml(n.id)}')">Configurar</button>
@@ -211,7 +213,7 @@ export function panelSuperAdmin(){
             <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Suspender':'Activar'}</button>
             ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(n.id)}')" title="Eliminar empresa">🗑️</button>`:''}
           </td>
-        </tr>`).join('') : '<tr><td colspan="8" class="gris">No hay negocios. Crea el primero.</td></tr>'}
+        </tr>`).join('') : '<tr><td colspan="9" class="gris">No hay negocios. Crea el primero.</td></tr>'}
         </tbody>
       </table></div>
     </div>
@@ -241,6 +243,7 @@ export function descargarRespaldo(){
       document.body.appendChild(a); a.click();
       setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },500);
       toast('Respaldo descargado: '+nombre,'success');
+      anotarEnSistema(Dominio.sistema.ACCION.descargarRespaldo, null, null, null, parcial?'Parcial':'Completo');
     }catch(e){ reportarError('el respaldo', e); toast(MSJ.noSePudoGenerarElRespaldo,'error'); }
   };
   Datos.exportarTodo().then(r=>{
@@ -287,7 +290,9 @@ export function elegirNegocioARestaurar(r){
 }
 export function restaurarNegocioDesde(datos, negId){
   return Datos.restaurarNegocio(negId, datos).then(res=>{
-    toast('Negocio restaurado ('+res.claves+' tablas)','success'); render(); return true;
+    toast('Negocio restaurado ('+res.claves+' tablas)','success');
+    anotarEnSistema(Dominio.sistema.ACCION.restaurarNegocio, (DB.get('negocios')||[]).find(n=>n.id===negId)||{id:negId}, null, null, res.claves+' tablas');
+    render(); return true;
   }).catch(e=>{ reportarError('restaurar el negocio', e); toast(MSJ.noSePudoRestaurar,'error'); return false; });
 }
 export function irPanel(){ STATE.page=''; render(); }

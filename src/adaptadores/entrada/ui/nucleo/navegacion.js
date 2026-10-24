@@ -17,6 +17,7 @@ import { usuariosNeg } from '../usuarios/usuarios-negocio.js';
 import { pantallaMigracion } from '../usuarios/migracion-cuentas.js';
 import { panelSuperAdmin } from '../super-admin/panel.js';
 import { pantallaSuperAdmins } from '../super-admin/administradores.js';
+import { pantallaHistorialSistema } from '../super-admin/historial-sistema.js';
 import { bannerPrueba } from '../super-admin/pruebas.js';
 import { nuevaVenta } from '../ventas/nueva-venta.js';
 import { cuentas, usaCuentas } from '../ventas/cuentas-abiertas.js';
@@ -217,7 +218,7 @@ export function vistaNegocio(){
     </aside>
     <div class="main">
       ${STATE.modoSupervision?`<div class="banner-sup">
-        <span>👁️ Modo supervisión — viendo como Super-Admin</span>
+        <span>👁️ Supervisando ${escapeHtml(neg.nombre)} como ${escapeHtml((STATE._superUser&&STATE._superUser.nombre)||'Super-Admin')}</span>
         <button class="btn btn-sm btn-gold" data-click="volverSuperAdmin()">← Volver al panel</button>
       </div>`:''}
       ${bannerPrueba(neg)}
@@ -259,6 +260,7 @@ export function render(){
     if(STATE.page.indexOf('config:')===0){ app.innerHTML=pantallaConfig(STATE.page.split(':')[1]); return; }
     if(STATE.page.indexOf('usuarios:')===0){ app.innerHTML=pantallaUsuarios(STATE.page.split(':')[1]); return; }
     if(STATE.page==='superadmins'){ app.innerHTML=pantallaSuperAdmins(); return; }
+    if(STATE.page==='historial'){ app.innerHTML=pantallaHistorialSistema(); return; }
     if(STATE.page==='migracion'){ app.innerHTML=esAdminSistema()?pantallaMigracion():panelSuperAdmin(); return; }
     app.innerHTML=panelSuperAdmin();
     return;

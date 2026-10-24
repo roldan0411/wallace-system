@@ -15,6 +15,8 @@ import { migrarContrasenasLegado } from './cuentas.js';
 import { dejarRecuperaciones, escucharRecuperaciones, recordarPassDelLogin } from './recuperacion.js';
 import { fijarFacturaReservada } from '../ventas/nueva-venta.js';
 import { fijarResumenNeg } from '../reportes/resumen.js';
+import { rastroSupervision } from '../super-admin/negocios.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ============================================================
@@ -64,7 +66,7 @@ export function borrarPerfilLocal(){ try{ localStorage.removeItem(CLAVE_PERFIL);
 export function login(usuario, pass){
   const sa=(DB.get('superadmins')||[]).find(s=>s.usuario===usuario && verificarPass(s,pass));
   if(sa){
-    STATE.user={id:sa.id, nombre:sa.nombre, rol:'superadmin', rolSuper:sa.rolSuper||'dueno'};
+    STATE.user={id:sa.id, nombre:sa.nombre, usuario:sa.usuario, rol:'superadmin', rolSuper:sa.rolSuper||'dueno'};
     STATE.esSuperAdmin=true; STATE.negocio=null; STATE.page='';
     return {ok:true, tipo:'super'};
   }
@@ -212,6 +214,10 @@ export function negocioCambiado(n){
   if(!n.activo){ toast(MSJ.esteNegocioFueSuspendidoContactaAl,'error'); logout(); }
 }
 export function logout(){
+  if(STATE.modoSupervision && STATE.negocio){   // P15 y P2
+    rastroSupervision(STATE.negocio.id, 'Salió de supervisar', STATE._superUser);
+    anotarEnSistema(Dominio.sistema.ACCION.salirSupervision, STATE.negocio);
+  }
   STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false;
   STATE.debeCambiarPass=false; recordarPassDelLogin(''); dejarRecuperaciones();
   STATE.modoSupervision=false; STATE.sucursal=null;

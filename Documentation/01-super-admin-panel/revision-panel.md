@@ -1,6 +1,6 @@
 # Revisión del panel de super-admin (para reestructurarlo)
 
-> 2026-10-14. **Para revisión del usuario, sin implementar.** Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
+> 2026-10-14. **Para revisión del usuario.** 2026-10-24: **etapas 1 y 2 corregidas** (la 2 es P2, historial del sistema) (P1, P3, P8, P11, P15, P16 solo la pastilla del rol, P21, P22), con las decisiones del usuario anotadas en la sección 5. El resto sigue sin implementar. Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
 > Cada punto sale del código actual. Entre paréntesis va dónde está, con rutas relativas a `src/adaptadores/entrada/`. La numeración sirve para responder ("sí a P3, no a P7…").
 
 Leyenda de prioridad: 🔴 falla o riesgo real · 🟠 flujo incompleto · 🟡 mejora.
@@ -104,10 +104,25 @@ Leyenda de prioridad: 🔴 falla o riesgo real · 🟠 flujo incompleto · 🟡 
 | U13 | **Identidad del rol.** La pastilla dice el rol real (Dueño, Ayudante o Vendedor), y en supervisión el banner dice "Estás supervisando *Negocio* como *Ana* · [Volver al panel]". | Hoy el ayudante ve "Dueño del sistema" y dentro del negocio se llama "Supervisor" (P15, P16). |
 | U14 | **Mismo lenguaje en todos los botones.**<br>• "Suspender" (clientes) y "Pausar" (demos), "Informe" y "Reporte mensual en PDF", "Eliminar" y "🗑️" y "×" son el mismo concepto con nombres distintos: elegir uno por acción.<br>• Botones con texto, no solo con emoji. | Es más fácil de aprender y de leer para un lector de pantalla. |
 
+## 5. Etapa 1 corregida (2026-10-24)
+
+| # | Decisión del usuario | Qué se hizo |
+|---|---|---|
+| P1 | Aprobado | Sin campo de contraseña: clave al azar mostrada una vez (`mostrarAccesoNegocio`); con cuentas, `debeCambiarPass:true` desde que nace el perfil. |
+| P3 | Lista + "Otro" con texto obligatorio | `suspenderNegocio` + `Dominio.negocio.suspension`; `suspendidoDesde` y `motivoSuspension` reservados (dominio y `database.rules.json`); el panel muestra desde cuándo y por qué; activar los borra. Las demos se pausan sin motivo. |
+| P8 | Preguntar al guardar un plan distinto | "Aplicar lo del plan" usa `planDe(neg)` (antes, siempre Profesional); al guardar otro plan, `preguntarDespues` → `aplicarVentanasDelPlan`. |
+| P11 | Desactivar primero | `Dominio.permisos.dejaSinAdmin`: el último admin activo no se borra, ni se desactiva, ni pierde el rol. Quitar a alguien abre una ventana con su nombre y rol: "Desactivar" (principal) o "Eliminar definitivamente" (rojo). |
+| P15 | Aprobado | "Supervisor: <nombre>" en la auditoría, banner "Supervisando X como Y", entrada y salida registradas (`rastroSupervision`). |
+| P16 | Falla evidente (solo la pastilla) | "Ayudante del sistema" para el ayudante. Las otras 4 partes de P16 siguen pendientes. |
+| P21 | Falla evidente | `colspan` 9 (negocios) y 6 (usuarios). |
+| P22 | Documentación vieja | Sección 10 de [01-super-admin-panel](01-super-admin-panel.md) al día. |
+
+Pruebas: dominio (`suspension`, `dejaSinAdmin`), reglas (los campos nuevos no los escribe el admin del negocio), recorrido ("panel, etapa 1") y `s1-navegador` (entrar con la clave mostrada; el admin creado por un vendedor nace con `debeCambiarPass`).
+
 ## 4. Orden sugerido (si se aprueba)
 
-1. **Riesgo, poco trabajo:** P1, P3, P11, P15, P16 (pastilla del rol), P21.
-2. **Rastro:** P2 (bitácora del sistema). Es la base de la ficha del negocio y del historial.
+1. ~~**Riesgo, poco trabajo:** P1, P3, P11, P15, P16 (pastilla del rol), P21.~~ Hecho el 2026-10-24 (sección 5).
+2. ~~**Rastro:** P2 (bitácora del sistema).~~ Hecho el 2026-10-24: solo el dueño lo ve, se anota todo lo de negocios y cuentas, botón "🕘 Historial" ([01-super-admin-panel](01-super-admin-panel.md), sección 14).
 3. **Estructura nueva:** U1, U2 y U3 (menús, pestañas, ficha del negocio), junto con U7, U8, U10 y U11. Antes y después, tomar capturas (`node scripts/capturas.mjs`).
 4. **Cobros:** P6 y P7 (modelo de pagos y reglas: `pagos` en `negocios_r/<id>`, que solo escriben el dueño y el ayudante), U4 y U5.
 5. **El resto:** P4, P5/U9, P8–P10, P12–P14, P17–P20, U6, U12–U14.

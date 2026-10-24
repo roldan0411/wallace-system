@@ -39,21 +39,28 @@ Las restricciones se aplican en el cliente (se ocultan botones y las funciones v
 ## 4. Flujos principales
 
 ### 4.1 Crear negocio (`nuevoNegocio`, `ui/super-admin/negocios.js`)
-1. Modal: nombre*, tipo (perfil), ciudad, plan (Básico/Profesional/Premium), precio mensual (por defecto 149.900), usuario* y contraseña* del administrador, vendedor a cargo y flujo de cobro (directo / confirmar y luego cobrar).
+1. Modal: nombre*, tipo (perfil), ciudad, plan (Básico/Profesional/Premium), precio mensual (por defecto 149.900), usuario* del administrador, vendedor a cargo y flujo de cobro (directo / confirmar y luego cobrar). **No pide contraseña** (P1, 2026-10-24): se crea al azar (`Cripto.claveAleatoria(10)`).
 2. Valida que el usuario no exista ni en `usuarios` ni en `superadmins`.
 3. Copia el perfil del tipo (`PERFILES`, ver [11](../11-business-settings/11-business-settings.md)) al negocio: vocabulario, `usaMesas/usaCocina/usaRecetas/usaCitas`, `tiposEntrega`, `funciones`, `usaCaja`, `esLogistica`.
 4. Valores por defecto: `tipoFactura:'pos'`, `pctDatafono:0`, `sonidos:true`, `tema:'claro'`, `sucursales:[]`, `activo:true`.
-5. Crea el usuario `rol:'admin'` del negocio.
+5. Crea el usuario `rol:'admin'` del negocio. Con cuentas de Firebase, su perfil nace con `debeCambiarPass:true` (`crearCuentaPara(rec, clave, false, {debeCambiarPass:true})`): al primer ingreso elige su propia contraseña.
+5b. Al terminar, `mostrarAccesoNegocio` muestra usuario y contraseña **una sola vez** (no se guarda legible en ningún lado), como las demos.
 6. **Periodo de prueba** (campos del final del formulario, sección 11): "A prueba" o "Sin prueba (ya paga)", días (30 por defecto) y "Cargar productos de ejemplo". Si queda a prueba, después de guardar llama a `Pruebas.iniciar`. El vendedor no ve "Sin prueba" ni "Vendedor a cargo": el negocio queda a prueba y a su nombre.
 
 ### 4.2 Suspender / activar (`toggleNegocio`, `ui/super-admin/negocios.js`)
-Invierte `activo`. Un negocio suspendido no deja iniciar sesión a sus usuarios ("Este negocio está suspendido. Contacta al proveedor."). Los usuarios ya conectados siguen dentro hasta salir.
+- **Suspender un cliente** (P3, 2026-10-24): `suspenderNegocio` pide confirmación con **motivo** (Falta de pago · Solicitud del cliente · Otro, con detalle obligatorio en "Otro"; `Dominio.negocio.suspension`). Guarda `activo:false`, `suspendidoDesde` y `motivoSuspension`; la tabla del panel muestra desde cuándo y por qué.
+- **Activar**: sin confirmación; borra `suspendidoDesde` y `motivoSuspension`.
+- **Demos**: se pausan y activan sin motivo (el vendedor, solo las suyas).
+
+Un negocio suspendido no deja iniciar sesión a sus usuarios ("Este negocio está suspendido. Contacta al proveedor."). Los usuarios ya conectados siguen dentro hasta salir.
 
 ### 4.3 Eliminar negocio (`eliminarNegocio`, `ui/super-admin/negocios.js`) — solo `dueno`
 Doble confirmación (aviso + escribir el nombre exacto). Borra el registro del negocio, sus usuarios y, para cada tabla de `TABLAS`, las claves `''`, `_r`, `_x`, `_bk` (local y nube), además de cualquier clave `data_<id>_*` presente en el caché. Irreversible.
 
 ### 4.4 Supervisar un negocio (`entrarComoNegocio`, `ui/super-admin/negocios.js`)
-Guarda el super-admin en `STATE._superUser` y entra con un usuario sintético `{nombre:'Supervisor', rol:'admin', esSupervisor:true}` (todos los permisos). Muestra un banner "Modo supervisión" con "← Volver al panel" (`volverSuperAdmin`, `ui/super-admin/negocios.js`), que restaura el usuario original con su `rolSuper`. Un vendedor solo puede supervisar demos.
+Guarda el super-admin en `STATE._superUser` (si ya supervisaba otro negocio, conserva el que había) y entra con un usuario sintético `{nombre:'Supervisor: <nombre real>', rol:'admin', esSupervisor:true}` (todos los permisos; P15, 2026-10-24). El banner dice "Supervisando <negocio> como <nombre>" con "← Volver al panel" (`volverSuperAdmin`, `ui/super-admin/negocios.js`), que restaura el usuario original con su `rolSuper`. Un vendedor solo puede supervisar demos.
+
+`rastroSupervision` deja en la **auditoría del negocio** "Entró a supervisar" (después de fijar el negocio activo) y "Salió de supervisar" (al volver o al salir de la sesión), con el nombre y el rol del super-admin.
 
 ### 4.5 Demos
 
@@ -104,6 +111,7 @@ Selector de mes y ventana imprimible (carta) con: ventas del mes (usa `subtotal`
 |---|---|
 | `id`, `nombre`, `tipo`, `ciudad`, `nit`, `tel`, `dir`, `eslogan`, `logo` (data URL PNG) | Identificación |
 | `plan`, `precioMes`, `diaPago`, `activo`, `creado` | Comercial y estado |
+| `suspendidoDesde` (ISO), `motivoSuspension` | Solo mientras está suspendido (P3). Reservados: solo los escribe el super-admin |
 | `vendedorId`, `vendedorNombre`, `notasComerciales` | Comercial |
 | `esDemo`, `demoDe` | Demo y su creador |
 | `funciones[]` | Ventanas habilitadas (ver [11](../11-business-settings/11-business-settings.md)) |
@@ -130,7 +138,10 @@ Ventas pagadas de cada negocio (`data_<id>_ventas` y, por compatibilidad, `data_
 | `crearVariosDemos()` | `ui/super-admin/demos.js` | Acción UI | Todos | Crea 5 demos. |
 | `crearDemoDeTipo(tipo, cerrar)` | `ui/super-admin/demos.js` | Servicio | Las dos anteriores | Lógica de creación de un demo lleno. Devuelve `true` si lo creó. |
 | `asignarVendedor(id)` | `ui/super-admin/negocios.js` | Acción UI | Dueño/ayudante | Vendedor y notas comerciales. |
-| `toggleNegocio(id)` | `ui/super-admin/negocios.js` | Acción UI | Todos (vendedor solo ve sus demos) | Activa/suspende. |
+| `toggleNegocio(id)` | `ui/super-admin/negocios.js` | Acción UI | Todos (vendedor solo ve sus demos) | Activa; un cliente activo pasa a `suspenderNegocio`; las demos se pausan directo. |
+| `suspenderNegocio(id)` | `ui/super-admin/negocios.js` | Acción UI | Dueño/ayudante | Suspende con motivo (P3). |
+| `mostrarAccesoNegocio(nombre, usuario, clave)` | `ui/super-admin/negocios.js` | Interna | `nuevoNegocio` | Muestra el acceso inicial una vez (P1). |
+| `rastroSupervision(negId, accion, superUser)` | `ui/super-admin/negocios.js` | Interna | Supervisión, `logout` | Entrada y salida en la auditoría del negocio (P15). |
 | `eliminarNegocio(id)` | `ui/super-admin/negocios.js` | Acción UI | Dueño (valida) | Borrado total del negocio. |
 | `eliminarDemoVendedor(id)` | `ui/super-admin/demos.js` | Acción UI | Vendedor/admins | Borra un demo. |
 | `entrarComoNegocio(id)` | `ui/super-admin/negocios.js` | Acción UI | Todos (vendedor solo demos) | Modo supervisión. |
@@ -159,10 +170,12 @@ Clases de `index.html`: `.topbar`, `.sa-emblema`, `.sa-marca`, `.stats/.stat` (v
 
 ## 10. Limitaciones conocidas
 
-- No existe control de pagos real (fechas de pago, mora); `activo` es manual.
-- Las listas de planes difieren: al crear se ofrece **Premium**, en configuración **Empresarial**.
+- No existe control de pagos real (fechas de pago, mora); `activo` es manual (P6 de la revisión del panel).
+- ~~Lo que hace un super-admin sobre un negocio no dejaba rastro~~: historial del sistema (P2, sección 14).
+- ~~Las listas de planes difieren (Premium / Empresarial)~~: hoy son Básico, Profesional y Premium en todas partes; un `Empresarial` viejo se lee como Premium (`planDe`).
 - ~~`toggleNegocio` no validaba rol~~: corregido; un vendedor solo pausa sus demos y las funciones de gestión validan `esAdminSistema()` ([-02](../-02-corrections/-02-corrections.md)).
-- No hay restauración de respaldo desde la app.
+- ~~No hay restauración de respaldo desde la app~~: existe, sección 13.
+- ~~Todos los negocios nuevos nacían con la clave `admin123`~~: clave al azar mostrada una vez (P1, 2026-10-24).
 
 Ver [-01-to-review](../-01-to-review/-01-to-review.md). Revisión para reestructurar el panel (flujos incompletos y UI/UX, sin implementar): [revision-panel](revision-panel.md).
 
@@ -246,3 +259,13 @@ Sin `rolSuper` en el perfil se trata como dueño (perfiles anteriores). El rango
 - **Respaldo** (`descargarRespaldo`): si no se puede leer la base, pregunta y baja un archivo `respaldo-wallace-PARCIAL-<fecha>.json` (con `parcial:true`): con cuentas, el panel casi no tiene datos de los negocios. Antes bajaba esa copia con el nombre de un respaldo completo.
 - **Restaurar un negocio** ("♻️ Restaurar", **solo el dueño del sistema**): se elige el archivo, el negocio y se confirma escribiendo su nombre. `Datos.restaurarNegocio(negId, datos)` (puerto + adaptador) reemplaza su registro (`negocios_r/<id>`) y **todas** sus tablas por las del respaldo (lo que no esté, se borra), en una sola escritura; lo que las reglas rechazarían (logo, ids: S8) se limpia antes. Las cuentas de acceso (`perfiles`, `login`) no se tocan. Sirve con respaldos de la nube y con los parciales (formato del equipo).
 - Pruebas: integración contra el emulador (vuelve todo como estaba, limpia lo inválido, rechaza un negocio que no está) y recorrido en modo local.
+
+## 14. Historial del sistema (P2, 2026-10-24)
+
+Lo que hace cada super-admin sobre negocios y cuentas queda en `auditoria_sistema` ([modelo de datos](../-03-architecture/modelo-de-datos.md), 3.6). Decisiones del usuario: lo ve **solo el dueño**, se anota **todo lo de negocios y cuentas** con antes y después, y se ve en el botón **"🕘 Historial"** del panel.
+
+- **Anotar**: `anotarEnSistema(accion, negocio, antes, despues, detalle)` (`ui/super-admin/historial-sistema.js`) arma la entrada con `Dominio.sistema.entrada` (quién es el super-admin, aunque esté supervisando) y la guarda con `Datos.registrarSistema` (puerto + adaptador; la fecha la pone el servidor). Si no se guarda, `reportarError`.
+- **Qué se anota** (`Dominio.sistema.ACCION`): crear, configurar (solo si algo cambió), aplicar el plan, suspender/activar/pausar, eliminar, vendedor, sucursales, prueba (iniciar, más días, pasar a pago), demos, entrar/salir de supervisión, usuarios del negocio (crear, editar, desactivar, eliminar), administradores, contraseña temporal, descartar solicitud, mi contraseña, mi correo (se anota **antes** de mover el perfil), migrar o borrar cuentas, respaldo y restaurar.
+- **Pantalla** (`pantallaHistorialSistema`, `STATE.page='historial'`): las últimas 500 (`Datos.leerHistorialSistema`), la más nueva primero, con filtros por negocio, persona, acción y texto (`Dominio.sistema.filtrar`) y los cambios "campo: antes → después". El ayudante no ve el botón y, si entra a la página, ve el candado.
+- **Pruebas**: dominio (`tests/dominio/sistema.test.mjs`), reglas cerradas y de transición (a su nombre, fecha del servidor, sin editar ni borrar, solo el dueño lee) y recorrido ("panel, etapa 2").
+- **Falta**: mostrarlo en la ficha de cada negocio cuando exista (U3).

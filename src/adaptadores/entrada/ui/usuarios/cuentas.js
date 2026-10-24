@@ -11,6 +11,7 @@ import { esAdminSistema } from '../nucleo/permisos.js';
 import { abrirModal, cerrarModal, reportarError, toast } from '../nucleo/componentes.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from './sesion.js';
 import { logAudit } from './auditoria.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ============================================================
@@ -24,10 +25,11 @@ export function miUid(){ const u=STATE._superUser||STATE.user; return (u&&u.uid)
 export function perfilPara(rec, esSuper){
   return esSuper ? Dominio.cuentas.perfilDesdeSuperAdmin(rec) : Dominio.cuentas.perfilDesdeUsuario(rec, PANTALLAS_POR_ROL);
 }
-// Crea la cuenta de Firebase de un usuario o administrador nuevo, con su perfil e índice
-export async function crearCuentaPara(rec, pass, esSuper){
+// Crea la cuenta de Firebase de un usuario o administrador nuevo, con su perfil e índice.
+// extraPerfil: campos que el perfil lleva desde que nace (p. ej. {debeCambiarPass:true}).
+export async function crearCuentaPara(rec, pass, esSuper, extraPerfil){
   const cuenta=await Cuentas.crearCuentaAjena(pass);
-  const perfil=perfilPara(rec, esSuper);
+  const perfil=Object.assign(perfilPara(rec, esSuper), extraPerfil||{});
   perfil.migradoEn=now(); perfil.creadoPor=miUid();
   await Cuentas.guardarCuenta({uid:cuenta.uid, correo:cuenta.correo, usuario:rec.usuario, perfil});
   return cuenta;
@@ -120,6 +122,7 @@ export function cambiarMiPassCuenta(){
     if(d.nueva!==d.nueva2){ toast(MSJ.lasContrasenasNuevasNoCoinciden,'error'); return; }
     Cuentas.cambiarMiPass(d.actual, d.nueva).then(()=>{
       if(STATE.negocio && !STATE.esSuperAdmin) logAudit('Cambió su contraseña', STATE.user.nombre);
+      if(STATE.esSuperAdmin) anotarEnSistema(Dominio.sistema.ACCION.cambiarMiPass);
       cerrarModal(); toast(MSJ.contrasenaActualizada,'success');
     }).catch(e=>toast(e&&e.codigo==='credenciales'?'La contraseña actual no coincide':mensajeCuenta(e),'error'));
   }});

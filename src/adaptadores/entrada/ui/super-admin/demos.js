@@ -15,6 +15,7 @@ import { abrirModal, cerrarModal, confirmarModal, reportarError, toast } from '.
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from '../usuarios/sesion.js';
 import { borrarCuentasDeNegocio, crearCuentaPara, ponerUidUsuario, trabajarEn } from '../usuarios/cuentas.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 // Las plantillas viven en el dominio; el nombre se conserva para las pruebas y la consola
 export const DEMO_PLANTILLAS = Dominio.ejemplos.PLANTILLAS;
@@ -72,6 +73,7 @@ export function crearDemoDeTipo(tipoDemo, cerrarYMostrar){
       .catch(e=>toast('Demo creado, pero su usuario no pudo activarse: '+mensajeCuenta(e),'error'));
   } else ponerPass(d.admin, clave);
   DB.set('usuarios', usuarios.concat([d.admin]));
+  anotarEnSistema(Dominio.sistema.ACCION.crearDemo, d.negocio, null, null, tipoDemo);
   // Registro por registro (como el resto de la app): sin tablas en formato viejo ni copias _bk
   Datos.guardarEn(negId, 'productos', d.productos);
   Datos.guardarEn(negId, 'clientes', d.clientes);
@@ -102,6 +104,7 @@ export function eliminarDemoVendedor(id){
       // quedaba desactualizada al agregar tablas nuevas).
       Datos.borrarDatosNegocio(id);
       DB.set('negocios', (DB.get('negocios')||[]).filter(x=>x.id!==id));
+      anotarEnSistema(Dominio.sistema.ACCION.eliminarDemo, n);
       toast('Demo "'+n.nombre+'" borrado','info');
     }catch(e){ reportarError('borrar el demo', e); }
     render();

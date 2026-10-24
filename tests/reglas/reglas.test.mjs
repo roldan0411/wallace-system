@@ -98,7 +98,7 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
     const a=db('admin1');
     await assertSucceeds(a.ref('data/negocios_r/N1/nombre').set('Uno SAS'));
     await assertSucceeds(a.ref('data').update({'negocios_r/N1/logo':'data:image/png;base64,iVBORw0KGgo=', 'negocios_r/N1/inventarioApagado':true}));
-    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id']){
+    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension']){
       await assertFails(a.ref('data/negocios_r/N1/'+campo).set(campo==='activo'));
     }
     await assertFails(a.ref('data/negocios_r/N1').set({id:'N1', nombre:'todo'}));   // registro entero: solo super-admin
@@ -218,6 +218,24 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
   });
   // Super-admin vendedor: solo sus negocios (vendedorId) y sus demos (demoDe)
   const activo=(uid, neg)=>db(uid).ref('perfiles/'+uid+'/negocioActivo').set(neg);
+  test('historial del sistema (P2): cada super-admin anota a su nombre, solo agregar; lo lee solo el dueño', async ()=>{
+    const e=(uid, id)=>({id, quienUid:uid, accion:'Suspendió el negocio', negocioId:'N1', fecha:{'.sv':'timestamp'}});
+    await assertSucceeds(db('ayu').ref('auditoria_sistema/h1').set(e('ayu','h1')));
+    await assertSucceeds(db('vend1').ref('auditoria_sistema/h2').set(e('vend1','h2')));
+    await assertSucceeds(db('sa').ref('auditoria_sistema/h3').set(e('sa','h3')));
+    await assertFails(db('ayu').ref('auditoria_sistema/h4').set(e('sa','h4')));                          // a nombre de otro
+    await assertFails(db('ayu').ref('auditoria_sistema/h5').set(Object.assign(e('ayu','h5'), {fecha:1})));  // fecha inventada
+    await assertFails(db('ayu').ref('auditoria_sistema/h6').set(e('ayu','otro')));                       // id distinto
+    await assertFails(db('ayu').ref('auditoria_sistema/h1').set(e('ayu','h1')));                         // no se reescribe
+    await assertFails(db('sa').ref('auditoria_sistema/h1/accion').set('otra'));                          // ni se edita
+    await assertFails(db('sa').ref('auditoria_sistema/h1').remove());                                    // ni se borra
+    await assertFails(db('cajero1').ref('auditoria_sistema/h7').set(e('cajero1','h7')));                 // la gente del negocio no
+    await assertFails(db('saOff').ref('auditoria_sistema/h8').set(e('saOff','h8')));                     // inactivo no
+    await assertSucceeds(db('sa').ref('auditoria_sistema').once('value'));
+    await assertFails(db('ayu').ref('auditoria_sistema').once('value'));
+    await assertFails(db('vend1').ref('auditoria_sistema/h2').once('value'));
+    await assertFails(db(null).ref('auditoria_sistema').once('value'));
+  });
   test('vendedor: lee solo sus negocios (y la lista, solo con la consulta por su id); nada global', async ()=>{
     const v=db('vend1');
     await assertSucceeds(v.ref('data/negocios_r/NV').once('value'));
@@ -321,6 +339,13 @@ describe('reglas de transición (database.rules.transicion.json)', {skip:!HAY_EM
     await assertSucceeds(db(null).ref('recuperaciones/caja1').set({usuario:'caja1', estado:'pendiente', fecha:serverTimestamp()}));
     await assertFails(db(null).ref('recuperaciones/nadie').set({usuario:'nadie', estado:'pendiente', fecha:serverTimestamp()}));
     await assertFails(db(null).ref('recuperaciones').once('value'));
+  });
+  test('historial del sistema (P2) igual con las reglas de transición', async ()=>{
+    const e=(uid, id)=>({id, quienUid:uid, accion:'Creó el negocio', fecha:{'.sv':'timestamp'}});
+    await assertSucceeds(db('ayu').ref('auditoria_sistema/t1').set(e('ayu','t1')));
+    await assertFails(db('ayu').ref('auditoria_sistema/t1').remove());
+    await assertFails(db('ayu').ref('auditoria_sistema').once('value'));
+    await assertSucceeds(db('sa').ref('auditoria_sistema').once('value'));
   });
   test('el super-admin administra perfiles e índice', async ()=>{
     const s=db('sa');

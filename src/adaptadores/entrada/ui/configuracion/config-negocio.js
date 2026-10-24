@@ -8,9 +8,10 @@
 import { STATE, escapeHtml, fmtDate, fmtMoney } from '../nucleo/estado.js';
 import { BOTON, MSJ } from '../nucleo/textos.js';
 import { esAdminSistema } from '../nucleo/permisos.js';
-import { abrirModal, cerrarModal, confirmarModal, ic, logoNegocio, toast } from '../nucleo/componentes.js';
+import { abrirModal, cerrarModal, confirmarModal, ic, logoNegocio, preguntarDespues, toast } from '../nucleo/componentes.js';
 import { render } from '../nucleo/navegacion.js';
 import { resumenDe } from '../reportes/resumen.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ============================================================
@@ -161,7 +162,7 @@ export function pantallaConfig(negId){
       <div class="botones-fila mt-16">
         <button class="btn btn-sm" data-click="marcarVentanas(true)">Marcar todo</button>
         <button class="btn btn-sm btn-ghost" data-click="marcarVentanas(false)">Quitar todo</button>
-        <button class="btn btn-sm btn-ghost" data-click="aplicarPlantillaPlan()">Aplicar lo del plan ${escapeHtml(neg.plan||'')}</button>
+        <button class="btn btn-sm btn-ghost" data-click="aplicarPlantillaPlan('${escapeHtml(neg.id)}')">Aplicar lo del plan ${escapeHtml(planDe(neg))}</button>
       </div>`);
   }
   else {
@@ -194,10 +195,10 @@ export function pantallaConfig(negId){
   </div>`;
 }
 // Deja marcadas las ventanas que corresponden al plan del negocio (VENTANAS_POR_PLAN: dominio/negocio.js)
-export function aplicarPlantillaPlan(){
-  const sel=document.getElementById('c-plan');
-  const plan=sel?sel.value:'Profesional';
-  const lista=VENTANAS_POR_PLAN[plan]||VENTANAS_POR_PLAN['Profesional'];
+// P8: el plan guardado del negocio (antes leía un select que no existe en esta pestaña y siempre era Profesional)
+export function aplicarPlantillaPlan(negId){
+  const plan=planDe((DB.get('negocios')||[]).find(n=>n.id===negId));
+  const lista=VENTANAS_POR_PLAN[plan];
   document.querySelectorAll('.c-fun').forEach(c=>{ c.checked = lista.indexOf(c.value)>-1; });
   toast('Marcadas las ventanas del plan '+plan,'info');
 }
@@ -208,6 +209,7 @@ export function guardarConfig(negId){
   const i=negocios.findIndex(n=>n.id===negId);
   if(i<0){ toast(MSJ.negocioNoEncontrado,'error'); return; }
   const n=negocios[i];
+  const planAntes=planDe(n), antesNeg=JSON.parse(JSON.stringify(n));
   // Solo se guarda lo que existe en la pestaña abierta: así una pestaña no
   // borra lo configurado en otra.
   const hay=id=>!!document.getElementById(id);
@@ -258,8 +260,22 @@ export function guardarConfig(negId){
   negocios[i]=n;
   DB.set('negocios',negocios);
   if(STATE.negocio && STATE.negocio.id===negId) STATE.negocio=JSON.parse(JSON.stringify(n));
+  if(Object.keys(Dominio.sistema.cambios(antesNeg, n)).length) anotarEnSistema(Dominio.sistema.ACCION.editarNegocio, n, antesNeg, n);
   toast(MSJ.configuracionGuardada,'success');
   render();
+  // P8: cambiar el plan no cambia las ventanas solo; se pregunta (puede haber ajustes a mano)
+  if(n.plan!==planAntes) preguntarDespues('¿Aplicar las ventanas del plan '+n.plan+'? Se reemplazan las ventanas habilitadas de este negocio.', ()=>aplicarVentanasDelPlan(negId), BOTON.aplicar);
+}
+export function aplicarVentanasDelPlan(negId){
+  if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaConfigurarNegocios,'error'); return; }
+  const negocios=JSON.parse(JSON.stringify(DB.get('negocios')||[]));
+  const n=negocios.find(x=>x.id===negId); if(!n) return;
+  const antes=n.funciones;
+  n.funciones=VENTANAS_POR_PLAN[planDe(n)].slice();
+  DB.set('negocios',negocios);
+  anotarEnSistema(Dominio.sistema.ACCION.aplicarPlan, n, {funciones:antes}, {funciones:n.funciones}, n.plan);
+  if(STATE.negocio && STATE.negocio.id===negId) STATE.negocio=JSON.parse(JSON.stringify(n));
+  toast('Ventanas del plan '+n.plan+' aplicadas','success'); render();
 }
 
 export function agregarSucursal(negId){
@@ -275,6 +291,7 @@ export function agregarSucursal(negId){
     }
     negocios[i].sucursales.push({id:uid(), nombre:d.nombre});
     DB.set('negocios',negocios);
+    anotarEnSistema(Dominio.sistema.ACCION.agregarSucursal, negocios[i], null, null, d.nombre);
     cerrarModal(); toast(MSJ.sucursalAgregada,'success'); render();
   }});
 }
@@ -296,6 +313,7 @@ export async function quitarSucursal(negId,idx){
     negocios[i].sucursales.splice(idx,1);
     if(negocios[i].sucursales.length<=1) negocios[i].sucursales=[];
     DB.set('negocios',negocios);
+    anotarEnSistema(Dominio.sistema.ACCION.quitarSucursal, negocios[i], null, null, s.nombre);
     toast(MSJ.sucursalQuitada,'info'); render();
   },'Quitar');
 }

@@ -797,6 +797,22 @@ export function crearAdaptadorFirebase(opc){
     Object.keys(CACHE).forEach(k=>{ if(k.indexOf('data_'+n+'_')===0){ set(k,null); delete CACHE[k]; local.borrar(k); } });
   }
 
+  // ---------- Historial del sistema (P2): auditoria_sistema/<id>, fuera de data/ ----------
+  // Solo se agrega (las reglas no dejan editar ni borrar) y lo lee solo el dueño del sistema.
+  const HIST='auditoria_sistema';
+  function registrarSistema(e){
+    if(!e || !e.id) return Promise.resolve(false);
+    if(!(estado.listo && FB)){ soloLocal(HIST, (CACHE[HIST]||[]).concat([e])); return Promise.resolve(true); }
+    const u={}; u[e.id]=Object.assign({}, e, {fecha:D.serverTimestamp()});
+    return actualizar(HIST, u).then(()=>true).catch(err=>{ console.warn('FB historial', err&&err.message); return false; });
+  }
+  function leerHistorialSistema(limite){
+    const n=Math.max(1, parseInt(limite)||500);
+    if(!(estado.listo && FB)) return Promise.resolve((CACHE[HIST]||[]).slice(-n).reverse());
+    return D.get(D.query(nodo(HIST), D.orderByChild('fecha'), D.limitToLast(n)))
+      .then(sn=>{ const out=[]; sn.forEach(c=>{ out.push(c.val()); }); return out.reverse(); });
+  }
+
   return {
     TABLAS, TABLAS_UNICAS, TABLAS_GLOBALES,
     estado, cache:CACHE,
@@ -806,6 +822,7 @@ export function crearAdaptadorFirebase(opc){
     get, set, claveDe, misDatos, datosDe, guardar, eliminar, guardarEn, eliminarEn,
     modificarRegistro, transaccionRegistro, transaccionUnica, transaccionGlobal, reservarConsecutivo,
     sincronizarNegocio, detenerSincNegocio, sincronizarTodo, detenerSincTodo,
-    limpiarDatosAjenos, recargar, exportarTodo, restaurarNegocio, borrarDatosNegocio
+    limpiarDatosAjenos, recargar, exportarTodo, restaurarNegocio, borrarDatosNegocio,
+    registrarSistema, leerHistorialSistema
   };
 }
