@@ -98,7 +98,7 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
     const a=db('admin1');
     await assertSucceeds(a.ref('data/negocios_r/N1/nombre').set('Uno SAS'));
     await assertSucceeds(a.ref('data').update({'negocios_r/N1/logo':'data:image/png;base64,iVBORw0KGgo=', 'negocios_r/N1/inventarioApagado':true}));
-    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id']){
+    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension']){
       await assertFails(a.ref('data/negocios_r/N1/'+campo).set(campo==='activo'));
     }
     await assertFails(a.ref('data/negocios_r/N1').set({id:'N1', nombre:'todo'}));   // registro entero: solo super-admin

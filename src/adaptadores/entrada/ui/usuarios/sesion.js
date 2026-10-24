@@ -15,6 +15,7 @@ import { migrarContrasenasLegado } from './cuentas.js';
 import { dejarRecuperaciones, escucharRecuperaciones, recordarPassDelLogin } from './recuperacion.js';
 import { fijarFacturaReservada } from '../ventas/nueva-venta.js';
 import { fijarResumenNeg } from '../reportes/resumen.js';
+import { rastroSupervision } from '../super-admin/negocios.js';
 
 
 // ============================================================
@@ -212,6 +213,7 @@ export function negocioCambiado(n){
   if(!n.activo){ toast(MSJ.esteNegocioFueSuspendidoContactaAl,'error'); logout(); }
 }
 export function logout(){
+  if(STATE.modoSupervision && STATE.negocio) rastroSupervision(STATE.negocio.id, 'Salió de supervisar', STATE._superUser);   // P15
   STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false;
   STATE.debeCambiarPass=false; recordarPassDelLogin(''); dejarRecuperaciones();
   STATE.modoSupervision=false; STATE.sucursal=null;

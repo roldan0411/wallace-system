@@ -113,3 +113,28 @@ test('flujos a medias: diferencia de apartados de una cita y pago al domiciliari
   assert.equal(caja.pagadoADomiciliario(c, 'd1'), 3000);
   assert.equal(caja.pagadoADomiciliario(null, 'd1'), 0);
 });
+
+test('P3: suspender pide motivo; "Otro" exige explicarlo', ()=>{
+  const f='2026-10-24T10:00:00.000Z';
+  assert.deepEqual(ng.suspension('Falta de pago', '', f), {activo:false, suspendidoDesde:f, motivoSuspension:'Falta de pago'});
+  assert.deepEqual(ng.suspension('Solicitud del cliente', ' cierra por obras ', f).motivoSuspension, 'Solicitud del cliente: cierra por obras');
+  assert.equal(ng.suspension('Otro', '  ', f), null);
+  assert.equal(ng.suspension('Otro', 'Cambio de dueño', f).motivoSuspension, 'Cambio de dueño');
+  assert.equal(ng.suspension('', 'algo', f), null);
+  assert.equal(ng.suspension('Inventado', '', f), null);
+  assert.equal(ng.suspension('Otro', 'x'.repeat(300), f).motivoSuspension.length, 120);
+});
+test('P11: no se deja un negocio sin administrador activo', ()=>{
+  const us=[{id:'a', negocioId:'n1', rol:'admin'}, {id:'c', negocioId:'n1', rol:'cajero'}, {id:'b', negocioId:'n2', rol:'admin'}];
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'a', null), true);                          // borrar el único admin
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'a', {rol:'admin', activo:false}), true);   // desactivarlo
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'a', {rol:'cajero', activo:true}), true);   // quitarle el rol
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'a', {rol:'admin', activo:true}), false);   // editarlo sin cambiar eso
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'c', null), false);                         // borrar a otro
+  const dos=us.concat([{id:'a2', negocioId:'n1', rol:'admin'}]);
+  assert.equal(pm.dejaSinAdmin(dos, 'n1', 'a', null), false);                        // queda otro admin
+  const inactivo=us.concat([{id:'a3', negocioId:'n1', rol:'admin', activo:false}]);
+  assert.equal(pm.dejaSinAdmin(inactivo, 'n1', 'a', null), true);                    // uno inactivo no cuenta
+  assert.equal(pm.dejaSinAdmin([{id:'c', negocioId:'n3', rol:'cajero'}], 'n3', 'c', null), false);   // sin admin hoy: no bloquea
+  assert.equal(pm.dejaSinAdmin(us, 'n1', 'nuevo', {rol:'cajero', activo:true}), false);
+});

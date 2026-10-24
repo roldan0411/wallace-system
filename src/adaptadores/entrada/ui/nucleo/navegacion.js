@@ -217,7 +217,7 @@ export function vistaNegocio(){
     </aside>
     <div class="main">
       ${STATE.modoSupervision?`<div class="banner-sup">
-        <span>👁️ Modo supervisión — viendo como Super-Admin</span>
+        <span>👁️ Supervisando ${escapeHtml(neg.nombre)} como ${escapeHtml((STATE._superUser&&STATE._superUser.nombre)||'Super-Admin')}</span>
         <button class="btn btn-sm btn-gold" data-click="volverSuperAdmin()">← Volver al panel</button>
       </div>`:''}
       ${bannerPrueba(neg)}

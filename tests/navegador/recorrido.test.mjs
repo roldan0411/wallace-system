@@ -498,10 +498,10 @@ test('periodo de prueba: crear a prueba con ejemplos, aviso de días, más días
     document.getElementById('m-nombre').value='Prueba UI Trial';
     document.getElementById('m-tipo').value='Restaurante';
     document.getElementById('m-usuario').value='trialui'+Date.now();
-    document.getElementById('m-pass').value='clave1234';
     document.getElementById('m-dias-prueba').value='10';
     document.getElementById('m-ejemplos').checked=true;
     document.getElementById('modal-ok').click(); await __esperar(300);
+    WS.cerrarModal();   // acceso del administrador (se muestra una vez)
     const neg=(DB.get('negocios')||[]).find(n=>n.nombre==='Prueba UI Trial');
     const e0=Pruebas.estado(neg.id);
     const enPanel=document.getElementById('app').innerHTML.includes('PRUEBA · 10 días');
@@ -868,6 +868,91 @@ test('4.ª revisión: validaciones (obligatorios con espacios, negativos, porcen
   // El error de V2 se provocó a propósito: no cuenta como error del recorrido
   for(let i=errores.length-1;i>=0;i--) if(/prueba V2|Error en una operación|Error en la pantalla/.test(errores[i])) errores.splice(i,1);
   assert.deepEqual(r, {espacios:true, stockNegativo:true, codigoRepetido:true, gastoNegativo:true, conteo:['', '', 4], arroba:true, global:true});
+});
+test('panel, etapa 1: clave al azar (P1), suspender con motivo (P3), ventanas del plan (P8), último admin (P11), supervisor con nombre (P15), pastilla del rol (P16)', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    const ventana=()=>document.getElementById('modal-container');
+    const lista=p=>Dominio.negocio.VENTANAS_POR_PLAN[p].slice().sort().join(',');
+    // P1: sin admin123; la clave al azar se muestra una vez
+    WS.STATE.page=''; WS.render();
+    WS.nuevoNegocio(); await __esperar(60);
+    res.sinCampoClave=!document.getElementById('m-pass');
+    document.getElementById('m-nombre').value='Etapa Uno';
+    document.getElementById('m-usuario').value='etapa'+Date.now();
+    document.getElementById('m-prueba').value='';
+    ok(); await __esperar(300);
+    const clave=(document.getElementById('pass-inicial')||{}).textContent||'';
+    res.clave=clave.length===10 && clave!=='admin123';
+    WS.cerrarModal();
+    const neg=()=>(DB.get('negocios')||[]).find(n=>n.nombre==='Etapa Uno');
+    const id=neg().id;
+    // P3: "Otro" sin detalle no suspende; con detalle sí, y el panel dice desde cuándo y por qué
+    WS.toggleNegocio(id); await __esperar(60);
+    document.getElementById('m-motivo').value='Otro'; ok(); await __esperar(60);
+    res.otroSinDetalle=neg().activo===true;
+    document.getElementById('m-detalle').value='Cambio de dueño'; ok(); await __esperar(60);
+    res.suspendido=[neg().activo, neg().motivoSuspension, !!neg().suspendidoDesde];
+    WS.render();
+    res.enPanel=document.getElementById('app').innerHTML.includes('Cambio de dueño');
+    WS.toggleNegocio(id); await __esperar(60);
+    res.activado=[neg().activo, 'suspendidoDesde' in neg(), 'motivoSuspension' in neg()];
+    // P8: al cambiar el plan se pregunta; el botón de la pestaña usa el plan guardado (antes, siempre Profesional)
+    WS.configNegocio(id); WS.cfgTab('comercial'); await __esperar(30);
+    document.getElementById('c-plan').value='Premium'; WS.guardarConfig(id); await __esperar(800);
+    res.pregunta=ventana().classList.contains('activo') && ventana().innerText.includes('plan Premium');
+    ok(); await __esperar(60);
+    res.aplicadas=neg().funciones.slice().sort().join(',')===lista('Premium');
+    document.getElementById('c-plan').value='Básico'; WS.guardarConfig(id); await __esperar(800);
+    WS.cerrarModal();   // "no": se quedan las ventanas de antes
+    res.noAplicadas=neg().plan==='Básico' && neg().funciones.slice().sort().join(',')===lista('Premium');
+    WS.cfgTab('ventanas'); await __esperar(30);
+    res.boton=!!document.querySelector('[data-click="aplicarPlantillaPlan(\''+id+'\')"]') && document.getElementById('app').innerText.includes('Aplicar lo del plan Básico');
+    WS.marcarVentanas(true); WS.aplicarPlantillaPlan(id);
+    res.plantilla=Array.from(document.querySelectorAll('.c-fun:checked')).map(c=>c.value).sort().join(',')===lista('Básico');
+    WS.cfgTab('datos'); WS.STATE.page='usuarios:'+id; WS.render();
+    // P11: el único admin no se borra, ni se desactiva, ni pierde el rol
+    const admin=(DB.get('usuarios')||[]).find(u=>u.negocioId===id && u.rol==='admin');
+    WS.eliminarUsuario(admin.id); await __esperar(60);
+    res.noBorraAdmin=!ventana().classList.contains('activo') && (DB.get('usuarios')||[]).some(u=>u.id===admin.id);
+    WS.editarUsuario(id, admin.id); await __esperar(60);
+    document.getElementById('u-activo').checked=false; ok(); await __esperar(60);
+    res.noDesactivaAdmin=(DB.get('usuarios')||[]).find(u=>u.id===admin.id).activo!==false;
+    document.getElementById('u-activo').checked=true; document.getElementById('m-rol').value='cajero'; ok(); await __esperar(60);
+    res.noCambiaRol=(DB.get('usuarios')||[]).find(u=>u.id===admin.id).rol==='admin';
+    WS.cerrarModal();
+    // Otro empleado: la ventana dice a quién, "Desactivar" es lo primero y eliminar va aparte
+    WS.editarUsuario(id, null); await __esperar(60);
+    document.getElementById('m-nombre').value='Cajero Uno'; document.getElementById('m-usuario').value='cajuno'+Date.now();
+    document.getElementById('m-pass').value='clave123'; document.getElementById('m-rol').value='cajero'; ok(); await __esperar(60);
+    const caj=()=>(DB.get('usuarios')||[]).find(u=>u.negocioId===id && u.nombre==='Cajero Uno');
+    WS.eliminarUsuario(caj().id); await __esperar(60);
+    res.conNombre=ventana().innerText.includes('Cajero Uno (Cajero)') && document.getElementById('modal-ok').textContent.includes('Desactivar');
+    ok(); await __esperar(60);
+    res.desactivado=caj().activo===false;
+    WS.eliminarUsuario(caj().id); await __esperar(60); ok(); await __esperar(60);
+    res.eliminado=!caj();
+    // P15: supervisar con el nombre real y dejar rastro al entrar y al salir
+    WS.entrarComoNegocio(id); await __esperar(100);
+    res.banner=((document.querySelector('.banner-sup')||{}).textContent||'').includes('Etapa Uno como Dueño');
+    res.nombre=WS.STATE.user.nombre;
+    WS.volverSuperAdmin(); await __esperar(60);
+    const aud=datosDe(id,'auditoria').map(a=>a.usuario+' | '+a.accion);
+    res.rastro=['Supervisor: Dueño | Entró a supervisar', 'Supervisor: Dueño | Salió de supervisar'].every(x=>aud.includes(x));
+    // P16: la pastilla dice el rol real
+    WS.STATE.page=''; WS.render();
+    const pastilla=()=>(document.querySelector('.topbar .pill-oro')||{}).textContent;
+    const dueno=pastilla();
+    WS.STATE.user.rolSuper='ayudante'; WS.render();
+    res.pastillas=[dueno, pastilla()];
+    WS.STATE.user.rolSuper='dueno'; WS.render();
+    return res;
+  });
+  assert.deepEqual(r, {sinCampoClave:true, clave:true, otroSinDetalle:true, suspendido:[false, 'Cambio de dueño', true], enPanel:true,
+    activado:[true, false, false], pregunta:true, aplicadas:true, noAplicadas:true, boton:true, plantilla:true,
+    noBorraAdmin:true, noDesactivaAdmin:true, noCambiaRol:true, conNombre:true, desactivado:true, eliminado:true,
+    banner:true, nombre:'Supervisor: Dueño', rastro:true, pastillas:['Dueño del sistema', 'Ayudante del sistema']});
 });
 test('sin errores de JavaScript en todo el recorrido', {skip:omitir}, ()=>{
   assert.deepEqual(errores, []);

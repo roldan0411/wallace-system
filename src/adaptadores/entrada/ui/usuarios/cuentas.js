@@ -24,10 +24,11 @@ export function miUid(){ const u=STATE._superUser||STATE.user; return (u&&u.uid)
 export function perfilPara(rec, esSuper){
   return esSuper ? Dominio.cuentas.perfilDesdeSuperAdmin(rec) : Dominio.cuentas.perfilDesdeUsuario(rec, PANTALLAS_POR_ROL);
 }
-// Crea la cuenta de Firebase de un usuario o administrador nuevo, con su perfil e índice
-export async function crearCuentaPara(rec, pass, esSuper){
+// Crea la cuenta de Firebase de un usuario o administrador nuevo, con su perfil e índice.
+// extraPerfil: campos que el perfil lleva desde que nace (p. ej. {debeCambiarPass:true}).
+export async function crearCuentaPara(rec, pass, esSuper, extraPerfil){
   const cuenta=await Cuentas.crearCuentaAjena(pass);
-  const perfil=perfilPara(rec, esSuper);
+  const perfil=Object.assign(perfilPara(rec, esSuper), extraPerfil||{});
   perfil.migradoEn=now(); perfil.creadoPor=miUid();
   await Cuentas.guardarCuenta({uid:cuenta.uid, correo:cuenta.correo, usuario:rec.usuario, perfil});
   return cuenta;
