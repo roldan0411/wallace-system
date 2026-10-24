@@ -12,6 +12,7 @@ import { abrirModal, cerrarModal, confirmarModal, toast } from '../nucleo/compon
 import { render } from '../nucleo/navegacion.js';
 import { mensajeCuenta } from './sesion.js';
 import { reemplazarCuenta } from './cuentas.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ============================================================
@@ -101,6 +102,7 @@ export function cuentaParaFila(i){
     if((d.p1||'').length<6){ toast(MSJ.debeTenerAlMenos6Caracteres,'error'); return; }
     if(d.p1!==d.p2){ toast(MSJ.lasContrasenasNoCoinciden,'error'); return; }
     reemplazarCuenta(rec, d.p1, f.tipo==='super').then(()=>{
+      anotarEnSistema(Dominio.sistema.ACCION.migrarCuenta, f.tipo==='super'?null:(DB.get('negocios')||[]).find(n=>n.id===rec.negocioId), null, null, rec.usuario);
       cerrarModal(); toast('Cuenta lista para '+rec.usuario,'success'); recargarIndiceCuentas();
     }).catch(e=>toast('No se pudo: '+mensajeCuenta(e),'error'));
   }});
@@ -108,7 +110,7 @@ export function cuentaParaFila(i){
 export function borrarPerfilHuerfano(i){
   const f=(window._filasMigracion||[])[i]; if(!f || !f.uid) return;
   confirmarModal('¿Borrar el perfil de "'+(f.usuario||'?')+'"? Esa cuenta queda sin acceso a nada.',()=>{
-    Cuentas.borrarCuenta({uid:f.uid, usuario:f.usuario}).then(()=>{ toast(MSJ.perfilBorrado,'info'); recargarIndiceCuentas(); })
+    Cuentas.borrarCuenta({uid:f.uid, usuario:f.usuario}).then(()=>{ anotarEnSistema(Dominio.sistema.ACCION.borrarPerfil, null, null, null, f.usuario||'?'); toast(MSJ.perfilBorrado,'info'); recargarIndiceCuentas(); })
       .catch(e=>toast('No se pudo: '+mensajeCuenta(e),'error'));
   },'Borrar');
 }

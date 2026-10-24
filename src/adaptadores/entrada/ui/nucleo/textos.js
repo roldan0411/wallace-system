@@ -162,7 +162,8 @@ export const MSJ={
   negocioNoEncontrado: 'Negocio no encontrado',
   negocioPasadoAPago: 'Negocio pasado a pago',
   noPuedesEliminarteATiMismo: 'No puedes eliminarte a ti mismo',
-  // panel, etapa 1 (2026-10-24)
+  // panel, etapa 1 y 2 (2026-10-24)
+  soloElDuenoVeElHistorial: 'Solo el dueño del sistema ve el historial',
   eligeElMotivoDeLaSuspension: 'Elige el motivo. Si es "Otro", escríbelo.',
   negocioSuspendido: 'Negocio suspendido',
   negocioActivado: 'Negocio activado',

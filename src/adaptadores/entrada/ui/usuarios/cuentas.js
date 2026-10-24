@@ -11,6 +11,7 @@ import { esAdminSistema } from '../nucleo/permisos.js';
 import { abrirModal, cerrarModal, reportarError, toast } from '../nucleo/componentes.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from './sesion.js';
 import { logAudit } from './auditoria.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ============================================================
@@ -121,6 +122,7 @@ export function cambiarMiPassCuenta(){
     if(d.nueva!==d.nueva2){ toast(MSJ.lasContrasenasNuevasNoCoinciden,'error'); return; }
     Cuentas.cambiarMiPass(d.actual, d.nueva).then(()=>{
       if(STATE.negocio && !STATE.esSuperAdmin) logAudit('Cambió su contraseña', STATE.user.nombre);
+      if(STATE.esSuperAdmin) anotarEnSistema(Dominio.sistema.ACCION.cambiarMiPass);
       cerrarModal(); toast(MSJ.contrasenaActualizada,'success');
     }).catch(e=>toast(e&&e.codigo==='credenciales'?'La contraseña actual no coincide':mensajeCuenta(e),'error'));
   }});

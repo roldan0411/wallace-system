@@ -39,6 +39,16 @@
         }
       }
     },
+    "auditoria_sistema": {
+      ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() === 'dueno'",
+      ".indexOn": [
+        "fecha"
+      ],
+      "$id": {
+        ".write": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && !data.exists() && newData.exists()",
+        ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,64}$/) && newData.child('id').val() === $id && newData.child('quienUid').val() === auth.uid && newData.child('fecha').val() === now && newData.child('accion').isString() && newData.child('accion').val().length <= 80"
+      }
+    },
     "data": {
       ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() !== 'vendedor'",
       ".write": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() !== 'vendedor'",

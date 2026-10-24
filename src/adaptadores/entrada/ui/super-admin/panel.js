@@ -15,6 +15,7 @@ import { conCuentasFirebase } from '../usuarios/sesion.js';
 import { tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
 import { pillPrueba, tarjetaPorVencer } from './pruebas.js';
 import { resumenDe } from '../reportes/resumen.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 
 // ============================================================
@@ -135,6 +136,7 @@ export function panelSuperAdmin(){
         <input type="file" id="resp-archivo" accept=".json,application/json" class="oculto" data-change="cargarRespaldo(this)">`:''}
       ${sinCifras?`<button class="btn btn-sm btn-naranja" data-click="calcularResumenes()" title="Negocios sin cifras publicadas todavía">📊 Calcular cifras (${sinCifras})</button>`:''}
       ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irAdministradores()">👥 Administradores</button>`:''}
+      ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irHistorialSistema()" title="Quién hizo qué en el sistema">🕘 Historial</button>`:''}
       ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="abrirMigracion()">🔐 Cuentas</button>`:''}
       ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="pasarAMiCorreo()" title="Entrar con tu correo real y poder recuperar la contraseña por correo">📧 Mi correo</button>`:''}
       <button class="btn btn-sm" data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
@@ -241,6 +243,7 @@ export function descargarRespaldo(){
       document.body.appendChild(a); a.click();
       setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },500);
       toast('Respaldo descargado: '+nombre,'success');
+      anotarEnSistema(Dominio.sistema.ACCION.descargarRespaldo, null, null, null, parcial?'Parcial':'Completo');
     }catch(e){ reportarError('el respaldo', e); toast(MSJ.noSePudoGenerarElRespaldo,'error'); }
   };
   Datos.exportarTodo().then(r=>{
@@ -287,7 +290,9 @@ export function elegirNegocioARestaurar(r){
 }
 export function restaurarNegocioDesde(datos, negId){
   return Datos.restaurarNegocio(negId, datos).then(res=>{
-    toast('Negocio restaurado ('+res.claves+' tablas)','success'); render(); return true;
+    toast('Negocio restaurado ('+res.claves+' tablas)','success');
+    anotarEnSistema(Dominio.sistema.ACCION.restaurarNegocio, (DB.get('negocios')||[]).find(n=>n.id===negId)||{id:negId}, null, null, res.claves+' tablas');
+    render(); return true;
   }).catch(e=>{ reportarError('restaurar el negocio', e); toast(MSJ.noSePudoRestaurar,'error'); return false; });
 }
 export function irPanel(){ STATE.page=''; render(); }

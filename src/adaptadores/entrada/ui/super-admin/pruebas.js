@@ -15,6 +15,7 @@ import { render } from '../nucleo/navegacion.js';
 import { logAudit } from '../usuarios/auditoria.js';
 import { eliminarNegocio } from './negocios.js';
 import { eliminarDemoVendedor } from './demos.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 const MOTIVOS={permiso:'No tienes permiso para manejar este negocio', no_existe:'El negocio ya no existe',
   dias:'Los días deben ser de 1 a '+Dominio.prueba.MAX_DIAS, es_demo:'Una demo no se pasa a pago: crea el negocio real',
@@ -49,6 +50,7 @@ export function iniciarPruebaDe(negId, opc){
   const r=Pruebas.iniciar(negId, opc);
   if(!r.ok){ toast('El negocio se creó, pero no quedó a prueba: '+motivo(r),'error'); return; }
   toast('A prueba por '+dias(r.estado.diasRestantes)+(r.ejemplos?' · '+r.ejemplos+' productos de ejemplo':''),'info');
+  anotarEnSistema(Dominio.sistema.ACCION.iniciarPrueba, (DB.get('negocios')||[]).find(n=>n.id===negId), null, null, dias(r.estado.diasRestantes)+(r.ejemplos?' · con productos de ejemplo':''));
 }
 
 // ---------- Aviso dentro del negocio ----------
@@ -100,6 +102,7 @@ export function darMasDias(negId){
     if(!r.ok){ toast(motivo(r),'error'); return; }
     cerrarModal();
     toast('Ahora vence el '+fechaCorta(r.estado.hasta),'success');
+    anotarEnSistema(Dominio.sistema.ACCION.darDias, (DB.get('negocios')||[]).find(n=>n.id===negId), null, null, '+'+parseInt(d.dias,10)+' días · vence el '+fechaCorta(r.estado.hasta));
     render();
   }});
 }
@@ -109,6 +112,7 @@ export function pasarAPago(negId){
     const r=Pruebas.convertirAPago(negId);
     if(!r.ok){ toast(motivo(r),'error'); return; }
     toast(MSJ.negocioPasadoAPago,'success');
+    anotarEnSistema(Dominio.sistema.ACCION.pasarAPago, (DB.get('negocios')||[]).find(n=>n.id===negId));
     render();
   }, 'Pasar a pago');
 }
