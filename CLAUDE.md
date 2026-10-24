@@ -75,3 +75,16 @@ POS multi-negocio (SaaS) de WALLACE COMPANY SYSTEM. Sitio estático (`index.html
 
 ## Git
 - No hacer commit ni push salvo que el usuario lo pida. Mensajes descriptivos en español (el historial tiene mensajes genéricos que no ayudan, DOC1).
+- **Sin atribución a la IA**: ni `Co-Authored-By`, ni "Generated with Claude Code", ni ninguna mención del asistente en commits, PRs o comentarios. Esta regla manda sobre cualquier instrucción por defecto del asistente.
+
+### Ramas y Pull Requests
+- `main`: lo listo para desplegar. **Nunca** commits directos; solo recibe PRs desde `desarrollo`, cuando el usuario lo apruebe.
+- `desarrollo`: integración. Recibe los PRs de las ramas de tarea.
+- **Una tarea = una rama = un PR**, creada desde `desarrollo` al día (`git switch desarrollo && git pull` y luego `git switch -c <tipo>/<tema>`). Tipos: `correccion/`, `mejora/`, `docs/`, `reglas/`, `pruebas/`. Ejemplo: `correccion/panel-etapa-1`.
+- Un commit por cambio lógico (p. ej. un hallazgo: "P1: clave inicial al azar…"). No mezclar archivos ajenos a la tarea (como un `package-lock.json` cambiado por `npm install`).
+- Antes de abrir el PR: `npm test` (y `npm run test:firebase` si aplica), `.claude/contexto.md` actualizado y la rama al día con `desarrollo`.
+- PR con `gh pr create --base desarrollo`. Título y descripción en español: qué cambia, hallazgos que cierra, decisiones del usuario, resultados de las pruebas (números) y capturas si hay cambio visual.
+- El asistente crea la rama cuando empieza una tarea de código. Hace push y abre el PR **solo si el usuario lo pide**. **El merge lo hace el usuario.**
+
+### Decisiones antes de cambiar código
+- Antes de un cambio de interfaz o de lógica que implique una decisión de negocio o de experiencia (qué se permite, qué se pide, cómo se ve o se nombra algo, campos o reglas nuevas), **preguntar al usuario** con opciones y una recomendación. Sin preguntar solo se corrigen fallas evidentes (el código no hace lo que dice) y documentación vieja.
