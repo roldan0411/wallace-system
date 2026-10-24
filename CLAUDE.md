@@ -40,6 +40,7 @@ POS multi-negocio (SaaS) de WALLACE COMPANY SYSTEM. Sitio estático (`index.html
 - Errores atrapados: `reportarError(donde, e)`, nunca `catch(e){}` silencioso en pantallas (C2).
 - Agrupar ventas por id (`prodId`, `vendedorId`, `domiciliarioId`), no por nombre (F15); fechas con `fechaLocal`/`Dominio.fechas.diaDe`, nunca `toISOString().slice(0,10)` (F2).
 - Toda acción sensible valida permiso al inicio (`exigirPermiso`, `esAdminSistema`, `puedeVerPantalla`); esconder el botón no basta. Toda acción que **escribe** empieza por `exigirEscritura()` o `exigirPermiso(...)` (respetan la prueba vencida = solo lectura, D10).
+- Toda acción **nueva** del super-admin sobre negocios o cuentas (crear, cambiar, suspender, borrar, contraseñas, respaldo…) llama a `anotarEnSistema(accion, negocio, antes, despues, detalle)` después de guardar, con la acción en `Dominio.sistema.ACCION` (historial del sistema, P2). `auditoria_sistema` es de solo agregar: nunca editarla ni borrarla desde la app.
 - Un cambio a un **pedido que ya existe** (agregar, cobrar, anular, editar) pasa por `Datos.transaccionRegistro` con una regla pura de `src/dominio/ventas.js` que se niega si otro equipo lo cambió (D9); nunca leer, modificar y `guardarMisDatos` el registro entero.
 - Imports ES con ruta relativa y extensión (`'./dominio/pagos.js'`). La app no funciona con `file://`.
 

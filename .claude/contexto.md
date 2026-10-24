@@ -30,7 +30,7 @@
 6. **Entrar con Google** (super-admins, decidido 2026-10-12): activar el proveedor Google y los dominios autorizados en la consola de Firebase; luego programarlo (`-03-architecture/entrar-con-google.md`). Mientras, el dueño puede usar "📧 Mi correo". Publicar reglas en el sandbox (recuperaciones y debeCambiarPass).
 8. Pedir commit y PR de `correccion/panel-etapa-1` hacia `desarrollo` cuando quiera (pruebas completas en verde).
 9. **Revisión del panel** (`Documentation/01-super-admin-panel/revision-panel.md`): etapas 1 y 2 hechas; decidir la 3 (U1–U3: menús, pestañas, ficha del negocio) y la 4 (P6, cobros).
-10. **Ramas sin subir**: `correccion/panel-etapa-1` (3 commits) y `mejora/historial-sistema` (sale de la anterior). El push lo hace el usuario (el asistente no tiene permiso de escribir en GitHub); PR de la etapa 1 primero.
+10. **PR abiertos (2026-10-24)**: #3 `correccion/panel-etapa-1` y #4 `mejora/historial-sistema` (depende de #3: merge de #3 primero). El merge lo hace el usuario. `gh` instalado y autorizado (cuenta roldan0411): el asistente puede subir ramas y abrir PR cuando se le pida.
 11. **Publicar reglas en el sandbox**: además de las pendientes, `suspendidoDesde`/`motivoSuspension` y `auditoria_sistema` (si no, el historial avisa "No se guardó").
 12. Arquitectura "como la de la mano" (README de `roldan0411/mano`, sección Estructura): el usuario va a explicar qué parte quiere.
 7. **CI/CD** (pendiente, documentado 2026-10-13 en `-00-execution-protocol/ci-cd.md`): no hay pipelines; GitHub Actions para `npm test` + `test:firebase`, Render solo con pruebas en verde, sandbox con botón manual, producción nunca automática.
