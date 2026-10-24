@@ -145,8 +145,12 @@ test('modo local (sin nube): configuración inicial, crear negocio, F12 de inven
   assert.deepEqual(planes, ['Básico','Profesional','Premium']);                 // F6
   await p.click('#modal-ok');
   await hasta('Local Uno');
+  await p.waitForSelector('#pass-inicial', {visible:true});                      // P1: clave al azar, se ve una vez
+  const clave=await p.$eval('#pass-inicial', e=>e.textContent);
+  assert.notEqual(clave, 'admin123');
+  await p.evaluate(()=>WS.cerrarModal());
   await p.evaluate(()=>WS.logout());
-  await poner('#l-user','jefe'); await poner('#l-pass','admin123'); await p.click('.login-btn');
+  await poner('#l-user','jefe'); await poner('#l-pass',clave); await p.click('.login-btn');
   await hasta('Mi Negocio');
   await p.evaluate(()=>WS.irA('minegocio'));
   await p.waitForSelector('#n-inventario');
@@ -191,7 +195,7 @@ test('vendedor con reglas cerradas: ve solo lo suyo, crea un negocio a prueba co
   await pagina.evaluate(()=>WS.nuevoNegocio());
   // Valores directos (escribir con el teclado en un modal recién abierto a veces pierde el foco)
   await pagina.waitForSelector('#m-nombre', {visible:true});
-  await pagina.evaluate(()=>{ const v={'m-nombre':'Cliente de Vendedora', 'm-tipo':'Restaurante', 'm-usuario':'clientev', 'm-pass':'clientev1'};
+  await pagina.evaluate(()=>{ const v={'m-nombre':'Cliente de Vendedora', 'm-tipo':'Restaurante', 'm-usuario':'clientev'};
     Object.keys(v).forEach(id=>{ document.getElementById(id).value=v[id]; }); });
   await pagina.$eval('#m-ejemplos', e=>{ e.checked=true; });
   await pagina.click('#modal-ok');
@@ -208,6 +212,9 @@ test('vendedor con reglas cerradas: ve solo lo suyo, crea un negocio a prueba co
   assert.ok(login && login.uid, 'cuenta del administrador');
   const us=Object.values((await rest('data/data_'+neg.id+'_usuarios_r'))||{});
   assert.ok(us.some(u=>u.usuario==='clientev' && u.uid===login.uid), 'registro del administrador en su negocio');
+  assert.equal(await rest('perfiles/'+login.uid+'/debeCambiarPass'), true, 'P1: cambia la clave al primer ingreso');
+  await pagina.waitForSelector('#pass-inicial', {visible:true});
+  await pagina.evaluate(()=>WS.cerrarModal());
 
   // Entrar a su demo: carga sus datos (negocio activo); borrarla: se va todo
   await pagina.evaluate(()=>WS.entrarComoNegocio('ndemo'));

@@ -106,7 +106,8 @@ Los cambios se guardan en el registro global del negocio y llegan a todos los eq
 | `configNegocio(id)` | `ui/configuracion/config-negocio.js` | Acción UI | Super-admin | Abre la configuración. |
 | `cfgTab(t)` | `ui/configuracion/config-negocio.js` | Acción UI | Configuración | Cambia de pestaña. |
 | `pantallaConfig(negId)` | `ui/configuracion/config-negocio.js` | Pantalla | Super-admin | Pestañas de configuración. |
-| `aplicarPlantillaPlan()` | `ui/configuracion/config-negocio.js` | Acción UI | Ventanas | Marca las del plan. |
+| `aplicarPlantillaPlan(negId)` | `ui/configuracion/config-negocio.js` | Acción UI | Ventanas | Marca las del plan **guardado** del negocio (P8: antes siempre Profesional). |
+| `aplicarVentanasDelPlan(negId)` | `ui/configuracion/config-negocio.js` | Acción UI | Pregunta al guardar | Al guardar un plan distinto se pregunta si se aplican sus ventanas (P8). |
 | `guardarConfig(negId)` | `ui/configuracion/config-negocio.js` | Acción UI | Super-admin | Guarda la pestaña abierta. |
 | `agregarSucursal` / `quitarSucursal` | 5918 / 5934 | Acción UI | Super-admin | Sedes. |
 | `minegocio()` | `ui/configuracion/mi-negocio.js` | Pantalla | `minegocio` (permiso `config`) | Mi Negocio. |
