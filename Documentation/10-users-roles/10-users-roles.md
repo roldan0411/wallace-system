@@ -75,7 +75,7 @@ Equivalencias usadas por `armarMenu` al filtrar: inventario/insumos/conteo/combo
 - Tabla con nombre, usuario, rol, sucursales y estado (las contraseñas no se muestran).
 - Crear/editar: nombre*, usuario* (sugerido a partir del nombre del negocio), contraseña (obligatoria al crear, mínimo 4; al editar, vacía = no cambiar), rol, **usuario activo**, sucursales permitidas, **ventanas que puede ver** (21 opciones) y **acciones** (12). Las casillas se precargan con lo del usuario o lo del rol.
 - Usuario único entre `usuarios` y `superadmins`.
-- `eliminarUsuario` con confirmación.
+- `eliminarUsuario` (P11, 2026-10-24): ventana con nombre y rol; "Desactivar" es lo principal (conserva el historial) y "Eliminar definitivamente" (`eliminarUsuarioDefinitivo`) va aparte, en rojo. El último administrador activo del negocio no se borra, ni se desactiva, ni pierde el rol al editarlo (`Dominio.permisos.dejaSinAdmin`).
 
 ### 5.2 Desde el negocio (`usuariosNeg`, `ui/usuarios/usuarios-negocio.js`)
 - Visible para admin, supervisor o quien tenga la pantalla `usuarios` (`puedeGestionarUsuarios`).
@@ -122,7 +122,8 @@ Construye los grupos PRINCIPAL, OPERACIONES, GESTIÓN y CONFIGURACIÓN según `f
 | `logAudit(accion,detalle)` | `ui/usuarios/auditoria.js` | Servicio | Acciones sensibles | Registra auditoría. |
 | `pantallaUsuarios(negId)` | `ui/usuarios/usuarios-admin.js` | Pantalla | Super-admin | Usuarios del negocio. |
 | `editarUsuario(negId,userId)` | `ui/usuarios/usuarios-admin.js` | Acción UI | Super-admin | Crear/editar usuario con pantallas y permisos. |
-| `eliminarUsuario(id)` | `ui/usuarios/usuarios-admin.js` | Acción UI | Super-admin | Elimina usuario. |
+| `eliminarUsuario(id)` | `ui/usuarios/usuarios-admin.js` | Acción UI | Super-admin | Desactivar o eliminar (no el último admin activo). |
+| `eliminarUsuarioDefinitivo(id)` | `ui/usuarios/usuarios-admin.js` | Acción UI | Super-admin | Borra el usuario y su acceso. |
 | `armarMenu()` | `ui/nucleo/navegacion.js` | Interna | `vistaNegocio` | Menú filtrado. |
 | `puedeGestionarUsuarios()` | `ui/usuarios/usuarios-negocio.js` | Interna | Usuarios del negocio | ¿Puede cambiar contraseñas? |
 | `usuariosNeg()` | `ui/usuarios/usuarios-negocio.js` | Pantalla | `usuarios` | Lista y cambio de contraseña. |
