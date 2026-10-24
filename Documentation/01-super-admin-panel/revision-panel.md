@@ -1,6 +1,6 @@
 # Revisión del panel de super-admin (para reestructurarlo)
 
-> 2026-10-14. **Para revisión del usuario.** 2026-10-24: **etapa 1 corregida** (P1, P3, P8, P11, P15, P16 solo la pastilla del rol, P21, P22), con las decisiones del usuario anotadas en la sección 5. El resto sigue sin implementar. Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
+> 2026-10-14. **Para revisión del usuario.** 2026-10-24: **etapas 1 y 2 corregidas** (la 2 es P2, historial del sistema) (P1, P3, P8, P11, P15, P16 solo la pastilla del rol, P21, P22), con las decisiones del usuario anotadas en la sección 5. El resto sigue sin implementar. Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
 > Cada punto sale del código actual. Entre paréntesis va dónde está, con rutas relativas a `src/adaptadores/entrada/`. La numeración sirve para responder ("sí a P3, no a P7…").
 
 Leyenda de prioridad: 🔴 falla o riesgo real · 🟠 flujo incompleto · 🟡 mejora.
@@ -122,7 +122,7 @@ Pruebas: dominio (`suspension`, `dejaSinAdmin`), reglas (los campos nuevos no lo
 ## 4. Orden sugerido (si se aprueba)
 
 1. ~~**Riesgo, poco trabajo:** P1, P3, P11, P15, P16 (pastilla del rol), P21.~~ Hecho el 2026-10-24 (sección 5).
-2. **Rastro:** P2 (bitácora del sistema). Es la base de la ficha del negocio y del historial.
+2. ~~**Rastro:** P2 (bitácora del sistema).~~ Hecho el 2026-10-24: solo el dueño lo ve, se anota todo lo de negocios y cuentas, botón "🕘 Historial" ([01-super-admin-panel](01-super-admin-panel.md), sección 14).
 3. **Estructura nueva:** U1, U2 y U3 (menús, pestañas, ficha del negocio), junto con U7, U8, U10 y U11. Antes y después, tomar capturas (`node scripts/capturas.mjs`).
 4. **Cobros:** P6 y P7 (modelo de pagos y reglas: `pagos` en `negocios_r/<id>`, que solo escriben el dueño y el ayudante), U4 y U5.
 5. **El resto:** P4, P5/U9, P8–P10, P12–P14, P17–P20, U6, U12–U14.
