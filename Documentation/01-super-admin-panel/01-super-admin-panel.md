@@ -269,3 +269,21 @@ Lo que hace cada super-admin sobre negocios y cuentas queda en `auditoria_sistem
 - **Pantalla** (`pantallaHistorialSistema`, `STATE.page='historial'`): las últimas 500 (`Datos.leerHistorialSistema`), la más nueva primero, con filtros por negocio, persona, acción y texto (`Dominio.sistema.filtrar`) y los cambios "campo: antes → después". El ayudante no ve el botón y, si entra a la página, ve el candado.
 - **Pruebas**: dominio (`tests/dominio/sistema.test.mjs`), reglas cerradas y de transición (a su nombre, fecha del servidor, sin editar ni borrar, solo el dueño lee) y recorrido ("panel, etapa 2").
 - **Falta**: mostrarlo en la ficha de cada negocio cuando exista (U3).
+
+## 15. Panel rediseñado: menús, pestañas y ficha del negocio (etapa 3, 2026-10-24)
+
+Decisiones del usuario: **ficha con secciones** al tocar un negocio y **una fila de 4 cifras**. El panel del vendedor no cambia (U12, pendiente).
+
+- **Barra superior (U1)**: estado de conexión, hora y dos menús `<details class="menu-sa">` (sin JavaScript, se cierran al volver a dibujar):
+  - **⚙ Sistema**: Descargar respaldo, Restaurar un negocio (dueño), Calcular cifras (con un punto rojo con el número de negocios sin cifras), Administradores y Historial (dueño), 🔐 Cuentas (con Firebase).
+  - **👤 <nombre>**: el rol, Mi contraseña, Mi correo (con Firebase) y Salir.
+- **Cifras (U4)**: Clientes activos (de cuántos y cuántos a prueba), Ingreso del mes (suma de planes activos, como antes), Ventas de hoy (sin demos) y **Por atender** (pruebas o demos por vencer + solicitudes de contraseña; `cuantasPorVencer`, `cuantasRecuperaciones`). Se quitaron Suspendidos, Usuarios totales, Ventas históricas y Negocio con más ventas.
+- **Pestañas (U2)**: Clientes · A prueba · Demos · Suspendidos, cada una con su número (`Dominio.negocio.grupoPanel` / `contarPorGrupo`: una demo pausada sigue en Demos; un suspendido a prueba va a Suspendidos). Por defecto Clientes; se recuerda en `STATE.tabNegocios` (`verTabNegocios`). Al crear un negocio o una demo, el panel salta a su pestaña. Cada pestaña vacía explica qué hacer.
+- **Fila de la tabla (U3)**: el nombre abre la ficha; acciones **Entrar** y **⋯** (Abrir ficha, Configurar, Usuarios, Informe mensual, Vendedor, Suspender/Pausar/Activar y, para el dueño, Eliminar en rojo al final). El ⋯ se abre dentro de la celda (la tabla corta lo que sobresale). Columnas: Negocio, Tipo, Vendedor, Plan, Precio/mes, Estado, Acciones.
+- **Ficha del negocio** (`ui/super-admin/ficha-negocio.js`, `STATE.page='negocio:<id>'`): cabecera común `cabeceraFicha` (nombre, DEMO, estado, días de prueba, "← Volver al panel") y secciones **Resumen · Configurar · Usuarios · Historial**:
+  - **Resumen**: ventas de hoy y del mes (del resumen que publica cada negocio, R1), actividad ("Vendió hoy", "Última venta hace N días", `Dominio.ventas.ultimoDiaConVentas`), usuarios, plan y cuenta, aviso de suspensión con motivo, y acciones (Entrar, Informe, Vendedor, + Días y Pasar a pago si está a prueba, Suspender/Activar; Eliminar solo el dueño, separado).
+  - **Configurar** y **Usuarios**: las pantallas de siempre con la cabecera de la ficha.
+  - **Historial** (`historialneg:<id>`, solo el dueño): las entradas del historial del sistema de ese negocio (`tablaHistorial`, compartida con la pantalla general).
+  - Eliminar desde la ficha vuelve al panel.
+- **Pruebas**: dominio (pestañas y actividad) y recorrido ("panel, etapa 3"; además la ficha y su historial se dibujan para los 18 negocios). Capturas nuevas al final: `panel-demos`, `panel-menus`, `panel-menu-negocio`, `ficha-negocio` (y móvil).
+- **Pendiente de la revisión**: U5 (bandeja única "Por atender"), U6 (filtros y orden), U7 (fechas legibles), U8–U11, U12 (panel del vendedor), U13–U14.

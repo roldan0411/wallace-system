@@ -329,7 +329,7 @@ test('el dueño pasa su cuenta a su correo real: entra con el correo y recupera 
   await pagina.evaluate(()=>{ try{ WS.cerrarModal(); }catch(e){} if(WS.STATE.user) WS.logout(); });
   await pagina.waitForSelector('#l-user', {visible:true, timeout:15000});
   await entrar('admin', 'clavedueno');
-  await esperarTexto('Mi correo');
+  await pagina.waitForSelector('[data-click="pasarAMiCorreo()"]', {timeout:15000});   // está en el menú "👤 Mi cuenta" (cerrado)
   await pagina.evaluate(()=>WS.pasarAMiCorreo());
   await pagina.waitForSelector('#m-correo', {visible:true});
   await pagina.evaluate(()=>{ const v={'m-correo':'dueno@ejemplo.com', 'm-actual':'clavedueno', 'm-nueva':'dueno2027', 'm-nueva2':'dueno2027'};

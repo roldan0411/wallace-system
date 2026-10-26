@@ -69,6 +69,8 @@ export function cuentaDeSolicitud(clave){
 }
 const haceCuanto=ms=>{ const m=Math.max(0, Math.round((Date.now()-(ms||Date.now()))/60000));
   return m<60 ? 'hace '+m+' min' : m<1440 ? 'hace '+Math.round(m/60)+' h' : 'hace '+Math.round(m/1440)+' días'; };
+// Solicitudes de contraseña pendientes (cifra "Por atender" del panel; solo dueño y ayudante)
+export function cuantasRecuperaciones(){ return esAdminSistema() ? Dominio.cuentas.recuperacionesPendientes(_recuperaciones).length : 0; }
 export function tarjetaRecuperaciones(){
   if(!esAdminSistema()) return '';
   const lista=Dominio.cuentas.recuperacionesPendientes(_recuperaciones);

@@ -9,3 +9,42 @@
 .sa-emblema svg{width:100%;height:100%;display:block;}
 .sa-marca{font-family:var(--fuente-titulos);font-weight:900;letter-spacing:-.4px;}
 .sa-marca span{color:var(--acento-c);text-shadow:var(--glow-txt);}
+
+/* Menús desplegables del panel (U1) y del ⋯ de cada negocio (U3): <details>, sin JavaScript */
+.menu-sa{position:relative;display:inline-block;}
+.menu-sa>summary{list-style:none;cursor:pointer;}
+.menu-sa>summary::-webkit-details-marker{display:none;}
+.menu-sa-lista{position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:230px;background:var(--modal);
+  border:1px solid var(--linea2);border-radius:var(--radio-12);box-shadow:var(--sombra-g);padding:6px;display:flex;flex-direction:column;gap:2px;}
+.menu-sa-lista button{text-align:left;background:transparent;border:none;color:var(--txt);padding:9px 12px;border-radius:var(--radio-8);
+  cursor:pointer;font-family:var(--fuente-texto);font-size:var(--fs-13);font-weight:600;}
+.menu-sa-lista button:hover{background:var(--hover);}
+.menu-sa-lista .peligro{color:var(--rojo);}
+.menu-sa-lista svg{width:15px;height:15px;vertical-align:-2px;margin-right:4px;}
+.menu-sa-lista hr{border:none;border-top:1px solid var(--linea2);margin:4px 0;}
+.menu-sa-quien{padding:6px 12px 8px;color:var(--gris);font-size:var(--fs-12);}
+/* En la tabla el menú se abre debajo, dentro de la celda (la tabla corta lo que sobresale) */
+.menu-sa.en-linea .menu-sa-lista{position:static;box-shadow:none;margin-top:6px;}
+.punto-num{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:var(--radio-pildora);background:var(--rojo);
+  color:var(--blanco);font-size:var(--fs-10);font-weight:800;line-height:1.6;text-align:center;}
+.cat-num{opacity:.75;font-size:var(--fs-11);margin-left:3px;}
+.link-negocio{background:none;border:none;padding:0;color:var(--txt);font-family:var(--fuente-texto);font-size:var(--fs-14);font-weight:800;cursor:pointer;text-align:left;}
+.link-negocio:hover{color:var(--acento-c);text-decoration:underline;}
+/* Ficha del negocio (U3) */
+.ficha-nav{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--linea2);padding:0 24px;}
+.ficha-nav button{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--gris);padding:12px 14px;
+  font-family:var(--fuente-texto);font-size:var(--fs-14);font-weight:700;cursor:pointer;}
+.ficha-nav button:hover{color:var(--txt);}
+.ficha-nav button.on{color:var(--acento-c);border-bottom-color:var(--acento);}
+.ficha-datos{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-top:12px;}
+.ficha-dato{display:flex;flex-direction:column;gap:3px;}
+.ficha-peligro{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px;padding-top:14px;border-top:1px solid var(--linea2);}
+/* Acciones de cada negocio: "Entrar" y el ⋯ en un renglón; el ⋯ abierto no mueve a "Entrar" */
+.panel-acciones{align-items:flex-start;flex-wrap:nowrap;}
+@media (max-width:760px){
+  .tabla-cards td .panel-acciones{grid-column:1/-1;width:100%;flex-wrap:wrap;}
+  .panel-acciones>.btn{flex:1;min-height:42px;justify-content:center;}
+  .panel-acciones .menu-sa.en-linea>summary{min-height:42px;min-width:52px;display:flex;align-items:center;justify-content:center;}
+  .panel-acciones .menu-sa.en-linea[open]{flex-basis:100%;}
+}
+@media (max-width:640px){ .ficha-nav{padding:0 12px;} .menu-sa-lista{right:auto;left:0;} }

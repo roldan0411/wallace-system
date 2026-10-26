@@ -74,6 +74,7 @@ export function crearDemoDeTipo(tipoDemo, cerrarYMostrar){
   } else ponerPass(d.admin, clave);
   DB.set('usuarios', usuarios.concat([d.admin]));
   anotarEnSistema(Dominio.sistema.ACCION.crearDemo, d.negocio, null, null, tipoDemo);
+  STATE.tabNegocios='demos';   // U2: que se vea en su pestaña
   // Registro por registro (como el resto de la app): sin tablas en formato viejo ni copias _bk
   Datos.guardarEn(negId, 'productos', d.productos);
   Datos.guardarEn(negId, 'clientes', d.clientes);

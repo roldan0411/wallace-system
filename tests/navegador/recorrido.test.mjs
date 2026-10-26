@@ -66,6 +66,8 @@ test('pantallas del super-admin: panel, administradores, configuración (todas l
     (DB.get('negocios')||[]).forEach(n=>{
       ['datos','comercial','operacion','ventanas','sucursales'].forEach(t=>probar('config '+n.nombre+' '+t, ()=>{ WS.STATE.page='config:'+n.id; WS.cfgTab(t); }));
       probar('usuarios '+n.nombre, ()=>{ WS.STATE.page='usuarios:'+n.id; });
+      probar('ficha '+n.nombre, ()=>{ WS.STATE.page='negocio:'+n.id; });
+      probar('historial de '+n.nombre, ()=>{ WS.STATE.page='historialneg:'+n.id; });
     });
     WS.STATE.page=''; WS.cfgTab('datos');
     return f;
@@ -894,7 +896,7 @@ test('panel, etapa 1: clave al azar (P1), suspender con motivo (P3), ventanas de
     res.otroSinDetalle=neg().activo===true;
     document.getElementById('m-detalle').value='Cambio de dueño'; ok(); await __esperar(60);
     res.suspendido=[neg().activo, neg().motivoSuspension, !!neg().suspendidoDesde];
-    WS.render();
+    WS.verTabNegocios('suspendidos');
     res.enPanel=document.getElementById('app').innerHTML.includes('Cambio de dueño');
     WS.toggleNegocio(id); await __esperar(60);
     res.activado=[neg().activo, 'suspendidoDesde' in neg(), 'motivoSuspension' in neg()];
@@ -999,6 +1001,72 @@ test('panel, etapa 2 (P2): las acciones del super-admin quedan en el historial; 
   });
   assert.deepEqual(r, {acciones:['Cambió la configuración', 'Activó el negocio', 'Suspendió el negocio'], suspension:true, precio:true,
     supervision:true, usuarios:true, alta:true, boton:true, filtros:true, ayudanteSinBoton:true, ayudanteBloqueado:true});
+});
+test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha del negocio', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    const app=()=>document.getElementById('app');
+    WS.STATE.page=''; WS.STATE.buscaNegocio=''; WS.STATE.filtroVendedor=''; WS.render();
+    // U1: dos menús arriba, con las acciones de siempre adentro
+    const menus=Array.from(document.querySelectorAll('.topbar details.menu-sa'));
+    // El texto del botón sin el número de avisos (en el recorrido hay negocios sin cifras)
+    res.menus=menus.map(m=>m.querySelector('summary').childNodes[0].textContent.trim().split(' ')[1]||'');
+    const sistema=menus[0].innerHTML, cuenta=menus[1].innerHTML;
+    res.enSistema=['descargarRespaldo()','irAdministradores()','irHistorialSistema()'].every(a=>sistema.includes('data-click="'+a+'"'));
+    res.enCuenta=['cambiarMiPassSuper()','logout()'].every(a=>cuenta.includes('data-click="'+a+'"'));
+    // U4: una fila de 4 cifras
+    res.cifras=Array.from(document.querySelectorAll('.contenido > .stats .stat-lbl')).map(e=>e.textContent);
+    // U2: pestañas con su número; cada negocio en la suya
+    const negs=DB.get('negocios')||[];
+    const c=Dominio.negocio.contarPorGrupo(negs);
+    const numeros=Array.from(document.querySelectorAll('[data-click^="verTabNegocios"] .cat-num')).map(e=>Number(e.textContent));
+    res.numeros=JSON.stringify(numeros)===JSON.stringify([c.clientes, c.prueba, c.demos, c.suspendidos]);
+    const filas=()=>Array.from(document.querySelectorAll('.contenido tbody .link-negocio')).map(b=>b.textContent);
+    WS.verTabNegocios('demos');
+    res.soloDemos=filas().length===c.demos && filas().every(nom=>negs.find(n=>n.nombre===nom).esDemo);
+    WS.verTabNegocios('clientes');
+    res.sinDemos=filas().every(nom=>!negs.find(n=>n.nombre===nom).esDemo);
+    WS.verTabNegocios('inventada');
+    res.tabValida=WS.STATE.tabNegocios==='clientes';
+    // U3: en la fila, "Entrar" y el menú ⋯ con el resto
+    WS.verTabNegocios('demos');
+    const fila=document.querySelector('.contenido tbody tr');
+    res.fila=fila.querySelectorAll('td[data-label="Acciones"] .acciones > button').length===1 && !!fila.querySelector('details.menu-sa.en-linea [data-click^="toggleNegocio"]');
+    // Ficha: cuatro secciones para el dueño
+    const demo=negs.find(n=>n.esDemo);
+    WS.abrirFicha(demo.id);
+    const nav=()=>Array.from(document.querySelectorAll('.ficha-nav button')).map(b=>b.textContent+(b.classList.contains('on')?'*':''));
+    res.navResumen=nav();
+    res.resumen=app().textContent.includes('Plan y cuenta') && app().textContent.includes('Ventas del mes') && !!document.querySelector('[data-click="entrarComoNegocio(\''+demo.id+'\')"]');
+    WS.configNegocio(demo.id); res.navConfig=nav().find(x=>x.endsWith('*'));
+    WS.usuariosNegocio(demo.id); res.navUsuarios=nav().find(x=>x.endsWith('*'));
+    WS.historialNegocio(demo.id); await __esperar(150);
+    res.navHistorial=nav().find(x=>x.endsWith('*'));
+    const hist=Array.from(document.querySelectorAll('.contenido tbody tr td[data-label="Acción"]')).map(t=>t.textContent);
+    res.historialDelNegocio=hist.includes('Creó una demo') && !hist.includes('Suspendió el negocio');
+    // El ayudante no ve la sección Historial ni puede abrirla
+    WS.STATE.user.rolSuper='ayudante'; WS.abrirFicha(demo.id);
+    res.ayudante=nav().length===3;
+    WS.historialNegocio(demo.id); res.ayudanteBloqueado=WS.STATE.page==='negocio:'+demo.id;
+    WS.STATE.user.rolSuper='dueno';
+    // Eliminar desde la ficha vuelve al panel
+    WS.nuevoNegocio(); await __esperar(60);
+    document.getElementById('m-nombre').value='Para borrar'; document.getElementById('m-usuario').value='borrar'+Date.now();
+    document.getElementById('m-prueba').value=''; ok(); await __esperar(300); WS.cerrarModal();
+    res.tabDelNuevo=WS.STATE.tabNegocios;
+    const nuevo=(DB.get('negocios')||[]).find(n=>n.nombre==='Para borrar');
+    WS.abrirFicha(nuevo.id);
+    WS.eliminarNegocio(nuevo.id); await __esperar(60); ok(); await __esperar(60);
+    document.getElementById('m-conf').value='Para borrar'; ok(); await __esperar(100);
+    res.borrado=!(DB.get('negocios')||[]).some(n=>n.id===nuevo.id) && WS.STATE.page==='';
+    WS.verTabNegocios('clientes');
+    return res;
+  });
+  assert.deepEqual(r, {menus:['Sistema', 'Dueño'], enSistema:true, enCuenta:true,
+    cifras:['Clientes activos', 'Ingreso del mes', 'Ventas de hoy', 'Por atender'], numeros:true, soloDemos:true, sinDemos:true, tabValida:true,
+    fila:true, navResumen:['Resumen*', 'Configurar', 'Usuarios', 'Historial'], resumen:true, navConfig:'Configurar*', navUsuarios:'Usuarios*',
+    navHistorial:'Historial*', historialDelNegocio:true, ayudante:true, ayudanteBloqueado:true, tabDelNuevo:'clientes', borrado:true});
 });
 test('sin errores de JavaScript en todo el recorrido', {skip:omitir}, ()=>{
   assert.deepEqual(errores, []);

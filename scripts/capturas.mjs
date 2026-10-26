@@ -127,6 +127,11 @@ async function tomar(dir){
       }
       await en(()=>WS.volverSuperAdmin());
     }
+    // Panel rediseñado (etapa 3): al final para no cambiar el número de las capturas anteriores
+    await en(()=>{ WS.STATE.page=''; WS.verTabNegocios('demos'); }); await foto('panel-demos');
+    await en(()=>{ document.querySelectorAll('.topbar details.menu-sa').forEach(d=>{ d.open=true; }); }); await foto('panel-menus');
+    await en(()=>{ document.querySelector('.contenido tbody details.menu-sa').open=true; }); await foto('panel-menu-negocio');
+    await en(()=>{ WS.abrirFicha((DB.get('negocios')||[])[0].id); }); await foto('ficha-negocio'); await foto('ficha-negocio-movil', 390);
   } catch(e){
     // Que se vea claro dónde se detuvo (la traza completa queda debajo)
     console.error('✖ Las capturas se detuvieron después de la '+n+' ('+(readdirSync(dir).filter(f=>f.endsWith('.png')).sort().pop()||'ninguna')+'): '+(e&&e.message));
