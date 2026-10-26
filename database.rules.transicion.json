@@ -23,6 +23,13 @@
           }
         }
       },
+      "pagos": {
+        "$negId": {
+          "$id": {
+            ".validate": "$negId.matches(/^[A-Za-z0-9-]{1,64}$/) && $id.matches(/^[A-Za-z0-9_-]{1,64}$/) && newData.child('id').val() === $id && newData.child('negocioId').val() === $negId && newData.child('mes').isString() && newData.child('mes').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])$/) && newData.child('valor').isNumber() && newData.child('valor').val() > 0 && newData.child('medio').isString() && newData.child('fecha').isString()"
+          }
+        }
+      },
       "$clave": {
         "$reg": {
           "id": {

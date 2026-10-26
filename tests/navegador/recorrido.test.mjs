@@ -1022,7 +1022,7 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
     const c=Dominio.negocio.contarPorGrupo(negs);
     const numeros=Array.from(document.querySelectorAll('[data-click^="verTabNegocios"] .cat-num')).map(e=>Number(e.textContent));
     res.numeros=JSON.stringify(numeros)===JSON.stringify([c.clientes, c.prueba, c.demos, c.suspendidos]);
-    const filas=()=>Array.from(document.querySelectorAll('.contenido tbody .link-negocio')).map(b=>b.textContent);
+    const filas=()=>Array.from(document.querySelectorAll('#tabla-negocios tbody .link-negocio')).map(b=>b.textContent);
     WS.verTabNegocios('demos');
     res.soloDemos=filas().length===c.demos && filas().every(nom=>negs.find(n=>n.nombre===nom).esDemo);
     WS.verTabNegocios('clientes');
@@ -1031,7 +1031,7 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
     res.tabValida=WS.STATE.tabNegocios==='clientes';
     // U3: en la fila, "Entrar" y el menú ⋯ con el resto
     WS.verTabNegocios('demos');
-    const fila=document.querySelector('.contenido tbody tr');
+    const fila=document.querySelector('#tabla-negocios tbody tr');
     res.fila=fila.querySelectorAll('td[data-label="Acciones"] .acciones > button').length===1 && !!fila.querySelector('details.menu-sa.en-linea [data-click^="toggleNegocio"]');
     // Ficha: cuatro secciones para el dueño
     const demo=negs.find(n=>n.esDemo);
@@ -1047,7 +1047,7 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
     res.historialDelNegocio=hist.includes('Creó una demo') && !hist.includes('Suspendió el negocio');
     // El ayudante no ve la sección Historial ni puede abrirla
     WS.STATE.user.rolSuper='ayudante'; WS.abrirFicha(demo.id);
-    res.ayudante=nav().length===3;
+    res.ayudante=nav().length===4;   // sin Historial
     WS.historialNegocio(demo.id); res.ayudanteBloqueado=WS.STATE.page==='negocio:'+demo.id;
     WS.STATE.user.rolSuper='dueno';
     // Eliminar desde la ficha vuelve al panel
@@ -1065,8 +1065,70 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
   });
   assert.deepEqual(r, {menus:['Sistema', 'Dueño'], enSistema:true, enCuenta:true,
     cifras:['Clientes activos', 'Ingreso del mes', 'Ventas de hoy', 'Por atender'], numeros:true, soloDemos:true, sinDemos:true, tabValida:true,
-    fila:true, navResumen:['Resumen*', 'Configurar', 'Usuarios', 'Historial'], resumen:true, navConfig:'Configurar*', navUsuarios:'Usuarios*',
+    fila:true, navResumen:['Resumen*', 'Configurar', 'Usuarios', 'Cobros', 'Historial'], resumen:true, navConfig:'Configurar*', navUsuarios:'Usuarios*',
     navHistorial:'Historial*', historialDelNegocio:true, ayudante:true, ayudanteBloqueado:true, tabDelNuevo:'clientes', borrado:true});
+});
+test('panel, etapa 4 (P6): cobro mensual con días de gracia, registrar y anular pagos, mora en "Por atender"', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    const neg=()=>(DB.get('negocios')||[]).find(n=>n.nombre==='Cobro Uno');
+    const hoy=today();
+    WS.STATE.page=''; WS.render();
+    // Alta sin prueba: se le cobra desde hoy (vence hoy: por pagar)
+    WS.nuevoNegocio(); await __esperar(60);
+    document.getElementById('m-nombre').value='Cobro Uno'; document.getElementById('m-usuario').value='cobro'+Date.now();
+    document.getElementById('m-precio').value='100000'; document.getElementById('m-prueba').value='';
+    ok(); await __esperar(300); WS.cerrarModal();
+    const n0=neg();
+    res.inicio=[n0.cobroDesde===hoy.slice(0,7), n0.diaPago===Dominio.cobros.diaPagoPorDefecto(hoy), Dominio.cobros.estadoPago(n0, hoy).estado];
+    WS.render();
+    const tarjeta=()=>(Array.from(document.querySelectorAll('.contenido > .tarjeta')).find(t=>t.textContent.includes('Cobros del mes'))||{}).textContent||'';
+    res.enTarjeta=tarjeta().includes('Cobro Uno');
+    // Registrar el pago del mes: queda al día y fuera de la tarjeta
+    WS.registrarPago(n0.id); await __esperar(60);
+    res.sugerido=document.getElementById('m-mes').value===hoy.slice(0,7) && document.getElementById('m-valor').value==='100000';
+    document.getElementById('m-medio').value='Nequi'; ok(); await __esperar(300);
+    res.alDia=[neg().pagadoHasta===hoy.slice(0,7), Dominio.cobros.estadoPago(neg(), hoy).estado];
+    WS.render(); res.salioDeLaTarjeta=!tarjeta().includes('Cobro Uno');
+    // Ficha → Cobros: el pago, el total y anularlo (vuelve a deberse)
+    WS.cobrosNegocio(n0.id); await __esperar(150);
+    const filas=()=>Array.from(document.querySelectorAll('.contenido tbody tr'));
+    res.ficha=filas().length===1 && document.getElementById('app').textContent.includes('Nequi') && !!document.querySelector('.ficha-nav button.on') && document.querySelector('.ficha-nav button.on').textContent==='Cobros';
+    const pagoId=document.querySelector('[data-click^="anularPago"]').getAttribute('data-click').match(/'([^']+)'\)$/)[1];
+    WS.anularPago(n0.id, pagoId); await __esperar(60); ok(); await __esperar(300);
+    res.anulado=[neg().pagadoHasta===undefined, Dominio.cobros.estadoPago(neg(), hoy).estado, document.getElementById('app').textContent.includes('Anulado')];
+    // Datos inválidos no se guardan
+    WS.registrarPago(n0.id); await __esperar(60);
+    document.getElementById('m-valor').value='0'; ok(); await __esperar(100);
+    res.valorCero=(await Datos.leerPagos(n0.id)).length===1;
+    WS.cerrarModal();
+    // Mora: el cobro empezó hace 2 meses y no ha pagado → en mora, en "Por atender" y con botón Suspender
+    const l=DB.get('negocios'); const x=l.find(n=>n.id===n0.id);
+    x.cobroDesde=Dominio.cobros.mesAnterior(Dominio.cobros.mesAnterior(hoy.slice(0,7))); x.diaPago=1; DB.set('negocios', l);
+    WS.STATE.page=''; WS.render();
+    const e=Dominio.cobros.estadoPago(neg(), hoy);
+    res.mora=[e.estado, e.pendientes>=2];
+    res.porAtender=Number(Array.from(document.querySelectorAll('.contenido > .stats .stat')).find(s=>s.textContent.includes('Por atender')).querySelector('.stat-val').textContent)>=1;
+    res.suspender=!!document.querySelector('.contenido > .tarjeta [data-click="toggleNegocio(\''+n0.id+'\')"]');
+    // Pasar a pago una prueba: empieza el cobro
+    WS.nuevoNegocio(); await __esperar(60);
+    document.getElementById('m-nombre').value='Cobro Prueba'; document.getElementById('m-usuario').value='cobrop'+Date.now();
+    ok(); await __esperar(300); WS.cerrarModal();
+    const pr=(DB.get('negocios')||[]).find(n=>n.nombre==='Cobro Prueba');
+    res.pruebaNoCobra=Dominio.cobros.estadoPago(pr, hoy).estado==='no_aplica';
+    WS.pasarAPago(pr.id); await __esperar(60); ok(); await __esperar(200);
+    const pr2=(DB.get('negocios')||[]).find(n=>n.id===pr.id);
+    res.pasoAPago=Dominio.cobros.mesValido(pr2.cobroDesde) && !!pr2.diaPago;
+    // Historial del sistema
+    const h=(await Datos.leerHistorialSistema(500)).filter(x=>x.negocioId===n0.id).map(x=>x.accion);
+    res.historial=h.includes('Registró un pago') && h.includes('Anuló un pago');
+    WS.STATE.page=''; WS.verTabNegocios('clientes');
+    return res;
+  });
+  assert.deepEqual(r, {inicio:[true, true, 'por_pagar'], enTarjeta:true, sugerido:true, alDia:[true, 'al_dia'],
+    salioDeLaTarjeta:true, ficha:true, anulado:[true, 'por_pagar', true], valorCero:true, mora:['en_mora', true], porAtender:true, suspender:true,
+    pruebaNoCobra:true, pasoAPago:true, historial:true});
 });
 test('sin errores de JavaScript en todo el recorrido', {skip:omitir}, ()=>{
   assert.deepEqual(errores, []);

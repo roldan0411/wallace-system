@@ -19,7 +19,7 @@ export const ACCION={
   crearSuperAdmin:'Creó un administrador del sistema', editarSuperAdmin:'Editó un administrador del sistema', eliminarSuperAdmin:'Eliminó un administrador del sistema',
   generarTemporal:'Generó una contraseña temporal', descartarRecuperacion:'Descartó una solicitud de contraseña',
   cambiarMiPass:'Cambió su contraseña', pasarAMiCorreo:'Pasó su cuenta a su correo', migrarCuenta:'Pasó una cuenta a Firebase', borrarPerfil:'Borró un perfil sin usuario',
-  descargarRespaldo:'Descargó el respaldo', restaurarNegocio:'Restauró un negocio desde un respaldo'
+  descargarRespaldo:'Descargó el respaldo', registrarPago:'Registró un pago', anularPago:'Anuló un pago', restaurarNegocio:'Restauró un negocio desde un respaldo'
 };
 
 // Campos que no se copian: pesan mucho (imágenes) o son secretos. Solo se dice que cambiaron.

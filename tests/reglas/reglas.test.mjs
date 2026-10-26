@@ -98,7 +98,7 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
     const a=db('admin1');
     await assertSucceeds(a.ref('data/negocios_r/N1/nombre').set('Uno SAS'));
     await assertSucceeds(a.ref('data').update({'negocios_r/N1/logo':'data:image/png;base64,iVBORw0KGgo=', 'negocios_r/N1/inventarioApagado':true}));
-    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension']){
+    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension','cobroDesde','pagadoHasta']){
       await assertFails(a.ref('data/negocios_r/N1/'+campo).set(campo==='activo'));
     }
     await assertFails(a.ref('data/negocios_r/N1').set({id:'N1', nombre:'todo'}));   // registro entero: solo super-admin
@@ -218,6 +218,23 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
   });
   // Super-admin vendedor: solo sus negocios (vendedorId) y sus demos (demoDe)
   const activo=(uid, neg)=>db(uid).ref('perfiles/'+uid+'/negocioActivo').set(neg);
+  test('pagos de los clientes (P6): solo el dueño y el ayudante; con mes, valor y medio válidos', async ()=>{
+    const p=(id, extra)=>Object.assign({id, negocioId:'N1', mes:'2026-10', valor:149900, medio:'Nequi', fecha:'2026-10-11'}, extra||{});
+    await assertSucceeds(db('sa').ref('data/pagos/N1/p1').set(p('p1')));
+    await assertSucceeds(db('ayu').ref('data/pagos/N1/p2').set(p('p2')));
+    await assertSucceeds(db('ayu').ref('data/pagos/N1').once('value'));
+    await assertSucceeds(db('sa').ref('data/pagos/N1/p1/anulado').set(true));           // anular
+    await assertFails(db('admin1').ref('data/pagos/N1').once('value'));                 // la gente del negocio no los ve
+    await assertFails(db('admin1').ref('data/pagos/N1/p3').set(p('p3')));
+    await assertFails(db('cajero1').ref('data/pagos/N1').once('value'));
+    await assertFails(db('vend1').ref('data/pagos/NV/p4').set(Object.assign(p('p4'), {negocioId:'NV'})));   // ni el vendedor
+    await assertFails(db('vend1').ref('data/pagos/NV').once('value'));
+    await assertFails(db('sa').ref('data/pagos/N1/p5').set(p('p5', {valor:0})));        // valor
+    await assertFails(db('sa').ref('data/pagos/N1/p6').set(p('p6', {valor:-1})));
+    await assertFails(db('sa').ref('data/pagos/N1/p7').set(p('p7', {mes:'2026-13'})));  // mes
+    await assertFails(db('sa').ref('data/pagos/N1/p8').set(p('p8', {negocioId:'N10'}))); // de otro negocio
+    await assertFails(db('sa').ref('data/pagos/N1/p9').set(p('otro')));                  // id distinto
+  });
   test('historial del sistema (P2): cada super-admin anota a su nombre, solo agregar; lo lee solo el dueño', async ()=>{
     const e=(uid, id)=>({id, quienUid:uid, accion:'Suspendió el negocio', negocioId:'N1', fecha:{'.sv':'timestamp'}});
     await assertSucceeds(db('ayu').ref('auditoria_sistema/h1').set(e('ayu','h1')));

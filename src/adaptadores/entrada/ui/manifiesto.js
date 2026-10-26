@@ -15,7 +15,7 @@
 //  dos copias con estado distinto): render.yaml les pone Cache-Control: no-cache.
 // ============================================================
 
-export const VERSION_UI='2026-10-24c';
+export const VERSION_UI='2026-10-26';
 
 export const ARCHIVOS_UI=[
   'nucleo/estado.js',
@@ -44,6 +44,7 @@ export const ARCHIVOS_UI=[
   'super-admin/reporte-mensual.js',
   'super-admin/historial-sistema.js',
   'super-admin/ficha-negocio.js',
+  'super-admin/cobros.js',
   'ventas/nueva-venta.js',
   'ventas/cuentas-abiertas.js',
   'ventas/pedidos.js',

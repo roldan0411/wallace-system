@@ -15,6 +15,7 @@ import { render } from '../nucleo/navegacion.js';
 import { resumenDe } from '../reportes/resumen.js';
 import { pillPrueba } from './pruebas.js';
 import { tablaHistorial } from './historial-sistema.js';
+import { pillPago } from './cobros.js';
 
 export function abrirFicha(id){
   if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaConfigurarNegocios,'error'); return; }
@@ -23,7 +24,7 @@ export function abrirFicha(id){
 // Cabecera común de la ficha: nombre, estado y las secciones
 export function cabeceraFicha(neg, seccion){
   const esDueno=STATE.user && STATE.user.rolSuper==='dueno';
-  const secciones=[['resumen','Resumen','abrirFicha'],['config','Configurar','configNegocio'],['usuarios','Usuarios','usuariosNegocio']]
+  const secciones=[['resumen','Resumen','abrirFicha'],['config','Configurar','configNegocio'],['usuarios','Usuarios','usuariosNegocio'],['cobros','Cobros','cobrosNegocio']]
     .concat(esDueno?[['historial','Historial','historialNegocio']]:[]);
   return `
   <div class="topbar">
@@ -64,6 +65,7 @@ export function pantallaFicha(negId){
         ${dato('Plan', escapeHtml(neg.plan||'—'))}
         ${dato('Precio al mes', fmtMoney(neg.precioMes||0))}
         ${dato('Día de pago', neg.diaPago?escapeHtml(neg.diaPago):'—')}
+        ${pillPago(neg)?dato('Pago', pillPago(neg)):''}
         ${dato('Vendedor', escapeHtml(vendedor))}
         ${dato('Tipo', escapeHtml(neg.tipo||'—'))}
         ${dato('Ciudad', escapeHtml(neg.ciudad||'—'))}

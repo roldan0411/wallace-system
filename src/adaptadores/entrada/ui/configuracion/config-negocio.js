@@ -105,7 +105,7 @@ export function pantallaConfig(negId){
       <div class="linea"><span>Antigüedad</span><strong>${dias!==null?(dias>=30?Math.floor(dias/30)+' mes(es) · '+dias+' días':dias+' días'):'—'}</strong></div>
       <div class="linea"><span>Usuarios creados</span><strong>${nUsuarios}</strong></div>
       <div class="linea"><span>Ventas registradas</span><strong>${(r=>r?r.pagadas:'—')(resumenDe(negId))}</strong></div>
-      <div class="linea total-linea"><span>Facturado desde que entró</span><strong>${fmtMoney((neg.precioMes||0)*Math.max(1,Math.ceil((dias||0)/30)))}</strong></div>
+      <div class="linea total-linea"><span>Facturado desde que entró (estimado; lo pagado de verdad está en la ficha → Cobros)</span><strong>${fmtMoney((neg.precioMes||0)*Math.max(1,Math.ceil((dias||0)/30)))}</strong></div>
       <div class="botones-fila mt-14">
         <button class="btn btn-gold" data-click="reporteMensualNegocio('${escapeHtml(negId)}')">📄 Reporte mensual en PDF</button>
       </div>`);
