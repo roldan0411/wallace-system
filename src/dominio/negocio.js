@@ -95,6 +95,16 @@ export const PERFILES = {
 // nombre viejo de la pantalla de configuración; los datos reales usan "Premium".
 export const PLANES = ['Básico','Profesional','Premium'];
 export function planDe(neg){ const p=(neg&&neg.plan)||''; return p==='Empresarial'?'Premium':(PLANES.indexOf(p)>-1?p:'Básico'); }
+
+// Suspender un negocio (P3): siempre con motivo; "Otro" exige explicarlo. Devuelve los
+// campos que cambian, o null si falta el motivo. Al reactivar se borran los dos campos
+// (reservados: solo los escribe el super-admin, CAMPOS_NEGOCIO_RESERVADOS).
+export const MOTIVOS_SUSPENSION=['Falta de pago','Solicitud del cliente','Otro'];
+export function suspension(motivo, detalle, fecha){
+  const d=String(detalle||'').trim().slice(0,120);
+  if(MOTIVOS_SUSPENSION.indexOf(motivo)<0 || (motivo==='Otro' && !d)) return null;
+  return {activo:false, suspendidoDesde:fecha, motivoSuspension:motivo==='Otro'?d:(d?motivo+': '+d:motivo)};
+}
 // Ventanas que se marcan al elegir la plantilla de un plan (Configuración → Ventanas).
 // Profesional y Premium son iguales A PROPÓSITO (decisión F17, 2026-10-08): Premium se
 // diferencia por precio y soporte, fuera del sistema.

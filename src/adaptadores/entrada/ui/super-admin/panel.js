@@ -126,7 +126,7 @@ export function panelSuperAdmin(){
   <div class="topbar">
     <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
       <span class="sa-marca">Panel de <span>Super-Admin</span></span>
-      <span class="pill pill-oro">Dueño del sistema</span></h1>
+      <span class="pill pill-oro">${STATE.user.rolSuper==='ayudante'?'Ayudante del sistema':'Dueño del sistema'}</span></h1>
     <div class="tb-der">
       <span class="fb-dot off" id="fb-status" title="Conexión"></span>
       <span class="reloj" id="reloj"></span>
@@ -201,7 +201,7 @@ export function panelSuperAdmin(){
           <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
           <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
           <td data-label="Usuarios">${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
-          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
           <td class="acciones" data-label="Acciones">
             <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
             <button class="btn btn-sm" data-click="configNegocio('${escapeHtml(n.id)}')">Configurar</button>
@@ -211,7 +211,7 @@ export function panelSuperAdmin(){
             <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Suspender':'Activar'}</button>
             ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(n.id)}')" title="Eliminar empresa">🗑️</button>`:''}
           </td>
-        </tr>`).join('') : '<tr><td colspan="8" class="gris">No hay negocios. Crea el primero.</td></tr>'}
+        </tr>`).join('') : '<tr><td colspan="9" class="gris">No hay negocios. Crea el primero.</td></tr>'}
         </tbody>
       </table></div>
     </div>

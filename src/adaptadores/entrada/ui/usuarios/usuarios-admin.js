@@ -42,7 +42,7 @@ export function pantallaUsuarios(negId){
             <button class="btn btn-sm" data-click="editarUsuario('${escapeHtml(negId)}','${escapeHtml(u.id)}')">Editar</button>
             <button class="btn btn-sm btn-rojo" data-click="eliminarUsuario('${escapeHtml(u.id)}')">×</button>
           </td>
-        </tr>`).join(''):'<tr><td colspan="7" class="gris">Sin usuarios. Crea el primero.</td></tr>'}</tbody>
+        </tr>`).join(''):'<tr><td colspan="6" class="gris">Sin usuarios. Crea el primero.</td></tr>'}</tbody>
       </table></div>
     </div>
   </div>`;
@@ -97,6 +97,8 @@ export function editarUsuario(negId,userId){
     const pants=Array.prototype.slice.call(document.querySelectorAll('.u-pant:checked')).map(c=>c.value);
     const perms=Array.prototype.slice.call(document.querySelectorAll('.u-perm:checked')).map(c=>c.value);
     const usuarios=DB.get('usuarios')||[];
+    // P11: el negocio no se queda sin administrador activo
+    if(u && Dominio.permisos.dejaSinAdmin(usuarios, negId, u.id, {rol:d.rol, activo})){ toast(MSJ.elNegocioQuedariaSinAdministrador,'error'); return; }
     if(u){
       const x=usuarios.find(y=>y.id===userId);
       if(x){
@@ -123,15 +125,41 @@ export function editarUsuario(negId,userId){
     cerrarModal(); toast(MSJ.usuarioGuardado,'success'); render();
   }});
 }
+// P11: se ofrece primero desactivar (conserva su historial de ventas); eliminar queda
+// como segunda opción, en rojo. El último administrador activo no se quita.
 export function eliminarUsuario(id){
   if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaEliminarUsuarios,'error'); return; }
-  confirmarModal(MSJ.eliminarEsteUsuario,()=>{
-    const rec=(DB.get('usuarios')||[]).find(u=>u.id===id);
-    if(rec && conCuentasFirebase()){
-      borrarCuentaDe(rec.usuario).catch(e=>toast('No se pudo borrar su cuenta de acceso: '+mensajeCuenta(e),'error'));
-      quitarUsuarioLegado(id);
-    }
-    DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.id!==id));
-    toast(MSJ.eliminado,'info'); render();
-  },'Eliminar');
+  const us=DB.get('usuarios')||[];
+  const rec=us.find(u=>u.id===id); if(!rec) return;
+  if(Dominio.permisos.dejaSinAdmin(us, rec.negocioId, id, null)){ toast(MSJ.elNegocioQuedariaSinAdministrador,'error'); return; }
+  const quien=(rec.nombre||rec.usuario)+' ('+(ROLES.find(r=>r[0]===rec.rol)||['',rec.rol])[1]+')';
+  if(rec.activo===false){
+    confirmarModal('¿Eliminar definitivamente a '+quien+'? Ya estaba desactivado. Se borra el usuario y su acceso.', ()=>eliminarUsuarioDefinitivo(id), BOTON.eliminarDefinitivamente);
+    return;
+  }
+  abrirModal({titulo:'Quitar a '+quien, textoBoton:BOTON.desactivar, campos:[],
+    extraHTML:`<p class="fs-15 lh-1_6"><strong>Desactivar</strong>: ya no puede entrar y se conserva su historial de ventas. Se puede volver a activar en Editar.</p>
+      <p class="nota">Eliminar borra el usuario y su acceso, y no se puede deshacer.</p>
+      <button type="button" class="btn btn-sm btn-rojo mt-10" data-click="eliminarUsuarioDefinitivo('${escapeHtml(id)}')">Eliminar definitivamente</button>`,
+    onGuardar:()=>{
+      const l=DB.get('usuarios')||[];
+      const x=l.find(y=>y.id===id); if(!x){ cerrarModal(); return; }
+      x.activo=false;
+      DB.set('usuarios',l);
+      if(conCuentasFirebase()) trasGuardarCuenta(x, false, x.usuario, '');
+      cerrarModal(); toast(MSJ.usuarioDesactivado,'info'); render();
+    }});
+}
+export function eliminarUsuarioDefinitivo(id){
+  if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaEliminarUsuarios,'error'); return; }
+  const us=DB.get('usuarios')||[];
+  const rec=us.find(u=>u.id===id); if(!rec) return;
+  if(Dominio.permisos.dejaSinAdmin(us, rec.negocioId, id, null)){ toast(MSJ.elNegocioQuedariaSinAdministrador,'error'); return; }
+  cerrarModal();
+  if(conCuentasFirebase()){
+    borrarCuentaDe(rec.usuario).catch(e=>toast('No se pudo borrar su cuenta de acceso: '+mensajeCuenta(e),'error'));
+    quitarUsuarioLegado(id);
+  }
+  DB.set('usuarios',(DB.get('usuarios')||[]).filter(u=>u.id!==id));
+  toast(MSJ.eliminado,'info'); render();
 }

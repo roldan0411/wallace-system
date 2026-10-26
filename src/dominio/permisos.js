@@ -59,6 +59,15 @@ export function pantallasDe(u){
   if(u && u.pantallas && u.pantallas.length) return u.pantallas;
   return PANTALLAS_POR_ROL[u && u.rol] || PANTALLAS_POR_ROL.cajero;
 }
+// ¿Este cambio deja al negocio sin ningún administrador activo? (P11)
+// despues = null si se borra el usuario, o {rol, activo} con lo que quedaría.
+// Solo bloquea si hoy hay alguno: un negocio viejo sin admin no impide nada.
+export function dejaSinAdmin(usuarios, negocioId, usuarioId, despues){
+  const esAdmin=u=>!!(u && u.rol==='admin' && u.activo!==false);
+  const delNeg=(usuarios||[]).filter(u=>u && u.negocioId===negocioId);
+  if(!delNeg.some(esAdmin)) return false;
+  return !delNeg.some(u=>u.id===usuarioId ? (despues && esAdmin(Object.assign({}, u, despues))) : esAdmin(u));
+}
 // Sucursales: vacío = todas
 export function puedeVerSucursal(u, sucId){
   if(!u) return false;
