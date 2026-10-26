@@ -302,10 +302,22 @@ Decisiones del usuario: cada pago guarda **mes, valor y medio**; **5 días de gr
 - **Pagos**: `data/pagos/<negId>/<id>` `{id, negocioId, mes, valor, medio, fecha, registrado, quien, nota?, anulado?, anuladoEn?, anuladoPor?}`. Los leen y escriben solo el dueño y el ayudante (la gente del negocio y el vendedor no). Las reglas validan id, negocio, mes, valor > 0 y medio. Puerto + adaptador: `guardarPago` y `leerPagos` (bajo demanda; el panel usa solo los campos del negocio).
 - **Interfaz** (`ui/super-admin/cobros.js`):
   - **"💰 Cobros del mes"**: tarjeta del panel con los clientes en mora, por pagar o sin pagos, y los botones "Registrar pago" y (en mora) "Suspender".
-  - La mora suma en **"Por atender"**.
+  - La mora suma en **"Por atender"** (desde la etapa 5, la cifra cuenta todo lo de la bandeja: también "por pagar" y "sin pagos registrados").
   - El estado de pago aparece en la tabla (también en "Tus clientes" del vendedor, que lo ve pero no registra).
   - **Ficha → Cobros**: estado, día de pago, desde cuándo se cobra, pagado hasta, **total pagado de verdad** (P7) y la lista de pagos con "Anular". Un pago anulado se queda en la lista marcado y ese mes vuelve a deberse.
   - "Registrar pago" sugiere el primer mes que falta y el precio del plan.
 - **Historial**: "Registró un pago" y "Anuló un pago", con el antes y el después de `pagadoHasta`.
 - **P7**: en Configurar → Plan y vendedor, "Facturado desde que entró" queda marcado como estimado; lo pagado de verdad está en la ficha → Cobros.
 - **Pruebas**: dominio (`tests/dominio/cobros.test.mjs`), reglas (quién lee y escribe, validación, campos reservados) y recorrido ("panel, etapa 4": alta → por pagar → registrar → al día → anular → mora en "Por atender" → pasar a pago inicia el cobro).
+
+## 17. Lo que quedaba del panel (etapa 5, 2026-10-26)
+
+Decisiones del usuario: archivar **30 días** antes de poder borrar; el vendedor puede **"Avisar que ya pagó"**; en el alta se piden **teléfono del negocio, nombre y teléfono del dueño, y día de pago**. Los **precios sugeridos por plan** los dirá el usuario: mientras tanto `Dominio.negocio.PRECIO_SUGERIDO` tiene 149.900 en los tres (como antes).
+
+- **Bandeja "Por atender" (U5)**: avisos de pago de los vendedores, solicitudes de contraseña, pruebas por vencer y cobros del mes quedan en UNA tarjeta (`bandejaPorAtender`); cada parte conserva sus botones. Sin pendientes: "✓ Todo al día".
+- **Filtros y orden (U6)**: además de buscar y vendedor, **plan** y **ciudad**; orden por nombre, más recientes, mayor precio o "los que más deben" (`Dominio.negocio.ordenarPanel`, `gravedadCobro`). Se recuerdan durante la sesión; al salir se limpian.
+- **Fechas legibles (U7)**: en la ficha, "8 oct 2026 · hace 18 días" (`Dominio.fechas.haceTexto`) para "Cliente desde" y la suspensión.
+- **Archivar antes de eliminar (P4)**: "Eliminar" un cliente lo **archiva** (`archivado`, `archivadoDesde`, reservados): queda suspendido y en la pestaña **Archivados**; "♻ Sacar del archivo" lo devuelve activo. Pasados `DIAS_ARCHIVO` (30) días se puede **eliminar definitivamente**: antes se baja su **respaldo** (`Datos.exportarNegocio` + `bajarArchivoRespaldo`, el mismo formato que "Restaurar un negocio"); si el respaldo falla, no se borra nada. Las demos se borran directo. Los archivados no cuentan en las cifras.
+- **Avisos de pago del vendedor (P17)**: en "Tus clientes" el vendedor ve el estado de pago y "Avisar que pagó" (mes, valor, medio, fecha, nota). El aviso va a `avisos_pago/<id>` (raíz): el vendedor solo crea avisos **pendientes**, a su nombre y de **sus** clientes; el dueño y el ayudante los ven en la bandeja y los **confirman** (queda el pago, con la nota "Aviso de …") o **rechazan**. Se escuchan en vivo (`Datos.escucharAvisosPago`), también en modo local. Historial: "Avisó que su cliente pagó", "Rechazó un aviso de pago".
+- **Crear negocio en 3 pasos (P5/U9)**: la misma ventana con secciones **1 · El negocio** (nombre, tipo, ciudad, teléfono, cómo cobra), **2 · El dueño y su acceso** (nombre, teléfono, usuario; el administrador lleva el nombre del dueño) y **3 · Plan, cobro y prueba** (al elegir el plan se pone su precio sugerido, `sugerirPrecioPlan`; día de pago 1–28 o vacío). Al terminar, además de la clave: "⚙ Configurar ahora" y "Entrar al negocio" (`despuesDelAlta`). La ficha muestra el dueño y el teléfono. `abrirModal` admite `tipo:'seccion'` (título) y `cambio` en los select.
+- **Pruebas**: dominio (archivo, orden, ciudad, fechas, precio y día de pago, avisos), reglas (avisos de pago; campos reservados) y recorrido ("panel, etapa 5" ×2 y el borrado de la etapa 3, ahora con archivo y respaldo).

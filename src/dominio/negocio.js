@@ -94,22 +94,64 @@ export const PERFILES = {
 // Planes comerciales (F6): un solo nombre en todo el sistema. "Empresarial" era el
 // nombre viejo de la pantalla de configuración; los datos reales usan "Premium".
 export const PLANES = ['Básico','Profesional','Premium'];
+// Precio mensual que se sugiere al crear un negocio (P5). Se puede cambiar en cada alta.
+// PENDIENTE: los valores los decide el dueño del sistema; mientras tanto, los de siempre.
+export const PRECIO_SUGERIDO={'Básico':149900, 'Profesional':149900, 'Premium':149900};
+export function precioSugerido(plan){ return PRECIO_SUGERIDO[plan]||PRECIO_SUGERIDO['Básico']; }
+// Día de pago escrito en el alta: 1–28 (para que exista todos los meses); vacío = null
+export function diaPagoEscrito(v){
+  if(v==null || String(v).trim()==='') return null;
+  const n=Number(v);
+  return Number.isInteger(n) && n>=1 && n<=28 ? n : NaN;
+}
 export function planDe(neg){ const p=(neg&&neg.plan)||''; return p==='Empresarial'?'Premium':(PLANES.indexOf(p)>-1?p:'Básico'); }
 
 // Pestañas del panel del super-admin (U2): demos aparte (dinero ficticio), luego los
 // suspendidos, luego los que están a prueba; el resto son clientes que pagan.
-export const GRUPOS_PANEL=['clientes','prueba','demos','suspendidos'];
+export const GRUPOS_PANEL=['clientes','prueba','demos','suspendidos','archivados'];
 export function grupoPanel(neg){
   if(!neg) return 'clientes';
+  if(neg.archivado) return 'archivados';
   if(neg.esDemo) return 'demos';
   if(!neg.activo) return 'suspendidos';
   if(typeof neg.pruebaHasta==='number') return 'prueba';
   return 'clientes';
 }
 export function contarPorGrupo(negocios){
-  const c={clientes:0, prueba:0, demos:0, suspendidos:0};
+  const c={clientes:0, prueba:0, demos:0, suspendidos:0, archivados:0};
   (negocios||[]).forEach(n=>{ c[grupoPanel(n)]++; });
   return c;
+}
+
+// U6: orden de la lista del panel. Sin criterio, como vienen. "mora" usa la gravedad que da la interfaz.
+export function ordenarPanel(lista, criterio, gravedad){
+  const l=(lista||[]).slice();
+  const por={
+    nombre:(a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''), 'es'),
+    recientes:(a,b)=>String(b.creado||'').localeCompare(String(a.creado||'')),
+    precio:(a,b)=>(Number(b.precioMes)||0)-(Number(a.precioMes)||0)
+  };
+  if(criterio==='mora' && typeof gravedad==='function') return l.sort((a,b)=>gravedad(b)-gravedad(a));
+  return por[criterio] ? l.sort(por[criterio]) : l;
+}
+// La ciudad como clave de filtro (sin mayúsculas ni espacios de más)
+export function claveCiudad(c){ return String(c||'').trim().toLowerCase(); }
+
+// Archivar antes de eliminar (P4): "Eliminar" un cliente primero lo archiva (suspendido y en la
+// pestaña Archivados). Solo pasados DIAS_ARCHIVO días se puede borrar del todo (con su respaldo).
+// Las demos se borran directo (son de práctica). Campos reservados: archivado, archivadoDesde.
+export const DIAS_ARCHIVO=30;
+export function archivar(fechaISO){ return {activo:false, archivado:true, archivadoDesde:fechaISO}; }
+export function borrableDesde(neg){
+  if(!neg || !neg.archivado || !neg.archivadoDesde) return null;
+  const t=new Date(neg.archivadoDesde).getTime();
+  return isNaN(t) ? null : new Date(t+DIAS_ARCHIVO*86400000).toISOString();
+}
+export function puedeBorrarse(neg, ahoraMs){
+  if(!neg) return false;
+  if(neg.esDemo) return true;
+  const d=borrableDesde(neg);
+  return !!d && ahoraMs>=new Date(d).getTime();
 }
 
 // Suspender un negocio (P3): siempre con motivo; "Otro" exige explicarlo. Devuelve los

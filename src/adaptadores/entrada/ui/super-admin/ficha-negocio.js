@@ -16,6 +16,7 @@ import { resumenDe } from '../reportes/resumen.js';
 import { pillPrueba } from './pruebas.js';
 import { tablaHistorial } from './historial-sistema.js';
 import { pillPago } from './cobros.js';
+import { textoArchivo } from './negocios.js';
 
 export function abrirFicha(id){
   if(!esAdminSistema()){ toast(MSJ.noTienesPermisoParaConfigurarNegocios,'error'); return; }
@@ -30,13 +31,20 @@ export function cabeceraFicha(neg, seccion){
   <div class="topbar">
     <h1>${ic('building')} ${escapeHtml(neg.nombre)}
       ${neg.esDemo?'<span class="pill pill-azul">DEMO</span>':''}
-      <span class="pill ${neg.activo?'pill-verde':'pill-rojo'}">${neg.activo?'Activo':(neg.esDemo?'Pausada':'Suspendido')}</span>
+      <span class="pill ${neg.activo?'pill-verde':'pill-rojo'}">${neg.archivado?'Archivado':neg.activo?'Activo':(neg.esDemo?'Pausada':'Suspendido')}</span>
       ${pillPrueba(neg).replace('DEMO · ','')}</h1>
     <div class="tb-der"><button class="btn btn-ghost btn-sm" data-click="irPanel()">← Volver al panel</button></div>
   </div>
   <nav class="ficha-nav">${secciones.map(s=>`<button class="${seccion===s[0]?'on':''}" data-click="${escapeHtml(s[2])}('${escapeHtml(neg.id)}')">${s[1]}</button>`).join('')}</nav>`;
 }
 
+// U7: "8 oct 2026 · hace 18 días"
+function fechaConHace(f){
+  if(!f) return '—';
+  const dia=Dominio.fechas.diaDe(f);
+  return new Date(dia+'T00:00:00').toLocaleDateString('es-CO', {day:'numeric', month:'short', year:'numeric'})
+    +' · '+Dominio.fechas.haceTexto(-Dominio.fechas.diasHasta(dia, today()));
+}
 // ---------- Resumen ----------
 function dato(etiqueta, valor){ return `<div class="ficha-dato"><span class="gris chico">${etiqueta}</span><strong>${valor}</strong></div>`; }
 export function pantallaFicha(negId){
@@ -53,7 +61,7 @@ export function pantallaFicha(negId){
   const esDueno=STATE.user && STATE.user.rolSuper==='dueno';
   return `${cabeceraFicha(neg, 'resumen')}
   <div class="contenido">
-    ${!neg.activo && !neg.esDemo?`<div class="tarjeta alerta"><strong>Suspendido</strong>${neg.suspendidoDesde?' desde '+escapeHtml(Dominio.fechas.diaDe(neg.suspendidoDesde)):''}${neg.motivoSuspension?' · '+escapeHtml(neg.motivoSuspension):''}</div>`:''}
+    ${!neg.activo && !neg.esDemo?`<div class="tarjeta alerta"><strong>Suspendido</strong>${neg.suspendidoDesde?' desde el '+escapeHtml(fechaConHace(neg.suspendidoDesde)):''}${neg.motivoSuspension?' · '+escapeHtml(neg.motivoSuspension):''}</div>`:''}
     <div class="stats">
       <div class="stat verde"><div class="stat-lbl">Ventas de hoy</div><div class="stat-val">${fmtMoney(r?(r.dias||{})[hoy]||0:0)}</div><div class="stat-sub">${escapeHtml(actividad)}</div></div>
       <div class="stat gold"><div class="stat-lbl">Ventas del mes</div><div class="stat-val">${fmtMoney(r?(r.meses||{})[mes]||0:0)}</div><div class="stat-sub">${r?(r.pagadas||0)+' ventas en total':'sin cifras'}</div></div>
@@ -67,9 +75,11 @@ export function pantallaFicha(negId){
         ${dato('Día de pago', neg.diaPago?escapeHtml(neg.diaPago):'—')}
         ${pillPago(neg)?dato('Pago', pillPago(neg)):''}
         ${dato('Vendedor', escapeHtml(vendedor))}
+        ${dato('Dueño', escapeHtml([neg.duenoNombre, neg.duenoTel].filter(Boolean).join(' · ')||'—'))}
+        ${dato('Teléfono', escapeHtml(neg.tel||'—'))}
         ${dato('Tipo', escapeHtml(neg.tipo||'—'))}
         ${dato('Ciudad', escapeHtml(neg.ciudad||'—'))}
-        ${dato('Cliente desde', neg.creado?escapeHtml(Dominio.fechas.diaDe(neg.creado)):'—')}
+        ${dato('Cliente desde', escapeHtml(fechaConHace(neg.creado)))}
         ${prueba?dato('Prueba', escapeHtml(prueba.vencida?'Vencida (solo lectura)':prueba.diasRestantes+' día(s) restantes')):''}
       </div>
     </div>
@@ -81,10 +91,16 @@ export function pantallaFicha(negId){
         <button class="btn" data-click="asignarVendedor('${escapeHtml(neg.id)}')">👤 Vendedor</button>
         ${prueba?`<button class="btn" data-click="darMasDias('${escapeHtml(neg.id)}')">+ Días de prueba</button>
           ${neg.esDemo?'':`<button class="btn btn-gold" data-click="pasarAPago('${escapeHtml(neg.id)}')">Pasar a pago</button>`}`:''}
-        <button class="btn ${neg.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(neg.id)}')">${neg.activo?(neg.esDemo?'Pausar':'Suspender'):'Activar'}</button>
+        ${neg.archivado?'':`<button class="btn ${neg.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(neg.id)}')">${neg.activo?(neg.esDemo?'Pausar':'Suspender'):'Activar'}</button>`}
       </div>
-      ${esDueno?`<div class="ficha-peligro"><button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(neg.id)}')">Eliminar el negocio</button>
-        <span class="gris chico">Borra el negocio, sus usuarios y todos sus datos. No se puede deshacer.</span></div>`:''}
+      ${!esDueno?'':neg.archivado?`<div class="ficha-peligro">
+          <button class="btn btn-sm btn-verde" data-click="desarchivarNegocio('${escapeHtml(neg.id)}')">♻ Sacar del archivo</button>
+          ${Dominio.negocio.puedeBorrarse(neg, Date.now())?`<button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(neg.id)}')">Eliminar definitivamente</button>`:''}
+          <span class="gris chico">Archivado ${escapeHtml(textoArchivo(neg))}. Al borrarlo se baja antes su respaldo.</span></div>`
+        :neg.esDemo?`<div class="ficha-peligro"><button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(neg.id)}')">Eliminar la demo</button>
+          <span class="gris chico">Borra la demo y sus datos de práctica.</span></div>`
+        :`<div class="ficha-peligro"><button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(neg.id)}')">Archivar el negocio</button>
+          <span class="gris chico">Lo suspende y lo pasa a Archivados. Se puede borrar del todo después de ${escapeHtml(Dominio.negocio.DIAS_ARCHIVO)} días.</span></div>`}
     </div>
   </div>`;
 }

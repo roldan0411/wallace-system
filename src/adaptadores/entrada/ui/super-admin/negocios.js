@@ -16,6 +16,8 @@ import { camposPruebaHTML, diasPruebaValidos, iniciarPruebaDe, leerCamposPrueba 
 import { fijarFacturaReservada, reservarFactura } from '../ventas/nueva-venta.js';
 import { fijarResumenNeg } from '../reportes/resumen.js';
 import { anotarEnSistema } from './historial-sistema.js';
+import { bajarArchivoRespaldo } from './panel.js';
+import { configNegocio } from '../configuracion/config-negocio.js';
 
 
 // ---------- Crear negocio ----------
@@ -23,30 +25,37 @@ export function nuevoNegocio(){
   // El vendedor solo crea negocios a prueba y quedan a su nombre (Dominio.prueba.puedeGestionarAlta)
   const vendedor=!!(STATE.user&&STATE.user.rolSuper==='vendedor');
   if(!Dominio.prueba.puedeGestionarAlta(STATE.user, null)){ toast(MSJ.noTienesPermisoParaCrearNegocios,'error'); return; }
+  // P5/U9: tres pasos en la misma ventana (negocio → dueño → plan, cobro y prueba)
   abrirModal({titulo:'Crear negocio', textoBoton:BOTON.crear, campos:[
+    {tipo:'seccion', id:'paso1', label:'1 · El negocio'},
     {id:'nombre', label:'Nombre del negocio', requerido:true, placeholder:'Ej: MANILLASNET'},
     {id:'tipo', label:'Tipo de negocio', tipo:'select', opciones:Object.keys(PERFILES).map(t=>({valor:t,label:t}))},
     {id:'ciudad', label:'Ciudad'},
-    {id:'plan', label:'Plan', tipo:'select', opciones:[...PLANES.map(x=>({valor:x,label:x}))]},
-    {id:'precio', label:'Precio mensual', tipo:'number', valor:'149900'},
-    {id:'usuario', label:'Usuario del administrador', requerido:true, placeholder:'admin'},
+    {id:'tel', label:'Teléfono del negocio', tipo:'tel'},
+    {id:'flujo', label:'¿Cómo cobra? (se puede cambiar después en Configurar)', tipo:'select', opciones:[
+      {valor:'directo', label:'Cobro directo (tienda: se cobra al instante)'},
+      {valor:'dos_pasos', label:'Confirmar y luego cobrar (restaurante: se toma el pedido y se cobra después)'}]},
+    {tipo:'seccion', id:'paso2', label:'2 · El dueño y su acceso'},
+    {id:'duenoNombre', label:'Nombre del dueño', placeholder:'Ej: Ana Gómez'},
+    {id:'duenoTel', label:'Teléfono del dueño', tipo:'tel'},
+    {id:'usuario', label:'Usuario para entrar', requerido:true, placeholder:'admin'},
+    {tipo:'seccion', id:'paso3', label:'3 · Plan, cobro y prueba'},
+    {id:'plan', label:'Plan', tipo:'select', opciones:[...PLANES.map(x=>({valor:x,label:x}))], cambio:'sugerirPrecioPlan(this.value)'},
+    {id:'precio', label:'Precio mensual', tipo:'number', valor:String(Dominio.negocio.precioSugerido(PLANES[0]))},
+    {id:'diapago', label:'Día de pago (1 a 28; vacío = el día en que empiece a pagar)', tipo:'number'},
     vendedor?null:{id:'vendedor', label:'Vendedor a cargo', tipo:'select',
       opciones:[{valor:'',label:'— Sin asignar —'}].concat((DB.get('superadmins')||[]).map(v=>({valor:v.id,label:v.nombre})))}
-  ].filter(Boolean), extraHTML:camposPruebaHTML(vendedor)+`<div class="m-row"><label>¿Cómo cobra este negocio?</label>
-      <select id="m-flujo">
-        <option value="directo">Cobro directo (tienda: se cobra al instante)</option>
-        <option value="dos_pasos">Confirmar y luego cobrar (restaurante: se toma el pedido y se cobra después)</option>
-      </select>
-      <p class="nota">Esto se puede cambiar después en Configurar.</p>
-    </div>
-    <p class="nota">La contraseña del administrador se crea al azar y se muestra una sola vez al terminar.</p>`,
+  ].filter(Boolean), extraHTML:camposPruebaHTML(vendedor)+`
+    <p class="nota">La contraseña del dueño se crea al azar y se muestra una sola vez al terminar.</p>`,
   onGuardar:(d)=>{
     if(vendedor) d.vendedor=STATE.user.id;
     const prueba=leerCamposPrueba();
     if(vendedor && !prueba){ toast(MSJ.comoVendedorElNegocioQuedaA,'error'); return; }
     if(!diasPruebaValidos(prueba)){ toast('Los días de prueba deben ser de 1 a '+Dominio.prueba.MAX_DIAS,'error'); return; }
     const perfil=JSON.parse(JSON.stringify(PERFILES[d.tipo]||PERFILES['Otro']));
-    const flujo=(document.getElementById('m-flujo')||{}).value||perfil.flujoPedido;
+    const flujo=d.flujo||perfil.flujoPedido;
+    const diaPago=Dominio.negocio.diaPagoEscrito(d.diapago);
+    if(Number.isNaN(diaPago)){ toast(MSJ.diaDePagoInvalido,'error'); return; }
     d.usuario=(d.usuario||'').trim();
     if(!Dominio.cuentas.usuarioValido(d.usuario)){ toast(MSJ.usuarioInvalido,'error'); return; }   // V4
     const igual=x=>Dominio.cuentas.mismoUsuario(x.usuario, d.usuario);
@@ -56,7 +65,8 @@ export function nuevoNegocio(){
     const negocio={
       id:negId, nombre:d.nombre, tipo:d.tipo, ciudad:d.ciudad||'',
       plan:d.plan, precioMes:Math.max(0, parseInt(d.precio)||0), activo:true,
-      logo:'', nit:'', tel:'', dir:'', eslogan:'',
+      logo:'', nit:'', tel:(d.tel||'').trim(), dir:'', eslogan:'',
+      duenoNombre:(d.duenoNombre||'').trim(), duenoTel:(d.duenoTel||'').trim(),
       palabraProducto:perfil.palabraProducto, palabraProductos:perfil.palabraProductos,
       palabraPedido:perfil.palabraPedido||'Pedido', palabraPersonal:perfil.palabraPersonal||'Personal',
       usaMesas:perfil.usaMesas, usaCocina:perfil.usaCocina,
@@ -72,9 +82,10 @@ export function nuevoNegocio(){
     };
     // A prueba desde que nace (las reglas exigen que el negocio de un vendedor venza)
     if(prueba) Object.assign(negocio, Dominio.prueba.nuevaPrueba(Date.now(), prueba.dias));
-    else{ Object.assign(negocio, Dominio.cobros.inicioDeCobro(today())); delete negocio.pagadoHasta; }   // P6: paga desde hoy
+    else{ Object.assign(negocio, Dominio.cobros.inicioDeCobro(today(), diaPago)); delete negocio.pagadoHasta; }   // P6: paga desde hoy
+    if(prueba && diaPago) negocio.diaPago=diaPago;   // se usa al pasarlo a pago
     if(vendedor) negocio.vendedorNombre=STATE.user.nombre||'';
-    const admin={id:uid(), negocioId:negId, nombre:'Administrador', usuario:d.usuario, rol:'admin', activo:true, creado:now()};
+    const admin={id:uid(), negocioId:negId, nombre:(d.duenoNombre||'').trim()||'Administrador', usuario:d.usuario, rol:'admin', activo:true, creado:now()};
     // P1: clave al azar (antes todos nacían con la misma); con cuentas, la cambia al primer ingreso
     const clave=Cripto.claveAleatoria(10);
     const guardarNegocio=()=>{ const negocios=DB.get('negocios')||[]; negocios.push(negocio); DB.set('negocios',negocios); };
@@ -86,7 +97,7 @@ export function nuevoNegocio(){
       anotarEnSistema(Dominio.sistema.ACCION.crearNegocio, negocio, null, {tipo:negocio.tipo, plan:negocio.plan, precioMes:negocio.precioMes, vendedorId:negocio.vendedorId}, 'Administrador: '+d.usuario);
       iniciarPruebaDe(negId, prueba);
       render();
-      mostrarAccesoNegocio(d.nombre, d.usuario, clave);
+      mostrarAccesoNegocio(d.nombre, d.usuario, clave, negId);
     };
     if(conCuentasFirebase()){
       // Primero el negocio: las reglas del vendedor exigen que exista (y sea suyo) para crear su gente
@@ -105,11 +116,26 @@ export function nuevoNegocio(){
 }
 
 // La clave no se guarda en ningún lado legible: se muestra UNA vez (como en las demos)
-export function mostrarAccesoNegocio(nombre, usuario, clave){
+export function mostrarAccesoNegocio(nombre, usuario, clave, negId){
   abrirModal({titulo:'Negocio creado', textoBoton:BOTON.listo, campos:[],
     extraHTML:`<p class="fs-15 lh-1_6">${escapeHtml(nombre)}<br>Usuario: <strong>${escapeHtml(usuario)}</strong><br>Contraseña: <strong id="pass-inicial" class="fs-19">${escapeHtml(clave)}</strong></p>
-      <p class="nota">Anótala para dársela al cliente: <strong>no se vuelve a mostrar</strong>.${conCuentasFirebase()?' Al entrar por primera vez deberá elegir una nueva.':''}</p>`,
+      <p class="nota">Anótala para dársela al cliente: <strong>no se vuelve a mostrar</strong>.${conCuentasFirebase()?' Al entrar por primera vez deberá elegir una nueva.':''}</p>
+      ${negId?`<div class="botones-fila mt-14">
+        <button type="button" class="btn btn-sm" data-click="despuesDelAlta('config', '${escapeHtml(negId)}')">⚙ Configurar ahora</button>
+        <button type="button" class="btn btn-sm btn-verde" data-click="despuesDelAlta('entrar', '${escapeHtml(negId)}')">Entrar al negocio</button>
+      </div>`:''}`,
     onGuardar:()=>cerrarModal()});
+}
+// U9: el siguiente paso al terminar el alta (cierra la ventana de la clave)
+export function despuesDelAlta(que, negId){
+  cerrarModal();
+  if(que==='config') configNegocio(negId);
+  else if(que==='entrar') entrarComoNegocio(negId);
+}
+// P5: al elegir el plan se sugiere su precio (se puede cambiar)
+export function sugerirPrecioPlan(plan){
+  const e=document.getElementById('m-precio');
+  if(e) e.value=String(Dominio.negocio.precioSugerido(plan));
 }
 
 // Asignar o cambiar el vendedor a cargo de un negocio
@@ -144,6 +170,7 @@ export function toggleNegocio(id){
   if(STATE.user.rolSuper==='vendedor' && (!n.esDemo || (n.demoDe && n.demoDe!==STATE.user.id))){
     toast(MSJ.comoVendedorSoloPuedesPausarTus,'error'); return;
   }
+  if(n.archivado){ toast(MSJ.usaSacarDelArchivo,'info'); return; }
   // P3: suspender un cliente pide motivo; activar no pide nada. Las demos se pausan sin motivo.
   if(n.activo && !n.esDemo){ suspenderNegocio(id); return; }
   const antes={activo:n.activo, suspendidoDesde:n.suspendidoDesde, motivoSuspension:n.motivoSuspension};
@@ -173,10 +200,57 @@ export function suspenderNegocio(id){
     cerrarModal(); toast(MSJ.negocioSuspendido,'info'); render();
   }});
 }
+// ---------- Archivar antes de eliminar (P4) ----------
+const fechaArchivo=iso=>new Date(iso).toLocaleDateString('es-CO', {day:'numeric', month:'short', year:'numeric'});
+// "desde 8 oct 2026 · se puede borrar desde 7 nov 2026" (o "ya se puede borrar")
+export function textoArchivo(n){
+  if(!n || !n.archivado) return '';
+  const hasta=Dominio.negocio.borrableDesde(n);
+  return (n.archivadoDesde?'desde '+fechaArchivo(n.archivadoDesde)+' · ':'')
+    +(Dominio.negocio.puedeBorrarse(n, Date.now())?'ya se puede borrar':(hasta?'se puede borrar desde el '+fechaArchivo(hasta):''));
+}
+export function archivarNegocio(id){
+  if(STATE.user.rolSuper!=='dueno'){ toast(MSJ.soloElDuenoDelSistemaPuede,'error'); return; }
+  const n=(DB.get('negocios')||[]).find(x=>x.id===id); if(!n || n.esDemo || n.archivado) return;
+  confirmarModal('¿Archivar "'+n.nombre+'"?\n\nQueda suspendido (nadie de ese negocio podrá entrar) y pasa a la pestaña Archivados. Sus datos NO se borran y lo puedes sacar del archivo cuando quieras. Después de '+Dominio.negocio.DIAS_ARCHIVO+' días se podrá eliminar del todo (antes se baja su respaldo).', ()=>{
+    const arr=DB.get('negocios')||[];
+    const x=arr.find(y=>y.id===id); if(!x) return;
+    const antes={activo:x.activo};
+    Object.assign(x, Dominio.negocio.archivar(now()));
+    DB.set('negocios', arr);
+    anotarEnSistema(Dominio.sistema.ACCION.archivarNegocio, x, antes, {activo:false, archivado:true});
+    STATE.tabNegocios='archivados';
+    toast(MSJ.negocioArchivado,'info'); render();
+  }, BOTON.archivar);
+}
+export function desarchivarNegocio(id){
+  if(STATE.user.rolSuper!=='dueno'){ toast(MSJ.soloElDuenoDelSistemaPuede,'error'); return; }
+  const arr=DB.get('negocios')||[];
+  const x=arr.find(y=>y.id===id); if(!x || !x.archivado) return;
+  const antes={activo:x.activo, archivado:true};
+  x.activo=true;
+  ['archivado','archivadoDesde','suspendidoDesde','motivoSuspension'].forEach(k=>{ delete x[k]; });
+  DB.set('negocios', arr);
+  anotarEnSistema(Dominio.sistema.ACCION.desarchivarNegocio, x, antes, {activo:true});
+  STATE.tabNegocios=Dominio.negocio.grupoPanel(x);
+  toast(MSJ.negocioSacadoDelArchivo,'success'); render();
+}
+// Baja el respaldo de un negocio (lo lee "Restaurar un negocio"). Promesa con el nombre del archivo.
+export function respaldarNegocio(id){
+  const n=(DB.get('negocios')||[]).find(x=>x.id===id)||{id};
+  const corto=String(n.nombre||id).toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,30)||'negocio';
+  return Datos.exportarNegocio(id).then(r=>{
+    if(!r || !r.datos || !r.datos.negocios_r) throw new Error('El respaldo salió vacío');
+    return bajarArchivoRespaldo(r.datos, r.origen==='local' && FB_READY, 'negocio-'+corto);
+  });
+}
+// "Eliminar": un cliente primero se archiva; archivado hace 30 días (o una demo) se borra del todo
 export function eliminarNegocio(id){
   if(STATE.user.rolSuper!=='dueno'){ toast(MSJ.soloElDuenoDelSistemaPuede,'error'); return; }
   const negocios=DB.get('negocios')||[];
   const n=negocios.find(x=>x.id===id); if(!n) return;
+  if(!n.esDemo && !n.archivado){ archivarNegocio(id); return; }
+  if(!Dominio.negocio.puedeBorrarse(n, Date.now())){ toast('Todavía no: se puede borrar del todo desde el '+fechaArchivo(Dominio.negocio.borrableDesde(n))+'.','info'); return; }
   const nUsuarios=(DB.get('usuarios')||[]).filter(u=>u.negocioId===id).length;
   // Primera confirmación
   confirmarModal(
@@ -188,21 +262,33 @@ export function eliminarNegocio(id){
     ], extraHTML:`<p class="nota rojo">Empresa a eliminar: <strong>${escapeHtml(n.nombre)}</strong></p>`,
     onGuardar:(d)=>{
       if((d.conf||'').trim()!==n.nombre){ toast(MSJ.elNombreNoCoincideNoSe,'error'); return; }
-      anotarEnSistema(Dominio.sistema.ACCION.eliminarNegocio, n, null, null, nUsuarios+' usuario(s) y todos sus datos');
-      // Borrar las cuentas de acceso de sus usuarios (antes de perder la lista)
-      if(conCuentasFirebase()) borrarCuentasDeNegocio(id);
-      // Borrar la empresa
-      DB.set('negocios', (DB.get('negocios')||[]).filter(x=>x.id!==id));
-      // Borrar sus usuarios
-      DB.set('usuarios', (DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
-      // Borrar TODAS sus tablas de datos (data_<id>_*), local y nube
-      Datos.borrarDatosNegocio(id);
-      cerrarModal();
-      if(STATE.page.indexOf(':'+id)>-1) STATE.page='';   // estaba en su ficha
-      toast('Empresa "'+n.nombre+'" eliminada por completo','error');
-      render();
+      // Un cliente se borra solo después de bajar su respaldo (las demos no lo necesitan)
+      if(!n.esDemo){
+        toast(MSJ.bajandoRespaldoDelNegocio,'info');
+        respaldarNegocio(id).then(archivo=>borrarNegocioYa(n, nUsuarios, archivo))
+          .catch(e=>{ reportarError('el respaldo del negocio', e); toast(MSJ.noSeBorroSinRespaldo,'error'); });
+        return;
+      }
+      borrarNegocioYa(n, nUsuarios, '');
     }});
   },'Sí, continuar');
+}
+// Borra el negocio, sus usuarios, sus cuentas y todas sus tablas (después del respaldo)
+function borrarNegocioYa(n, nUsuarios, archivo){
+  const id=n.id;
+  anotarEnSistema(Dominio.sistema.ACCION.eliminarNegocio, n, null, null, nUsuarios+' usuario(s) y todos sus datos'+(archivo?' · respaldo: '+archivo:''));
+  // Borrar las cuentas de acceso de sus usuarios (antes de perder la lista)
+  if(conCuentasFirebase()) borrarCuentasDeNegocio(id);
+  // Borrar la empresa
+  DB.set('negocios', (DB.get('negocios')||[]).filter(x=>x.id!==id));
+  // Borrar sus usuarios
+  DB.set('usuarios', (DB.get('usuarios')||[]).filter(u=>u.negocioId!==id));
+  // Borrar TODAS sus tablas de datos (data_<id>_*), local y nube
+  Datos.borrarDatosNegocio(id);
+  cerrarModal();
+  if(STATE.page.indexOf(':'+id)>-1) STATE.page='';   // estaba en su ficha
+  toast('Empresa "'+n.nombre+'" eliminada por completo','error');
+  render();
 }
 export function entrarComoNegocio(id){
   const neg=(DB.get('negocios')||[]).find(n=>n.id===id); if(!neg) return;

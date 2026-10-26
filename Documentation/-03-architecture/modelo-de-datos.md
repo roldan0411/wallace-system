@@ -18,6 +18,7 @@ Todas las tablas de Wallace System con sus campos, en un solo lugar: cómo se gu
 ├── login/<claveUsuario>       índice usuario → cuenta (S1)             { correo, uid }
 ├── perfiles/<uid>             negocio, rol y permisos de cada cuenta  { usuario, rol, negocioId, … }
 ├── auditoria_sistema/<id>     historial del sistema (P2): qué hizo cada super-admin   (ver 3.6)
+├── avisos_pago/<id>           avisos de pago de los vendedores (P17, ver 3.7)
 └── data/
     ├── pagos/<negId>/<id>                 pagos mensuales de cada cliente (P6, ver 3.7)
     ├── negocios_r/<negId>                 un negocio por nodo (S1)
@@ -191,6 +192,10 @@ Reglas: lo escribe cualquier super-admin activo (también el vendedor), **solo a
 `data/pagos/<negId>/<id>`: `{id, negocioId, mes:'AAAA-MM', valor (> 0), medio (Efectivo · Transferencia · Nequi · Daviplata · Otro), fecha:'AAAA-MM-DD', registrado (ISO), quien, nota?, anulado?, anuladoEn?, anuladoPor?}`. Solo el dueño y el ayudante del sistema (por `data/`). No se borran: se anulan.
 
 En el negocio (`negocios_r/<id>`, campos reservados): `diaPago` (1–31), `cobroDesde` ('AAAA-MM', primer mes que se cobra) y `pagadoHasta` ('AAAA-MM', último mes pagado sin huecos). Reglas: `src/dominio/cobros.js`.
+
+`avisos_pago/<id>` (raíz, P17): `{id, negocioId, negocioNombre, mes, valor, medio, fecha, nota?, estado:'pendiente'|'confirmado'|'rechazado', quien, quienUid, creado, pagoId?, resueltoPor?, resueltoEn?}`. El vendedor solo crea pendientes de sus clientes; el dueño y el ayudante leen y resuelven.
+
+Otros campos nuevos del negocio (2026-10-26): `archivado` y `archivadoDesde` (reservados, P4), `duenoNombre` y `duenoTel` (P5, datos de contacto del dueño; `tel` ya existía).
 
 ## 4. Tablas de cada negocio
 

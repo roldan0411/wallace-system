@@ -147,8 +147,9 @@ test('U2: cada negocio va a una pestaña del panel', ()=>{
   assert.equal(ng.grupoPanel({activo:true, esDemo:true, pruebaHasta:5}), 'demos');
   assert.equal(ng.grupoPanel(null), 'clientes');
   assert.deepEqual(ng.contarPorGrupo([{activo:true}, {activo:true}, {activo:false}, {esDemo:true, activo:true}, {activo:true, pruebaHasta:1}]),
-    {clientes:2, prueba:1, demos:1, suspendidos:1});
-  assert.deepEqual(ng.GRUPOS_PANEL, ['clientes','prueba','demos','suspendidos']);
+    {clientes:2, prueba:1, demos:1, suspendidos:1, archivados:0});
+  assert.deepEqual(ng.GRUPOS_PANEL, ['clientes','prueba','demos','suspendidos','archivados']);
+  assert.equal(ng.grupoPanel({activo:false, archivado:true}), 'archivados');   // archivado manda sobre suspendido
 });
 test('actividad: último día con ventas del resumen', async ()=>{
   const vt=await import('../../src/dominio/ventas.js');
@@ -156,4 +157,42 @@ test('actividad: último día con ventas del resumen', async ()=>{
   assert.equal(vt.ultimoDiaConVentas({dias:{}}), null);
   assert.equal(vt.ultimoDiaConVentas({total:0}), null);
   assert.equal(vt.ultimoDiaConVentas(null), null);
+});
+
+test('P4: archivar 30 días antes de poder borrar; las demos se borran directo', ()=>{
+  const f='2026-10-01T12:00:00.000Z', dia=86400000, t0=new Date(f).getTime();
+  assert.deepEqual(ng.archivar(f), {activo:false, archivado:true, archivadoDesde:f});
+  const a={id:'n1', archivado:true, archivadoDesde:f};
+  assert.equal(ng.borrableDesde(a), new Date(t0+30*dia).toISOString());
+  assert.equal(ng.puedeBorrarse(a, t0+29*dia), false);
+  assert.equal(ng.puedeBorrarse(a, t0+30*dia), true);
+  assert.equal(ng.puedeBorrarse({id:'n2', activo:true}, t0), false);              // sin archivar no se borra
+  assert.equal(ng.puedeBorrarse({id:'n3', esDemo:true}, t0), true);
+  assert.equal(ng.borrableDesde({archivado:true, archivadoDesde:'basura'}), null);
+});
+
+test('U6: orden y filtro por ciudad del panel', ()=>{
+  const l=[{id:'a', nombre:'Zeta', creado:'2026-01-01', precioMes:100}, {id:'b', nombre:'Álamo', creado:'2026-05-01', precioMes:300}, {id:'c', nombre:'Mango', creado:'2026-03-01', precioMes:200}];
+  assert.deepEqual(ng.ordenarPanel(l, 'nombre').map(n=>n.id), ['b','c','a']);
+  assert.deepEqual(ng.ordenarPanel(l, 'recientes').map(n=>n.id), ['b','c','a']);
+  assert.deepEqual(ng.ordenarPanel(l, 'precio').map(n=>n.id), ['b','c','a']);
+  assert.deepEqual(ng.ordenarPanel(l, '').map(n=>n.id), ['a','b','c']);            // sin criterio: como vienen
+  assert.deepEqual(ng.ordenarPanel(l, 'mora', n=>n.id==='c'?9:0).map(n=>n.id)[0], 'c');
+  assert.equal(l[0].id, 'a');                                                       // no cambia la lista original
+  assert.equal(ng.claveCiudad('  Bucaramanga '), 'bucaramanga');
+});
+test('U7: fechas legibles', async ()=>{
+  const f=await import('../../src/dominio/fechas.js');
+  assert.deepEqual([0,1,6,59,61,400,800].map(f.haceTexto), ['hoy','ayer','hace 6 días','hace 59 días','hace 2 meses','hace 13 meses','hace 2 años']);
+  assert.equal(f.haceTexto(null), '');
+});
+
+test('P5: precio sugerido por plan y día de pago del alta', ()=>{
+  ng.PLANES.forEach(p=>assert.ok(ng.precioSugerido(p)>0, p));
+  assert.equal(ng.precioSugerido('Inventado'), ng.PRECIO_SUGERIDO['Básico']);
+  assert.equal(ng.diaPagoEscrito(''), null);
+  assert.equal(ng.diaPagoEscrito('15'), 15);
+  assert.ok(isNaN(ng.diaPagoEscrito('31')));
+  assert.ok(isNaN(ng.diaPagoEscrito('0')));
+  assert.ok(isNaN(ng.diaPagoEscrito('2.5')));
 });

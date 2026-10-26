@@ -98,7 +98,7 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
     const a=db('admin1');
     await assertSucceeds(a.ref('data/negocios_r/N1/nombre').set('Uno SAS'));
     await assertSucceeds(a.ref('data').update({'negocios_r/N1/logo':'data:image/png;base64,iVBORw0KGgo=', 'negocios_r/N1/inventarioApagado':true}));
-    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension','cobroDesde','pagadoHasta']){
+    for(const campo of ['activo','plan','funciones','precioMes','sucursales','vendedorId','esDemo','id','suspendidoDesde','motivoSuspension','cobroDesde','pagadoHasta','archivado','archivadoDesde']){
       await assertFails(a.ref('data/negocios_r/N1/'+campo).set(campo==='activo'));
     }
     await assertFails(a.ref('data/negocios_r/N1').set({id:'N1', nombre:'todo'}));   // registro entero: solo super-admin
@@ -218,6 +218,20 @@ describe('reglas cerradas (database.rules.json)', {skip:!HAY_EMULADOR && 'sin em
   });
   // Super-admin vendedor: solo sus negocios (vendedorId) y sus demos (demoDe)
   const activo=(uid, neg)=>db(uid).ref('perfiles/'+uid+'/negocioActivo').set(neg);
+  test('avisos de pago (P17): el vendedor avisa solo de sus clientes y como pendiente; el dueño y el ayudante los leen y resuelven', async ()=>{
+    const a=(id, extra)=>Object.assign({id, negocioId:'NV', mes:'2026-10', valor:99000, medio:'Nequi', fecha:'2026-10-11', estado:'pendiente', quienUid:'vend1'}, extra||{});
+    await assertSucceeds(db('vend1').ref('avisos_pago/a1').set(a('a1')));
+    await assertFails(db('vend1').ref('avisos_pago/a2').set(a('a2', {negocioId:'N1'})));        // cliente que no es suyo
+    await assertFails(db('vend2').ref('avisos_pago/a3').set(a('a3', {quienUid:'vend2'})));      // NV es del vendedor 1
+    await assertFails(db('vend1').ref('avisos_pago/a4').set(a('a4', {quienUid:'otro'})));       // a nombre de otro
+    await assertFails(db('vend1').ref('avisos_pago/a5').set(a('a5', {estado:'confirmado'})));   // no se confirma solo
+    await assertFails(db('vend1').ref('avisos_pago/a1/estado').set('confirmado'));              // ni lo cambia después
+    await assertFails(db('vend1').ref('avisos_pago/a6').set(a('a6', {valor:0})));
+    await assertFails(db('vend1').ref('avisos_pago').once('value'));
+    await assertFails(db('admin1').ref('avisos_pago').once('value'));
+    await assertSucceeds(db('ayu').ref('avisos_pago').once('value'));
+    await assertSucceeds(db('sa').ref('avisos_pago/a1/estado').set('confirmado'));
+  });
   test('pagos de los clientes (P6): solo el dueño y el ayudante; con mes, valor y medio válidos', async ()=>{
     const p=(id, extra)=>Object.assign({id, negocioId:'N1', mes:'2026-10', valor:149900, medio:'Nequi', fecha:'2026-10-11'}, extra||{});
     await assertSucceeds(db('sa').ref('data/pagos/N1/p1').set(p('p1')));

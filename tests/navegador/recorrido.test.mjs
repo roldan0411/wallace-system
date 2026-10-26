@@ -1021,7 +1021,7 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
     const negs=DB.get('negocios')||[];
     const c=Dominio.negocio.contarPorGrupo(negs);
     const numeros=Array.from(document.querySelectorAll('[data-click^="verTabNegocios"] .cat-num')).map(e=>Number(e.textContent));
-    res.numeros=JSON.stringify(numeros)===JSON.stringify([c.clientes, c.prueba, c.demos, c.suspendidos]);
+    res.numeros=JSON.stringify(numeros)===JSON.stringify([c.clientes, c.prueba, c.demos, c.suspendidos, c.archivados]);
     const filas=()=>Array.from(document.querySelectorAll('#tabla-negocios tbody .link-negocio')).map(b=>b.textContent);
     WS.verTabNegocios('demos');
     res.soloDemos=filas().length===c.demos && filas().every(nom=>negs.find(n=>n.nombre===nom).esDemo);
@@ -1057,16 +1057,32 @@ test('panel, etapa 3: menús Sistema y Mi cuenta, 4 cifras, pestañas y ficha de
     res.tabDelNuevo=WS.STATE.tabNegocios;
     const nuevo=(DB.get('negocios')||[]).find(n=>n.nombre==='Para borrar');
     WS.abrirFicha(nuevo.id);
+    // P4: "Eliminar" primero archiva
+    const este=()=>(DB.get('negocios')||[]).find(n=>n.id===nuevo.id);
     WS.eliminarNegocio(nuevo.id); await __esperar(60); ok(); await __esperar(60);
-    document.getElementById('m-conf').value='Para borrar'; ok(); await __esperar(100);
-    res.borrado=!(DB.get('negocios')||[]).some(n=>n.id===nuevo.id) && WS.STATE.page==='';
+    res.archivado=[este().archivado, este().activo, Dominio.negocio.grupoPanel(este())];
+    WS.desarchivarNegocio(nuevo.id); await __esperar(60);
+    res.sacado=[este().activo, !!este().archivado];
+    WS.eliminarNegocio(nuevo.id); await __esperar(60); ok(); await __esperar(60);   // archivado otra vez
+    WS.eliminarNegocio(nuevo.id); await __esperar(60);
+    res.esperaTreintaDias=!!este() && !document.getElementById('modal-container').classList.contains('activo');
+    // Pasan 31 días: se borra del todo, después de bajar su respaldo
+    const l2=DB.get('negocios'); l2.find(n=>n.id===nuevo.id).archivadoDesde=new Date(Date.now()-31*86400000).toISOString(); DB.set('negocios', l2);
+    const descargas=[]; const oir=e=>{ if(e.target && e.target.download) descargas.push(e.target.download); };
+    document.addEventListener('click', oir, true);
+    WS.eliminarNegocio(nuevo.id); await __esperar(60); ok(); await __esperar(60);
+    document.getElementById('m-conf').value='Para borrar'; ok(); await __esperar(400);
+    document.removeEventListener('click', oir, true);
+    res.respaldo=descargas.some(x=>/^respaldo-wallace-negocio-para-borrar-/.test(x));
+    res.borrado=!este() && WS.STATE.page==='';
     WS.verTabNegocios('clientes');
     return res;
   });
   assert.deepEqual(r, {menus:['Sistema', 'Dueño'], enSistema:true, enCuenta:true,
     cifras:['Clientes activos', 'Ingreso del mes', 'Ventas de hoy', 'Por atender'], numeros:true, soloDemos:true, sinDemos:true, tabValida:true,
     fila:true, navResumen:['Resumen*', 'Configurar', 'Usuarios', 'Cobros', 'Historial'], resumen:true, navConfig:'Configurar*', navUsuarios:'Usuarios*',
-    navHistorial:'Historial*', historialDelNegocio:true, ayudante:true, ayudanteBloqueado:true, tabDelNuevo:'clientes', borrado:true});
+    navHistorial:'Historial*', historialDelNegocio:true, ayudante:true, ayudanteBloqueado:true, tabDelNuevo:'clientes', archivado:[true, false, 'archivados'], sacado:[true, false],
+    esperaTreintaDias:true, respaldo:true, borrado:true});
 });
 test('panel, etapa 4 (P6): cobro mensual con días de gracia, registrar y anular pagos, mora en "Por atender"', {skip:omitir}, async ()=>{
   const r=await pagina.evaluate(async ()=>{
@@ -1129,6 +1145,82 @@ test('panel, etapa 4 (P6): cobro mensual con días de gracia, registrar y anular
   assert.deepEqual(r, {inicio:[true, true, 'por_pagar'], enTarjeta:true, sugerido:true, alDia:[true, 'al_dia'],
     salioDeLaTarjeta:true, ficha:true, anulado:[true, 'por_pagar', true], valorCero:true, mora:['en_mora', true], porAtender:true, suspender:true,
     pruebaNoCobra:true, pasoAPago:true, historial:true});
+});
+test('panel, etapa 5: bandeja única, filtros por plan y ciudad, orden y avisos de pago del vendedor (P17)', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    WS.STATE.page=''; WS.verTabNegocios('clientes');
+    // U5: lo que hay que atender está en UNA bandeja, ninguna tarjeta de aviso suelta
+    res.bandeja=!!document.querySelector('.contenido > .bandeja') && document.querySelectorAll('.contenido > .tarjeta.alerta').length===0;
+    // U6: filtros y orden
+    const celdas=et=>Array.from(document.querySelectorAll('#tabla-negocios tbody td[data-label="'+et+'"]')).map(td=>td.textContent.trim());
+    WS.filtrarPlan('Básico'); res.plan=celdas('Plan').length>0 && celdas('Plan').every(p=>p==='Básico');
+    WS.filtrarPlan('inventado'); res.planInvalido=WS.STATE.filtroPlan==='';
+    WS.verTabNegocios('demos');
+    const ciudad=(DB.get('negocios')||[]).find(n=>n.esDemo && n.ciudad).ciudad;
+    WS.filtrarCiudad(ciudad); res.ciudad=Array.from(document.querySelectorAll('#tabla-negocios tbody td[data-label="Negocio"]')).every(td=>td.textContent.includes(ciudad));
+    WS.filtrarCiudad('');
+    WS.ordenNegocios('nombre');
+    const nombres=Array.from(document.querySelectorAll('#tabla-negocios tbody .link-negocio')).map(b=>b.textContent);
+    res.orden=nombres.length>2 && nombres.join('|')===nombres.slice().sort((a,b)=>a.localeCompare(b,'es')).join('|');
+    WS.ordenNegocios('');
+    // P17: el vendedor de un cliente avisa que pagó; el dueño confirma (queda el pago) o rechaza
+    const cliente=(DB.get('negocios')||[]).find(n=>n.nombre==='Cobro Uno');
+    const l=DB.get('negocios'); l.find(n=>n.id===cliente.id).vendedorId='sv-prueba'; DB.set('negocios', l);
+    const yo=WS.STATE.user;
+    WS.STATE.user=Object.assign({}, yo, {rolSuper:'vendedor', id:'sv-prueba', nombre:'Vende Prueba'});
+    WS.STATE.page=''; WS.render();
+    res.botonVendedor=!!document.querySelector('[data-click="avisarPago(\''+cliente.id+'\')"]');
+    const avisar=async nota=>{ WS.avisarPago(cliente.id); await __esperar(60); document.getElementById('m-nota').value=nota; ok(); await __esperar(150); };
+    await avisar('primero'); await avisar('segundo');
+    WS.STATE.user=yo;
+    const avisos=()=>new Promise(res2=>{ const q=Datos.escucharAvisosPago(lst=>{ res2(lst); }); setTimeout(()=>q(), 0); });
+    const pend=(await avisos()).filter(a=>a.estado==='pendiente' && a.negocioId===cliente.id);
+    res.pendientes=pend.length;
+    WS.STATE.page=''; WS.render();
+    res.enBandeja=(document.querySelector('.contenido > .bandeja')||{}).textContent.includes('Avisos de pago de los vendedores');
+    const antes=(await Datos.leerPagos(cliente.id)).length;
+    const primero=pend.find(a=>a.nota==='primero'), segundo=pend.find(a=>a.nota==='segundo');
+    WS.confirmarAvisoPago(primero.id); await __esperar(400);
+    WS.rechazarAvisoPago(segundo.id); await __esperar(60); ok(); await __esperar(300);
+    const pagos=await Datos.leerPagos(cliente.id);
+    res.confirmado=pagos.length===antes+1 && pagos.some(p=>(p.nota||'').startsWith('Aviso de Vende Prueba'));
+    const despues=await avisos();
+    res.estados=[despues.find(a=>a.id===primero.id).estado, despues.find(a=>a.id===segundo.id).estado];
+    const h=(await Datos.leerHistorialSistema(500)).filter(x=>x.negocioId===cliente.id).map(x=>x.accion);
+    res.historial=h.includes('Avisó que su cliente pagó') && h.includes('Rechazó un aviso de pago');
+    WS.STATE.page=''; WS.verTabNegocios('clientes');
+    return res;
+  });
+  assert.deepEqual(r, {bandeja:true, plan:true, planInvalido:true, ciudad:true, orden:true, botonVendedor:true, pendientes:2, enBandeja:true,
+    confirmado:true, estados:['confirmado', 'rechazado'], historial:true});
+});
+test('panel, etapa 5: crear un negocio en 3 pasos (P5/U9): precio por plan, dueño, día de pago y siguiente paso', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    WS.STATE.page=''; WS.render();
+    WS.nuevoNegocio(); await __esperar(60);
+    res.pasos=Array.from(document.querySelectorAll('.modal .m-seccion')).map(s=>s.textContent);
+    document.getElementById('m-plan').value='Premium'; WS.sugerirPrecioPlan('Premium');
+    res.precio=document.getElementById('m-precio').value===String(Dominio.negocio.precioSugerido('Premium'));
+    const v={'m-nombre':'Alta Tres Pasos', 'm-tel':'6071234567', 'm-duenoNombre':'Ana Gómez', 'm-duenoTel':'3001234567', 'm-usuario':'alta'+Date.now(), 'm-diapago':'31', 'm-prueba':''};
+    Object.keys(v).forEach(id=>{ document.getElementById(id).value=v[id]; });
+    ok(); await __esperar(100);
+    res.diaInvalido=!(DB.get('negocios')||[]).some(n=>n.nombre==='Alta Tres Pasos');
+    document.getElementById('m-diapago').value='15'; ok(); await __esperar(300);
+    const n=(DB.get('negocios')||[]).find(x=>x.nombre==='Alta Tres Pasos');
+    const admin=(DB.get('usuarios')||[]).find(u=>u.negocioId===n.id);
+    res.datos=[n.tel, n.duenoNombre, n.duenoTel, n.diaPago, Dominio.cobros.mesValido(n.cobroDesde), admin.nombre];
+    res.botones=!!document.querySelector('[data-click="despuesDelAlta(\'config\', \''+n.id+'\')"]');
+    WS.despuesDelAlta('config', n.id); await __esperar(60);
+    res.configurar=WS.STATE.page==='config:'+n.id && !document.getElementById('modal-container').classList.contains('activo');
+    WS.STATE.page=''; WS.render();
+    return res;
+  });
+  assert.deepEqual(r, {pasos:['1 · El negocio', '2 · El dueño y su acceso', '3 · Plan, cobro y prueba'], precio:true, diaInvalido:true,
+    datos:['6071234567', 'Ana Gómez', '3001234567', 15, true, 'Ana Gómez'], botones:true, configurar:true});
 });
 test('sin errores de JavaScript en todo el recorrido', {skip:omitir}, ()=>{
   assert.deepEqual(errores, []);

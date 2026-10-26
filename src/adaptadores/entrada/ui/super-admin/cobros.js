@@ -8,7 +8,7 @@
 //  y lo llaman los data-click del HTML generado (nucleo/eventos.js). Lo carga
 //  ui/manifiesto.js (cargarInterfaz). Doc: Documentation/01-super-admin-panel/01-super-admin-panel.md
 // ============================================================
-import { STATE, escapeHtml, fmtMoney, now } from '../nucleo/estado.js';
+import { STATE, escapeHtml, fmtMoney, now, refrescarSiSePuede } from '../nucleo/estado.js';
 import { BOTON, MSJ } from '../nucleo/textos.js';
 import { esAdminSistema } from '../nucleo/permisos.js';
 import { abrirModal, cerrarModal, confirmarModal, reportarError, toast } from '../nucleo/componentes.js';
@@ -38,8 +38,13 @@ function porCobrar(){
     .filter(x=>x.e.estado in orden)
     .sort((a,b)=>orden[a.e.estado]-orden[b.e.estado] || (b.e.diasMora||0)-(a.e.diasMora||0));
 }
-// Cifra "Por atender" del panel
-export function cuantasEnMora(){ return esAdminSistema() ? porCobrar().filter(x=>x.e.estado==='en_mora').length : 0; }
+// U6: para ordenar "los que más deben primero"
+export function gravedadCobro(n){
+  const e=estadoCobro(n);
+  return e.estado==='en_mora' ? 1000+(e.diasMora||0) : ({por_pagar:500, sin_iniciar:100, al_dia:10}[e.estado]||0);
+}
+// Cifra "Por atender" del panel: todo lo que aparece en "Cobros del mes" (mora, por pagar y sin pagos registrados)
+export function cuantosPorCobrar(){ return esAdminSistema() ? porCobrar().length : 0; }
 
 export function tarjetaCobros(){
   if(!esAdminSistema()) return '';
@@ -95,16 +100,21 @@ export function registrarPago(negId){
     const pago=Dominio.cobros.nuevoPago({id:uid(), negocioId:negId, mes:d.mes, valor:d.valor, medio:d.medio, fecha:d.fecha, nota:d.nota,
       quien:yo, registrado:now()});
     if(Dominio.cobros.problemaDelPago(pago)){ toast(MSJ.revisaElPago,'error'); return; }
-    Datos.guardarPago(pago).then(ok=>{
-      if(!ok){ toast(MSJ.noSeGuardoElPago,'error'); return null; }
-      return Datos.leerPagos(negId).then(pagos=>{
-        const r=aplicarPagosAlNegocio(negId, pagos, pago.mes, pago.fecha);
-        if(r) anotarEnSistema(Dominio.sistema.ACCION.registrarPago, r.n, r.antes, r.despues, mesLegible(pago.mes)+' · '+fmtMoney(pago.valor)+' · '+pago.medio);
-        if(_cobrosFicha.negId===negId) _cobrosFicha={negId, lista:pagos};
-        cerrarModal(); toast('Pago registrado: '+mesLegible(pago.mes),'success'); render();
-      });
-    }).catch(e=>{ reportarError('registrar el pago', e); toast(MSJ.noSeGuardoElPago,'error'); });
+    guardarPagoYActualizar(pago, '').then(ok=>{ if(ok){ cerrarModal(); toast('Pago registrado: '+mesLegible(pago.mes),'success'); render(); } });
   }});
+}
+// Guarda el pago, recalcula "pagado hasta" del negocio y lo anota en el historial. Promesa: true si quedó.
+function guardarPagoYActualizar(pago, detalleExtra){
+  const negId=pago.negocioId;
+  return Datos.guardarPago(pago).then(ok=>{
+    if(!ok){ toast(MSJ.noSeGuardoElPago,'error'); return false; }
+    return Datos.leerPagos(negId).then(pagos=>{
+      const r=aplicarPagosAlNegocio(negId, pagos, pago.mes, pago.fecha);
+      if(r) anotarEnSistema(Dominio.sistema.ACCION.registrarPago, r.n, r.antes, r.despues, mesLegible(pago.mes)+' · '+fmtMoney(pago.valor)+' · '+pago.medio+(detalleExtra?' · '+detalleExtra:''));
+      if(_cobrosFicha.negId===negId) _cobrosFicha={negId, lista:pagos};
+      return true;
+    });
+  }).catch(e=>{ reportarError('registrar el pago', e); toast(MSJ.noSeGuardoElPago,'error'); return false; });
 }
 export function anularPago(negId, pagoId){
   if(!esAdminSistema()){ toast(MSJ.soloElDuenoOElAyudanteRegistranPagos,'error'); return; }
@@ -179,4 +189,93 @@ export function pantallaCobrosNegocio(negId){
       </table></div>
     </div>
   </div>`;
+}
+
+// ---------- Avisos de pago de los vendedores (P17) ----------
+// El vendedor avisa que su cliente pagó; el dueño o el ayudante lo confirman (queda el pago) o lo rechazan.
+export let _avisosPago=[];
+export let _dejarAvisosPago=null;
+export function escucharAvisosPago(){
+  dejarAvisosPago();
+  if(!esAdminSistema()) return;
+  _dejarAvisosPago=Datos.escucharAvisosPago(l=>{ _avisosPago=l||[]; refrescarSiSePuede(); });
+}
+export function dejarAvisosPago(){
+  if(_dejarAvisosPago){ try{ _dejarAvisosPago(); }catch(e){ console.warn(e); } }
+  _dejarAvisosPago=null; _avisosPago=[];
+}
+// Cifra "Por atender" del panel
+export function cuantosAvisosPago(){ return esAdminSistema() ? Dominio.cobros.avisosPendientes(_avisosPago).length : 0; }
+export function tarjetaAvisosPago(){
+  if(!esAdminSistema()) return '';
+  const lista=Dominio.cobros.avisosPendientes(_avisosPago);
+  if(!lista.length) return '';
+  return `<div class="tarjeta alerta">
+    <span class="t-tit">📨 Avisos de pago de los vendedores (${lista.length})</span>
+    <p class="gris">Confírmalo cuando veas el dinero: queda registrado como un pago. Si no llegó, recházalo.</p>
+    <div class="tabla-wrap"><table class="tabla tabla-cards">
+      <thead><tr><th>Negocio</th><th>Pago</th><th>Avisó</th><th>Acciones</th></tr></thead>
+      <tbody>${lista.map(a=>`<tr>
+        <td data-label="Negocio"><strong>${escapeHtml(a.negocioNombre||a.negocioId)}</strong></td>
+        <td data-label="Pago">${escapeHtml(mesLegible(a.mes))} · ${fmtMoney(a.valor)} · ${escapeHtml(a.medio)}<br><span class="gris chico">pagó el ${escapeHtml(a.fecha)}${a.nota?' · '+escapeHtml(a.nota):''}</span></td>
+        <td data-label="Avisó">${escapeHtml(a.quien)}</td>
+        <td data-label="Acciones"><div class="acciones">
+          <button class="btn btn-sm btn-verde" data-click="confirmarAvisoPago('${escapeHtml(a.id)}')">Confirmar</button>
+          <button class="btn btn-sm btn-ghost" data-click="rechazarAvisoPago('${escapeHtml(a.id)}')">Rechazar</button>
+        </div></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+// Vendedor: avisar que un cliente suyo pagó
+export function avisarPago(negId){
+  const neg=(DB.get('negocios')||[]).find(n=>n.id===negId); if(!neg) return;
+  if(!(STATE.user && STATE.user.rolSuper==='vendedor' && neg.vendedorId===STATE.user.id)){ toast(MSJ.soloElVendedorDeEseCliente,'error'); return; }
+  const hoy=today(), sugerido=Dominio.cobros.mesPorPagar(neg, hoy);
+  let m=sugerido; for(let i=0;i<6;i++) m=Dominio.cobros.mesAnterior(m);
+  const meses=[]; for(let i=0;i<10;i++){ meses.push(m); m=Dominio.cobros.mesSiguiente(m); }
+  abrirModal({titulo:'Avisar que '+neg.nombre+' pagó', textoBoton:BOTON.avisar, campos:[
+    {id:'mes', label:'Mes que pagó', tipo:'select', valor:sugerido, opciones:meses.map(x=>({valor:x, label:mesLegible(x)}))},
+    {id:'valor', label:'Valor', tipo:'number', valor:String(neg.precioMes||''), requerido:true},
+    {id:'medio', label:'Medio de pago', tipo:'select', opciones:Dominio.cobros.MEDIOS_PAGO.map(x=>({valor:x, label:x}))},
+    {id:'fecha', label:'Fecha en que pagó', tipo:'date', valor:hoy, requerido:true},
+    {id:'nota', label:'Nota (opcional)', placeholder:'Ej: comprobante 1234'}
+  ], extraHTML:`<p class="nota">El dueño o el ayudante del sistema lo confirman cuando vean el dinero.</p>`,
+  onGuardar:(d)=>{
+    const a=Dominio.cobros.nuevoAviso({id:uid(), negocio:neg, mes:d.mes, valor:d.valor, medio:d.medio, fecha:d.fecha, nota:d.nota,
+      quien:STATE.user, creado:now()});
+    if(Dominio.cobros.problemaDelAviso(a)){ toast(MSJ.revisaElPago,'error'); return; }
+    Datos.guardarAvisoPago(a).then(ok=>{
+      if(!ok){ toast(MSJ.noSeGuardoElAviso,'error'); return; }
+      anotarEnSistema(Dominio.sistema.ACCION.avisarPago, neg, null, null, mesLegible(a.mes)+' · '+fmtMoney(a.valor)+' · '+a.medio);
+      cerrarModal(); toast(MSJ.avisoDePagoEnviado,'success');
+    }).catch(e=>{ reportarError('avisar el pago', e); toast(MSJ.noSeGuardoElAviso,'error'); });
+  }});
+}
+function avisoPendiente(id){ return Dominio.cobros.avisosPendientes(_avisosPago).find(a=>a.id===id)||null; }
+export function confirmarAvisoPago(id){
+  if(!esAdminSistema()){ toast(MSJ.soloElDuenoOElAyudanteRegistranPagos,'error'); return; }
+  const a=avisoPendiente(id); if(!a) return;
+  const yo=STATE._superUser||STATE.user;
+  const pago=Dominio.cobros.pagoDesdeAviso(a, {id:uid(), quien:yo, registrado:now()});
+  if(Dominio.cobros.problemaDelPago(pago)){ toast(MSJ.revisaElPago,'error'); return; }
+  guardarPagoYActualizar(pago, 'aviso de '+a.quien).then(ok=>{
+    if(!ok) return;
+    return Datos.guardarAvisoPago(Object.assign({}, a, {estado:'confirmado', pagoId:pago.id, resueltoPor:String((yo&&yo.nombre)||'—').slice(0,80), resueltoEn:now()}))
+      .then(()=>{ toast('Pago confirmado: '+mesLegible(a.mes),'success'); render(); });
+  }).catch(e=>reportarError('confirmar el aviso de pago', e));
+}
+export function rechazarAvisoPago(id){
+  if(!esAdminSistema()){ toast(MSJ.soloElDuenoOElAyudanteRegistranPagos,'error'); return; }
+  const a=avisoPendiente(id); if(!a) return;
+  confirmarModal('¿Rechazar el aviso de '+a.quien+' ('+(a.negocioNombre||'')+', '+mesLegible(a.mes)+')? No se registra ningún pago.', ()=>{
+    const yo=STATE._superUser||STATE.user;
+    Datos.guardarAvisoPago(Object.assign({}, a, {estado:'rechazado', resueltoPor:String((yo&&yo.nombre)||'—').slice(0,80), resueltoEn:now()}))
+      .then(ok=>{
+        if(!ok){ toast(MSJ.noSeGuardoElAviso,'error'); return; }
+        const neg=(DB.get('negocios')||[]).find(n=>n.id===a.negocioId)||{id:a.negocioId, nombre:a.negocioNombre};
+        anotarEnSistema(Dominio.sistema.ACCION.rechazarAvisoPago, neg, null, null, mesLegible(a.mes)+' · aviso de '+a.quien);
+        toast(MSJ.avisoRechazado,'info'); render();
+      }).catch(e=>reportarError('rechazar el aviso de pago', e));
+  }, 'Rechazar');
 }

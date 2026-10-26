@@ -103,3 +103,26 @@ export function nuevoPago({id, negocioId, mes, valor, medio, fecha, nota, quien,
 }
 // Lo que entró de verdad (P7): suma de los pagos no anulados
 export function totalPagado(pagos){ return (pagos||[]).filter(p=>p && !p.anulado).reduce((a,p)=>a+(Number(p.valor)||0), 0); }
+
+// ---------- Aviso de pago del vendedor (P17) ----------
+// El vendedor no registra pagos: deja un aviso (pendiente) que el dueño o el ayudante
+// confirman (se vuelve un pago) o rechazan. Se guarda en avisos_pago/<id>.
+export function nuevoAviso({id, negocio, mes, valor, medio, fecha, nota, quien, creado}){
+  const q=quien||{}, n=negocio||{};
+  const a={id, negocioId:n.id, negocioNombre:String(n.nombre||'').slice(0,80), mes, valor:Math.round(Number(valor)), medio, fecha,
+    estado:'pendiente', quien:String(q.nombre||q.usuario||'—').slice(0,80), quienUid:q.uid||null, creado};
+  const t=String(nota||'').trim().slice(0,120);
+  if(t) a.nota=t;
+  if(!a.quienUid) delete a.quienUid;
+  return a;
+}
+// Mismas validaciones que un pago
+export function problemaDelAviso(a){ return problemaDelPago(a); }
+export function avisosPendientes(lista){
+  return (lista||[]).filter(a=>a && a.estado==='pendiente').sort((x,y)=>String(x.creado||'').localeCompare(String(y.creado||'')));
+}
+// El pago que sale de confirmar un aviso
+export function pagoDesdeAviso(a, {id, quien, registrado}){
+  return nuevoPago({id, negocioId:a.negocioId, mes:a.mes, valor:a.valor, medio:a.medio, fecha:a.fecha,
+    nota:'Aviso de '+a.quien+(a.nota?': '+a.nota:''), quien, registrado});
+}
