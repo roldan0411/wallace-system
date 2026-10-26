@@ -96,6 +96,22 @@ export const PERFILES = {
 export const PLANES = ['Básico','Profesional','Premium'];
 export function planDe(neg){ const p=(neg&&neg.plan)||''; return p==='Empresarial'?'Premium':(PLANES.indexOf(p)>-1?p:'Básico'); }
 
+// Pestañas del panel del super-admin (U2): demos aparte (dinero ficticio), luego los
+// suspendidos, luego los que están a prueba; el resto son clientes que pagan.
+export const GRUPOS_PANEL=['clientes','prueba','demos','suspendidos'];
+export function grupoPanel(neg){
+  if(!neg) return 'clientes';
+  if(neg.esDemo) return 'demos';
+  if(!neg.activo) return 'suspendidos';
+  if(typeof neg.pruebaHasta==='number') return 'prueba';
+  return 'clientes';
+}
+export function contarPorGrupo(negocios){
+  const c={clientes:0, prueba:0, demos:0, suspendidos:0};
+  (negocios||[]).forEach(n=>{ c[grupoPanel(n)]++; });
+  return c;
+}
+
 // Suspender un negocio (P3): siempre con motivo; "Otro" exige explicarlo. Devuelve los
 // campos que cambian, o null si falta el motivo. Al reactivar se borran los dos campos
 // (reservados: solo los escribe el super-admin, CAMPOS_NEGOCIO_RESERVADOS).

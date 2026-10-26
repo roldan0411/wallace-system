@@ -11,6 +11,7 @@ import { esAdminSistema } from '../nucleo/permisos.js';
 import { abrirModal, cerrarModal, confirmarModal, ic, logoNegocio, preguntarDespues, toast } from '../nucleo/componentes.js';
 import { render } from '../nucleo/navegacion.js';
 import { resumenDe } from '../reportes/resumen.js';
+import { cabeceraFicha } from '../super-admin/ficha-negocio.js';
 import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
@@ -174,15 +175,7 @@ export function pantallaConfig(negId){
       </div>`).join(''):'<p class="gris chico">Sin sucursales: funciona como un solo punto de venta.</p>'}
       <button class="btn btn-sm" data-click="agregarSucursal('${escapeHtml(negId)}')">+ Agregar sucursal</button>`);
   }
-  return `
-  <div class="topbar">
-    <h1>${ic('cog')} ${escapeHtml(neg.nombre)}</h1>
-    <div class="tb-der">
-      <span class="pill ${neg.activo?'pill-verde':'pill-rojo'}">${neg.activo?'Activo':'Suspendido'}</span>
-      <span class="pill pill-gold">${escapeHtml(neg.plan||'Sin plan')}</span>
-      <button class="btn btn-ghost btn-sm" data-click="irPanel()">← Volver</button>
-    </div>
-  </div>
+  return `${cabeceraFicha(neg, 'config')}
   <div class="contenido">
     <div class="cats mb-18">
       ${tabs.map(x=>`<button class="cat ${t===x[0]?'on':''}" data-click="cfgTab('${escapeHtml(x[0])}')">${x[1]}</button>`).join('')}

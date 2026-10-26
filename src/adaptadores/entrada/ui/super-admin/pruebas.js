@@ -73,6 +73,8 @@ export function pillPrueba(neg){
 
 // ---------- Panel: pruebas y demos por vencer ----------
 export const DIAS_AVISO=7;
+// Cuántas pruebas y demos vencen pronto (cifra "Por atender" del panel)
+export function cuantasPorVencer(){ return Pruebas.porVencer(DIAS_AVISO).length; }
 export function tarjetaPorVencer(){
   const lista=Pruebas.porVencer(DIAS_AVISO);
   if(!lista.length) return '';

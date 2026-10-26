@@ -80,6 +80,7 @@ export function nuevoNegocio(){
     const guardarAdmin=()=>{
       const usuarios=DB.get('usuarios')||[]; usuarios.push(admin); DB.set('usuarios',usuarios);
       cerrarModal();
+      STATE.tabNegocios=Dominio.negocio.grupoPanel(negocio);   // U2: que se vea en su pestaña
       toast('Negocio creado: '+d.nombre,'success');
       anotarEnSistema(Dominio.sistema.ACCION.crearNegocio, negocio, null, {tipo:negocio.tipo, plan:negocio.plan, precioMes:negocio.precioMes, vendedorId:negocio.vendedorId}, 'Administrador: '+d.usuario);
       iniciarPruebaDe(negId, prueba);
@@ -196,6 +197,7 @@ export function eliminarNegocio(id){
       // Borrar TODAS sus tablas de datos (data_<id>_*), local y nube
       Datos.borrarDatosNegocio(id);
       cerrarModal();
+      if(STATE.page.indexOf(':'+id)>-1) STATE.page='';   // estaba en su ficha
       toast('Empresa "'+n.nombre+'" eliminada por completo','error');
       render();
     }});

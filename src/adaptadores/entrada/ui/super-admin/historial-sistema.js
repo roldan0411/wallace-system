@@ -61,7 +61,6 @@ export function pantallaHistorialSistema(){
   const esDueno=STATE.user && STATE.user.rolSuper==='dueno';
   const todo=_historialSistema||[], f=_filtroHistorial;
   const lista=Dominio.sistema.filtrar(todo, f);
-  const rol={dueno:'Dueño', ayudante:'Ayudante', vendedor:'Vendedor'};
   return `
   <div class="topbar">
     <h1><span class="sa-marca">🕘 Historial del sistema</span></h1>
@@ -83,17 +82,23 @@ export function pantallaHistorialSistema(){
         </div>
       </div>
       <p class="gris">Lo que hacen los super-admins sobre negocios y cuentas. Nadie puede editarlo ni borrarlo. Se muestran las últimas 500 acciones.</p>
-      <div class="tabla-wrap"><table class="tabla tabla-cards">
-        <thead><tr><th>Fecha</th><th>Quién</th><th>Acción</th><th>Negocio</th><th>Detalle</th></tr></thead>
-        <tbody>${_historialSistema===null?'<tr><td colspan="5" class="gris">Cargando…</td></tr>'
-          : lista.length? lista.map(e=>`<tr>
-          <td data-label="Fecha" class="gris chico">${escapeHtml(fmtDate(e.fecha))}</td>
-          <td data-label="Quién"><strong>${escapeHtml(e.quien)}</strong>${e.rolSuper?`<br><span class="gris chico">${escapeHtml(rol[e.rolSuper]||e.rolSuper)}</span>`:''}</td>
-          <td data-label="Acción">${escapeHtml(e.accion)}</td>
-          <td data-label="Negocio">${escapeHtml(e.negocioNombre||'—')}</td>
-          <td data-label="Detalle">${e.detalle?`<div>${escapeHtml(e.detalle)}</div>`:''}${cambiosHTML(e.cambios)}</td>
-        </tr>`).join('') : '<tr><td colspan="5" class="gris">Sin acciones registradas con estos filtros.</td></tr>'}</tbody>
-      </table></div>
+      ${tablaHistorial(_historialSistema===null?null:lista, true)}
     </div>`}
   </div>`;
+}
+// Tabla de entradas (la usan esta pantalla y la ficha de cada negocio). lista null = cargando.
+export function tablaHistorial(lista, conNegocio){
+  const rol={dueno:'Dueño', ayudante:'Ayudante', vendedor:'Vendedor'};
+  const cols=conNegocio?5:4;
+  return `<div class="tabla-wrap"><table class="tabla tabla-cards">
+    <thead><tr><th>Fecha</th><th>Quién</th><th>Acción</th>${conNegocio?'<th>Negocio</th>':''}<th>Detalle</th></tr></thead>
+    <tbody>${lista===null?`<tr><td colspan="${escapeHtml(cols)}" class="gris">Cargando…</td></tr>`
+      : lista.length? lista.map(e=>`<tr>
+      <td data-label="Fecha" class="gris chico">${escapeHtml(fmtDate(e.fecha))}</td>
+      <td data-label="Quién"><strong>${escapeHtml(e.quien)}</strong>${e.rolSuper?`<br><span class="gris chico">${escapeHtml(rol[e.rolSuper]||e.rolSuper)}</span>`:''}</td>
+      <td data-label="Acción">${escapeHtml(e.accion)}</td>
+      ${conNegocio?`<td data-label="Negocio">${escapeHtml(e.negocioNombre||'—')}</td>`:''}
+      <td data-label="Detalle">${e.detalle?`<div>${escapeHtml(e.detalle)}</div>`:''}${cambiosHTML(e.cambios)}</td>
+    </tr>`).join('') : `<tr><td colspan="${escapeHtml(cols)}" class="gris">Sin acciones registradas.</td></tr>`}</tbody>
+  </table></div>`;
 }

@@ -12,8 +12,8 @@ import { abrirModal, cerrarModal, confirmarModal, ic, reportarError, toast } fro
 import { WALLACE_LOGO } from '../nucleo/logo.js';
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase } from '../usuarios/sesion.js';
-import { tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
-import { pillPrueba, tarjetaPorVencer } from './pruebas.js';
+import { cuantasRecuperaciones, tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
+import { cuantasPorVencer, pillPrueba, tarjetaPorVencer } from './pruebas.js';
 import { resumenDe } from '../reportes/resumen.js';
 import { anotarEnSistema } from './historial-sistema.js';
 
@@ -28,8 +28,7 @@ export function panelSuperAdmin(){
   const idsReales={}; reales.forEach(n=>idsReales[n.id]=true);
   const activos=reales.filter(n=>n.activo).length;
   const ingreso=reales.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
-  const usuarios=(DB.get('usuarios')||[]).filter(u=>idsReales[u.negocioId]).length;
-  let ventasHoy=0, ventasTot=0, top={nombre:'—',total:0};
+  let ventasHoy=0;
   const hoy=today();
   // R1: las cifras salen del resumen que publica cada negocio (reportes/resumen.js),
   // no de descargar las ventas de todos los negocios
@@ -37,10 +36,7 @@ export function panelSuperAdmin(){
   reales.forEach(n=>{
     const r=resumenDe(n.id);
     if(!r){ sinCifras++; return; }
-    const suma=r.total||0;
-    ventasTot+=suma;
     ventasHoy+=(r.dias||{})[hoy]||0;
-    if(suma>top.total) top={nombre:n.nombre, total:suma};
   });
   const q=(STATE.buscaNegocio||'').toLowerCase();
   let lista=q?negocios.filter(n=>(n.nombre||'').toLowerCase().includes(q)||(n.tipo||'').toLowerCase().includes(q)
@@ -51,8 +47,6 @@ export function panelSuperAdmin(){
   }
   const sas=DB.get('superadmins')||[];
   const nombreVend=id=>{ const v=sas.find(x=>x.id===id); return v?v.nombre:''; };
-  const antig=n=>{ if(!n.creado) return '—'; const d=Math.floor((Date.now()-new Date(n.creado).getTime())/86400000);
-    return d<30?d+' d':(Math.floor(d/30)+' mes'+(Math.floor(d/30)===1?'':'es')); };
 
   // ===== PANEL PARA VENDEDORES (equipo comercial): solo demos =====
   if(STATE.user.rolSuper==='vendedor'){
@@ -123,6 +117,17 @@ export function panelSuperAdmin(){
     </div>`;
   }
 
+  // ===== PANEL DEL DUEÑO Y DEL AYUDANTE (U1–U4) =====
+  const dueno=STATE.user.rolSuper==='dueno', cuentas=conCuentasFirebase() && esAdminSistema();
+  const porAtender=cuantasPorVencer()+cuantasRecuperaciones();
+  // U2: pestañas. Los contadores salen de la lista ya filtrada por búsqueda y vendedor.
+  const conteo=Dominio.negocio.contarPorGrupo(lista);
+  const tab=Dominio.negocio.GRUPOS_PANEL.indexOf(STATE.tabNegocios)>-1 ? STATE.tabNegocios : 'clientes';
+  const enTab=lista.filter(n=>Dominio.negocio.grupoPanel(n)===tab);
+  const TABS=[['clientes','Clientes'],['prueba','A prueba'],['demos','Demos'],['suspendidos','Suspendidos']];
+  const vacio={clientes:'Aún no hay clientes que paguen. Crea un negocio o pasa a pago uno que esté a prueba.',
+    prueba:'No hay negocios a prueba.', demos:'No hay demos. Crea una con "✨ Crear demo" para mostrar el sistema.',
+    suspendidos:'No hay negocios suspendidos.'}[tab];
   return `
   <div class="topbar">
     <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
@@ -131,38 +136,45 @@ export function panelSuperAdmin(){
     <div class="tb-der">
       <span class="fb-dot off" id="fb-status" title="Conexión"></span>
       <span class="reloj" id="reloj"></span>
-      <button class="btn btn-sm" data-click="descargarRespaldo()">💾 Respaldo</button>
-      ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm" data-click="elegirRespaldo()" title="Restaurar un negocio desde un respaldo">♻️ Restaurar</button>
-        <input type="file" id="resp-archivo" accept=".json,application/json" class="oculto" data-change="cargarRespaldo(this)">`:''}
-      ${sinCifras?`<button class="btn btn-sm btn-naranja" data-click="calcularResumenes()" title="Negocios sin cifras publicadas todavía">📊 Calcular cifras (${sinCifras})</button>`:''}
-      ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irAdministradores()">👥 Administradores</button>`:''}
-      ${(STATE.user.rolSuper==='dueno')?`<button class="btn btn-sm" data-click="irHistorialSistema()" title="Quién hizo qué en el sistema">🕘 Historial</button>`:''}
-      ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="abrirMigracion()">🔐 Cuentas</button>`:''}
-      ${(conCuentasFirebase() && esAdminSistema())?`<button class="btn btn-sm" data-click="pasarAMiCorreo()" title="Entrar con tu correo real y poder recuperar la contraseña por correo">📧 Mi correo</button>`:''}
-      <button class="btn btn-sm" data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
-      <button class="btn btn-ghost btn-sm" data-click="logout()">${ic('logout')} Salir</button>
+      <details class="menu-sa">
+        <summary class="btn btn-sm">⚙ Sistema${sinCifras?`<span class="punto-num">${sinCifras}</span>`:''} ▾</summary>
+        <div class="menu-sa-lista">
+          <button data-click="descargarRespaldo()">💾 Descargar respaldo</button>
+          ${dueno?`<button data-click="elegirRespaldo()">♻️ Restaurar un negocio</button>`:''}
+          ${sinCifras?`<button data-click="calcularResumenes()">📊 Calcular cifras (${sinCifras} sin calcular)</button>`:''}
+          ${dueno?`<button data-click="irAdministradores()">👥 Administradores</button>`:''}
+          ${dueno?`<button data-click="irHistorialSistema()">🕘 Historial</button>`:''}
+          ${cuentas?`<button data-click="abrirMigracion()">🔐 Cuentas</button>`:''}
+        </div>
+      </details>
+      <details class="menu-sa">
+        <summary class="btn btn-sm">👤 ${escapeHtml(STATE.user.nombre||'Mi cuenta')} ▾</summary>
+        <div class="menu-sa-lista">
+          <div class="menu-sa-quien">${dueno?'Dueño del sistema':'Ayudante del sistema'}</div>
+          <button data-click="cambiarMiPassSuper()">🔑 Mi contraseña</button>
+          ${cuentas?`<button data-click="pasarAMiCorreo()" title="Entrar con tu correo real y poder recuperar la contraseña por correo">📧 Mi correo</button>`:''}
+          <hr>
+          <button data-click="logout()">${ic('logout')} Salir</button>
+        </div>
+      </details>
+      ${dueno?`<input type="file" id="resp-archivo" accept=".json,application/json" class="oculto" data-change="cargarRespaldo(this)">`:''}
     </div>
   </div>
   <div class="contenido">
     ${tarjetaRecuperaciones()}
     ${tarjetaPorVencer()}
     <div class="stats">
-      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Negocios activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} en total</div></div>
-      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso mensual</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
-      <div class="stat naranja"><div class="stat-ico naranja">${ic('history')}</div><div class="stat-lbl">Suspendidos</div><div class="stat-val">${reales.length-activos}</div><div class="stat-sub">no pagan / pausados</div></div>
-      <div class="stat azul"><div class="stat-ico azul">${ic('users')}</div><div class="stat-lbl">Usuarios totales</div><div class="stat-val">${usuarios}</div><div class="stat-sub">empleados en el sistema</div></div>
-    </div>
-    <div class="stats">
-      <div class="stat gold"><div class="stat-ico gold">${ic('report')}</div><div class="stat-lbl">Ventas hoy (todos)</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">movimiento del sistema</div></div>
-      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ventas históricas</div><div class="stat-val">${fmtMoney(ventasTot)}</div><div class="stat-sub">todos los negocios</div></div>
-      <div class="stat gold"><div class="stat-ico gold">${ic('building')}</div><div class="stat-lbl">Negocio con más ventas</div><div class="stat-val fs-19">${escapeHtml(top.nombre)}</div><div class="stat-sub">${fmtMoney(top.total)}</div></div>
+      <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Clientes activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} · ${conteo.prueba} a prueba</div></div>
+      <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso del mes</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
+      <div class="stat azul"><div class="stat-ico azul">${ic('report')}</div><div class="stat-lbl">Ventas de hoy</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">todos los negocios (sin demos)</div></div>
+      <div class="stat ${porAtender?'naranja':'verde'}"><div class="stat-ico ${porAtender?'naranja':'verde'}">${ic('history')}</div><div class="stat-lbl">Por atender</div><div class="stat-val">${porAtender}</div><div class="stat-sub">${porAtender?'pruebas por vencer y contraseñas':'todo al día ✓'}</div></div>
     </div>
     ${(()=>{ const sas2=DB.get('superadmins')||[];
       const porVend={};
       reales.forEach(n=>{ const k=n.vendedorId||'sin'; if(!porVend[k]) porVend[k]={n:0,mes:0,activos:0};
         porVend[k].n++; if(n.activo){ porVend[k].activos++; porVend[k].mes+=(n.precioMes||0); } });
       const filas=Object.keys(porVend);
-      if(filas.length<=1 && filas[0]==='sin') return '';
+      if(!filas.length || (filas.length<=1 && filas[0]==='sin')) return '';
       return `<div class="tarjeta">
         <span class="t-tit">${ic('users')} Cartera por vendedor</span>
         <p class="gris">Cuántos clientes atiende cada uno y cuánto factura su cartera al mes.</p>
@@ -192,32 +204,42 @@ export function panelSuperAdmin(){
           <button class="btn btn-gold" data-click="nuevoNegocio()">${ic('plus')} Crear negocio</button>
         </div>
       </div>
+      <div class="cats mb-14">${TABS.map(x=>`<button class="cat ${tab===x[0]?'on':''}" data-click="verTabNegocios('${escapeHtml(x[0])}')">${x[1]} <span class="cat-num">${conteo[x[0]]}</span></button>`).join('')}</div>
       <div class="tabla-wrap"><table class="tabla tabla-cards">
-        <thead><tr><th>Negocio</th><th>Tipo</th><th>Vendedor</th><th>Desde</th><th>Plan</th><th>Precio/mes</th><th>Usuarios</th><th>Estado</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Negocio</th><th>Tipo</th><th>Vendedor</th><th>Plan</th><th>Precio/mes</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
-        ${lista.length? lista.map(n=>`<tr>
-          <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong>${n.esDemo?' <span class="pill pill-azul fs-9">DEMO</span>':''}${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
+        ${enTab.length? enTab.map(n=>`<tr>
+          <td data-label="Negocio"><button class="link-negocio" data-click="abrirFicha('${escapeHtml(n.id)}')" title="Abrir la ficha">${escapeHtml(n.nombre)}</button>${n.esDemo?' <span class="pill pill-azul fs-9">DEMO</span>':''}${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}${(n.sucursales&&n.sucursales.length>1)?`<br><span class="gris">📍 ${n.sucursales.length} sedes</span>`:''}</td>
           <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
           <td data-label="Vendedor">${n.vendedorId?escapeHtml(nombreVend(n.vendedorId)||n.vendedorNombre||'—'):'<span class="pill pill-rojo chico">Sin asignar</span>'}</td>
-          <td data-label="Desde" class="gris chico">${n.creado?(n.creado||'').split('T')[0]:'—'}<br>${antig(n)}</td>
           <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
           <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
-          <td data-label="Usuarios">${(DB.get('usuarios')||[]).filter(u=>u.negocioId===n.id).length}</td>
-          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
-          <td class="acciones" data-label="Acciones">
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">'+(n.esDemo?'Pausada':'Suspendido')+'</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
+          <td data-label="Acciones"><div class="acciones panel-acciones">
             <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
-            <button class="btn btn-sm" data-click="configNegocio('${escapeHtml(n.id)}')">Configurar</button>
-            <button class="btn btn-sm" data-click="usuariosNegocio('${escapeHtml(n.id)}')">Usuarios</button>
-            <button class="btn btn-sm" data-click="reporteMensualNegocio('${escapeHtml(n.id)}')" title="Informe mensual en PDF">📄 Informe</button>
-            <button class="btn btn-sm" data-click="asignarVendedor('${escapeHtml(n.id)}')" title="Asignar vendedor a cargo">👤 Vendedor</button>
-            <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Suspender':'Activar'}</button>
-            ${STATE.user.rolSuper==='dueno'?`<button class="btn btn-sm btn-rojo" data-click="eliminarNegocio('${escapeHtml(n.id)}')" title="Eliminar empresa">🗑️</button>`:''}
-          </td>
-        </tr>`).join('') : '<tr><td colspan="9" class="gris">No hay negocios. Crea el primero.</td></tr>'}
+            <details class="menu-sa en-linea">
+              <summary class="btn btn-sm" title="Más acciones">⋯</summary>
+              <div class="menu-sa-lista">
+                <button data-click="abrirFicha('${escapeHtml(n.id)}')">📋 Abrir ficha</button>
+                <button data-click="configNegocio('${escapeHtml(n.id)}')">⚙ Configurar</button>
+                <button data-click="usuariosNegocio('${escapeHtml(n.id)}')">👥 Usuarios</button>
+                <button data-click="reporteMensualNegocio('${escapeHtml(n.id)}')">📄 Informe mensual</button>
+                <button data-click="asignarVendedor('${escapeHtml(n.id)}')">👤 Vendedor</button>
+                <button data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?(n.esDemo?'⏸ Pausar':'⏸ Suspender'):'▶ Activar'}</button>
+                ${dueno?`<hr><button class="peligro" data-click="eliminarNegocio('${escapeHtml(n.id)}')">🗑️ Eliminar</button>`:''}
+              </div>
+            </details>
+          </div></td>
+        </tr>`).join('') : `<tr><td colspan="7" class="gris">${escapeHtml(vacio)}</td></tr>`}
         </tbody>
       </table></div>
     </div>
   </div>`;
+}
+// U2: pestaña de la lista de negocios (se recuerda mientras dure la sesión)
+export function verTabNegocios(t){
+  if(Dominio.negocio.GRUPOS_PANEL.indexOf(t)<0) return;
+  STATE.tabNegocios=t; render();
 }
 
 // ---------- Respaldo (copia de seguridad de TODO el sistema) ----------

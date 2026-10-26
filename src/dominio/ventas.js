@@ -74,6 +74,12 @@ export function resumenVentas(ventas, hoyStr){
   });
   return r;
 }
+// Último día con ventas del resumen (actividad del negocio en el panel). null si no hay.
+// Solo mira los días que guarda el resumen (DIAS_RESUMEN hacia atrás).
+export function ultimoDiaConVentas(resumen){
+  const dias=Object.keys((resumen&&resumen.dias)||{}).filter(d=>resumen.dias[d]>0).sort();
+  return dias.length ? dias[dias.length-1] : null;
+}
 // Comparación sin depender del orden de las claves (Firebase las devuelve ordenadas)
 // ni de los objetos vacíos (Firebase no los guarda: un negocio sin ventas no trae "dias").
 export function mismoResumen(a, b){

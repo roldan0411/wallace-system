@@ -222,6 +222,7 @@ export function logout(){
   STATE.debeCambiarPass=false; recordarPassDelLogin(''); dejarRecuperaciones();
   STATE.modoSupervision=false; STATE.sucursal=null;
   STATE.page=''; STATE.pageNeg='inicio';
+  STATE.tabNegocios=''; STATE.buscaNegocio=''; STATE.filtroVendedor='';   // el siguiente entra al panel desde "Clientes", sin filtros
   fijarEscribiendo(false);
   fijarFacturaReservada(null);   // la reserva es del negocio que se deja
   fijarResumenNeg(null);

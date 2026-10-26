@@ -138,3 +138,22 @@ test('P11: no se deja un negocio sin administrador activo', ()=>{
   assert.equal(pm.dejaSinAdmin([{id:'c', negocioId:'n3', rol:'cajero'}], 'n3', 'c', null), false);   // sin admin hoy: no bloquea
   assert.equal(pm.dejaSinAdmin(us, 'n1', 'nuevo', {rol:'cajero', activo:true}), false);
 });
+
+test('U2: cada negocio va a una pestaña del panel', ()=>{
+  assert.equal(ng.grupoPanel({activo:true}), 'clientes');
+  assert.equal(ng.grupoPanel({activo:true, pruebaHasta:5}), 'prueba');
+  assert.equal(ng.grupoPanel({activo:false, pruebaHasta:5}), 'suspendidos');   // suspendido manda sobre la prueba
+  assert.equal(ng.grupoPanel({activo:false, esDemo:true}), 'demos');           // una demo pausada sigue en demos
+  assert.equal(ng.grupoPanel({activo:true, esDemo:true, pruebaHasta:5}), 'demos');
+  assert.equal(ng.grupoPanel(null), 'clientes');
+  assert.deepEqual(ng.contarPorGrupo([{activo:true}, {activo:true}, {activo:false}, {esDemo:true, activo:true}, {activo:true, pruebaHasta:1}]),
+    {clientes:2, prueba:1, demos:1, suspendidos:1});
+  assert.deepEqual(ng.GRUPOS_PANEL, ['clientes','prueba','demos','suspendidos']);
+});
+test('actividad: último día con ventas del resumen', async ()=>{
+  const vt=await import('../../src/dominio/ventas.js');
+  assert.equal(vt.ultimoDiaConVentas({dias:{'2026-10-20':5000, '2026-10-22':100, '2026-10-23':0}}), '2026-10-22');
+  assert.equal(vt.ultimoDiaConVentas({dias:{}}), null);
+  assert.equal(vt.ultimoDiaConVentas({total:0}), null);
+  assert.equal(vt.ultimoDiaConVentas(null), null);
+});

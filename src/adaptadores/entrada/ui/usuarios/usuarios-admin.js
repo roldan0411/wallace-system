@@ -8,10 +8,11 @@
 import { escapeHtml, now } from '../nucleo/estado.js';
 import { BOTON, MSJ } from '../nucleo/textos.js';
 import { esAdminSistema } from '../nucleo/permisos.js';
-import { abrirModal, cerrarModal, confirmarModal, ic, toast } from '../nucleo/componentes.js';
+import { abrirModal, cerrarModal, confirmarModal, toast } from '../nucleo/componentes.js';
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from './sesion.js';
 import { borrarCuentaDe, crearCuentaPara, quitarUsuarioLegado, trasGuardarCuenta } from './cuentas.js';
+import { cabeceraFicha } from '../super-admin/ficha-negocio.js';
 import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
@@ -20,11 +21,7 @@ export function pantallaUsuarios(negId){
   const neg=(DB.get('negocios')||[]).find(n=>n.id===negId);
   if(!neg) return '<div class="tarjeta">Negocio no encontrado</div>';
   const us=(DB.get('usuarios')||[]).filter(u=>u.negocioId===negId);
-  return `
-  <div class="topbar">
-    <h1>${ic('users')} Usuarios de ${escapeHtml(neg.nombre)}</h1>
-    <div class="tb-der"><button class="btn btn-ghost btn-sm" data-click="irPanel()">← Volver</button></div>
-  </div>
+  return `${cabeceraFicha(neg, 'usuarios')}
   <div class="contenido">
     <div class="tarjeta">
       <div class="t-cab">
