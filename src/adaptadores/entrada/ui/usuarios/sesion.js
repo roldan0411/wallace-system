@@ -16,6 +16,7 @@ import { dejarRecuperaciones, escucharRecuperaciones, recordarPassDelLogin } fro
 import { fijarFacturaReservada } from '../ventas/nueva-venta.js';
 import { fijarResumenNeg } from '../reportes/resumen.js';
 import { rastroSupervision } from '../super-admin/negocios.js';
+import { dejarAvisosPago, escucharAvisosPago } from '../super-admin/cobros.js';
 import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
@@ -68,6 +69,7 @@ export function login(usuario, pass){
   if(sa){
     STATE.user={id:sa.id, nombre:sa.nombre, usuario:sa.usuario, rol:'superadmin', rolSuper:sa.rolSuper||'dueno'};
     STATE.esSuperAdmin=true; STATE.negocio=null; STATE.page='';
+    escucharAvisosPago();   // P17 (en modo local también)
     return {ok:true, tipo:'super'};
   }
   const u=(DB.get('usuarios')||[]).find(x=>x.usuario===usuario && x.activo!==false && verificarPass(x,pass));
@@ -167,7 +169,7 @@ export async function entrarConPerfil(uid, perfil){
     }
     sincronizarTodo();
     escucharMiPerfil(uid);
-    if(!vendedor){ migrarContrasenasLegado(); escucharRecuperaciones(); }
+    if(!vendedor){ migrarContrasenasLegado(); escucharRecuperaciones(); escucharAvisosPago(); }
     render();
     return;
   }
@@ -219,10 +221,10 @@ export function logout(){
     anotarEnSistema(Dominio.sistema.ACCION.salirSupervision, STATE.negocio);
   }
   STATE.user=null; STATE.negocio=null; STATE.esSuperAdmin=false;
-  STATE.debeCambiarPass=false; recordarPassDelLogin(''); dejarRecuperaciones();
+  STATE.debeCambiarPass=false; recordarPassDelLogin(''); dejarRecuperaciones(); dejarAvisosPago();
   STATE.modoSupervision=false; STATE.sucursal=null;
   STATE.page=''; STATE.pageNeg='inicio';
-  STATE.tabNegocios=''; STATE.buscaNegocio=''; STATE.filtroVendedor='';   // el siguiente entra al panel desde "Clientes", sin filtros
+  STATE.tabNegocios=''; STATE.buscaNegocio=''; STATE.filtroVendedor=''; STATE.filtroPlan=''; STATE.filtroCiudad=''; STATE.ordenNegocios='';   // el siguiente entra al panel desde "Clientes", sin filtros
   fijarEscribiendo(false);
   fijarFacturaReservada(null);   // la reserva es del negocio que se deja
   fijarResumenNeg(null);

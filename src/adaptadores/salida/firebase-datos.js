@@ -828,6 +828,56 @@ export function crearAdaptadorFirebase(opc){
     return leerNodo('data/pagos/'+n).then(v=>aLista(v).filter(p=>p && p.id));
   }
 
+  // Respaldo de UN negocio (P4: antes de borrarlo del todo). Mismo formato que exportarTodo,
+  // así "Restaurar un negocio" lo puede leer: negocios_r/<id> y data_<id>_<tabla>[_r|_x].
+  function exportarNegocio(n){
+    const local=()=>{
+      const d={};
+      Object.keys(CACHE).forEach(k=>{ if(k.indexOf('data_'+n+'_')===0) d[k]=limpiar(CACHE[k]); });
+      const neg=aLista(CACHE.negocios).find(x=>x && x.id===n);
+      if(neg) d.negocios_r={[n]:limpiar(neg)};
+      const pagos=(CACHE.pagos||[]).filter(p=>p && p.negocioId===n);
+      if(pagos.length){ const o={}; pagos.forEach(p=>{ o[p.id]=p; }); d.pagos={[n]:o}; }
+      return d;
+    };
+    if(!(estado.listo && FB)) return Promise.resolve({datos:local(), origen:'local'});
+    const rutas=['negocios_r/'+n, 'pagos/'+n];
+    TABLAS.forEach(t=>['','_r','_x'].forEach(s=>rutas.push(claveDe(n,t)+s)));
+    return Promise.all(rutas.map(r=>leerNodo('data/'+r).then(v=>[r,v]).catch(()=>[r,null]))).then(pares=>{
+      const d={};
+      pares.forEach(([r,v])=>{
+        if(v==null) return;
+        if(r.indexOf('negocios_r/')===0) d.negocios_r={[n]:v};
+        else if(r.indexOf('pagos/')===0) d.pagos={[n]:v};
+        else d[r]=v;
+      });
+      return {datos:d, origen:'nube'};
+    }).catch(()=>({datos:local(), origen:'local'}));
+  }
+
+  // ---------- Avisos de pago de los vendedores (P17): avisos_pago/<id>, fuera de data/ ----------
+  // El vendedor solo crea los suyos (pendientes, de sus clientes); el dueño y el ayudante los leen y resuelven.
+  const oyentesAvisos=new Set();
+  function guardarAvisoPago(a){
+    if(!a || !a.id) return Promise.resolve(false);
+    if(!(estado.listo && FB)){
+      const l=(CACHE.avisos_pago||[]).filter(x=>x.id!==a.id).concat([limpiar(a)]);
+      soloLocal('avisos_pago', l);
+      oyentesAvisos.forEach(cb=>{ try{ cb(l.slice()); }catch(e){ console.warn('Avisos de pago', e); } });
+      return Promise.resolve(true);
+    }
+    const u={}; u[a.id]=limpiar(a);
+    return actualizar('avisos_pago', u).then(()=>true).catch(err=>{ console.warn('FB avisos de pago', err&&err.message); return false; });
+  }
+  function escucharAvisosPago(cb){
+    if(!(estado.listo && FB)){
+      oyentesAvisos.add(cb); cb((CACHE.avisos_pago||[]).slice());
+      return ()=>{ oyentesAvisos.delete(cb); };
+    }
+    const quitar=escuchar('avisos_pago', s=>cb(aLista(s.val()).filter(x=>x && x.id)), ()=>cb([]));
+    return ()=>{ try{ quitar(); }catch(e){} };
+  }
+
   return {
     TABLAS, TABLAS_UNICAS, TABLAS_GLOBALES,
     estado, cache:CACHE,
@@ -838,6 +888,7 @@ export function crearAdaptadorFirebase(opc){
     modificarRegistro, transaccionRegistro, transaccionUnica, transaccionGlobal, reservarConsecutivo,
     sincronizarNegocio, detenerSincNegocio, sincronizarTodo, detenerSincTodo,
     limpiarDatosAjenos, recargar, exportarTodo, restaurarNegocio, borrarDatosNegocio,
-    registrarSistema, leerHistorialSistema, guardarPago, leerPagos
+    registrarSistema, leerHistorialSistema, guardarPago, leerPagos, exportarNegocio,
+    guardarAvisoPago, escucharAvisosPago
   };
 }

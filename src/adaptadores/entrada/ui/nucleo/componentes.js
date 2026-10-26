@@ -92,9 +92,10 @@ export function abrirModal(cfg){
   const cont=document.getElementById('modal-container');
   if(!cont) return;
   const campos=(cfg.campos||[]).map(c=>{
+    if(c.tipo==='seccion') return `<div class="m-seccion">${escapeHtml(c.label)}</div>`;   // título de un paso (no es un campo)
     if(c.tipo==='select'){
       return `<div class="m-row"><label>${escapeHtml(c.label)}</label>
-        <select id="m-${escapeHtml(c.id)}">${(c.opciones||[]).map(o=>`<option value="${escapeHtml(o.valor)}" ${o.valor===c.valor?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select></div>`;
+        <select id="m-${escapeHtml(c.id)}"${c.cambio?` data-change="${escapeHtml(c.cambio)}"`:''}>${(c.opciones||[]).map(o=>`<option value="${escapeHtml(o.valor)}" ${o.valor===c.valor?'selected':''}>${escapeHtml(o.label)}</option>`).join('')}</select></div>`;
     }
     if(c.tipo==='textarea'){
       return `<div class="m-row"><label>${escapeHtml(c.label)}</label>
@@ -119,6 +120,7 @@ export function abrirModal(cfg){
   if(ok) ok.onclick=()=>{
     const datos={};
     for(const c of (cfg.campos||[])){
+      if(c.tipo==='seccion') continue;
       const el=document.getElementById('m-'+c.id);
       datos[c.id]=el?el.value:'';
       // Un obligatorio con solo espacios también falta (antes pasaba y quedaba un nombre en blanco)

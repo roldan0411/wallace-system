@@ -14,7 +14,8 @@ import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase } from '../usuarios/sesion.js';
 import { cuantasRecuperaciones, tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
 import { cuantasPorVencer, pillPrueba, tarjetaPorVencer } from './pruebas.js';
-import { cuantasEnMora, pillPago, tarjetaCobros } from './cobros.js';
+import { cuantosAvisosPago, cuantosPorCobrar, gravedadCobro, pillPago, tarjetaAvisosPago, tarjetaCobros } from './cobros.js';
+import { textoArchivo } from './negocios.js';
 import { resumenDe } from '../reportes/resumen.js';
 import { anotarEnSistema } from './historial-sistema.js';
 
@@ -25,7 +26,7 @@ import { anotarEnSistema } from './historial-sistema.js';
 export function panelSuperAdmin(){
   const negocios=DB.get('negocios')||[];
   // Los negocios DEMO son de práctica (dinero ficticio): NO cuentan en las métricas reales
-  const reales=negocios.filter(n=>!n.esDemo);
+  const reales=negocios.filter(n=>!n.esDemo && !n.archivado);   // demos (dinero ficticio) y archivados no cuentan
   const idsReales={}; reales.forEach(n=>idsReales[n.id]=true);
   const activos=reales.filter(n=>n.activo).length;
   const ingreso=reales.filter(n=>n.activo).reduce((a,n)=>a+(n.precioMes||0),0);
@@ -46,6 +47,11 @@ export function panelSuperAdmin(){
   if(STATE.filtroVendedor){
     lista = STATE.filtroVendedor==='sin' ? lista.filter(n=>!n.vendedorId) : lista.filter(n=>n.vendedorId===STATE.filtroVendedor);
   }
+  // U6: plan, ciudad y orden
+  if(STATE.filtroPlan) lista=lista.filter(n=>Dominio.negocio.planDe(n)===STATE.filtroPlan);
+  if(STATE.filtroCiudad) lista=lista.filter(n=>Dominio.negocio.claveCiudad(n.ciudad)===STATE.filtroCiudad);
+  const ciudades={};
+  negocios.forEach(n=>{ const k=Dominio.negocio.claveCiudad(n.ciudad); if(k && !ciudades[k]) ciudades[k]=String(n.ciudad).trim(); });
   const sas=DB.get('superadmins')||[];
   const nombreVend=id=>{ const v=sas.find(x=>x.id===id); return v?v.nombre:''; };
 
@@ -81,13 +87,14 @@ export function panelSuperAdmin(){
         <span class="t-tit">${ic('building')} Tus clientes</span>
         <p class="gris">Negocios reales que tú vendiste. No puedes entrar a sus datos, solo ver cómo van.</p>
         <div class="tabla-wrap"><table class="tabla">
-          <thead><tr><th>Negocio</th><th>Ciudad</th><th>Plan</th><th>Desde</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Negocio</th><th>Ciudad</th><th>Plan</th><th>Desde</th><th>Estado</th><th>Pago</th></tr></thead>
           <tbody>${misClientes.map(n=>`<tr>
             <td><strong>${escapeHtml(n.nombre)}</strong>${pillPrueba(n)}</td>
             <td class="gris">${escapeHtml(n.ciudad||'—')}</td>
             <td>${escapeHtml(n.plan||'—')}<br><span class="gris chico">${fmtMoney(n.precioMes||0)}/mes</span></td>
             <td class="gris chico">${n.creado?(n.creado||'').split('T')[0]:'—'}</td>
             <td>${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Suspendido</span>'}</td>
+            <td>${pillPago(n)}${pillPago(n)&&n.activo?`<br><button class="btn btn-sm mt-8" data-click="avisarPago('${escapeHtml(n.id)}')">Avisar que pagó</button>`:''}</td>
           </tr>`).join('')}</tbody>
         </table></div>
       </div>`:''}
@@ -105,7 +112,7 @@ export function panelSuperAdmin(){
           ${misDemos.length? misDemos.map(n=>`<tr>
             <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul fs-9">DEMO</span>${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
             <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
-            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>'+(pillPago(n)?'<br>'+pillPago(n):''):'<span class="pill pill-rojo">Pausado</span>'}</td>
+            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
             <td class="acciones" data-label="Acciones">
               <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
               <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Pausar':'Activar'}</button>
@@ -120,15 +127,17 @@ export function panelSuperAdmin(){
 
   // ===== PANEL DEL DUEÑO Y DEL AYUDANTE (U1–U4) =====
   const dueno=STATE.user.rolSuper==='dueno', cuentas=conCuentasFirebase() && esAdminSistema();
-  const porAtender=cuantasPorVencer()+cuantasRecuperaciones()+cuantasEnMora();
+  const porAtender=cuantasPorVencer()+cuantasRecuperaciones()+cuantosPorCobrar()+cuantosAvisosPago();
   // U2: pestañas. Los contadores salen de la lista ya filtrada por búsqueda y vendedor.
   const conteo=Dominio.negocio.contarPorGrupo(lista);
   const tab=Dominio.negocio.GRUPOS_PANEL.indexOf(STATE.tabNegocios)>-1 ? STATE.tabNegocios : 'clientes';
-  const enTab=lista.filter(n=>Dominio.negocio.grupoPanel(n)===tab);
-  const TABS=[['clientes','Clientes'],['prueba','A prueba'],['demos','Demos'],['suspendidos','Suspendidos']];
+  const enTab=Dominio.negocio.ordenarPanel(lista.filter(n=>Dominio.negocio.grupoPanel(n)===tab), STATE.ordenNegocios, gravedadCobro);
+  const ORDENES=[['','Orden: como se crearon'],['nombre','Nombre (A–Z)'],['recientes','Más recientes'],['precio','Mayor precio'],['mora','Los que más deben']];
+  const TABS=[['clientes','Clientes'],['prueba','A prueba'],['demos','Demos'],['suspendidos','Suspendidos'],['archivados','Archivados']];
   const vacio={clientes:'Aún no hay clientes que paguen. Crea un negocio o pasa a pago uno que esté a prueba.',
     prueba:'No hay negocios a prueba.', demos:'No hay demos. Crea una con "✨ Crear demo" para mostrar el sistema.',
-    suspendidos:'No hay negocios suspendidos.'}[tab];
+    suspendidos:'No hay negocios suspendidos.',
+    archivados:'No hay negocios archivados. "Eliminar" un cliente primero lo archiva; pasados '+Dominio.negocio.DIAS_ARCHIVO+' días se puede borrar del todo.'}[tab];
   return `
   <div class="topbar">
     <h1><span class="sa-emblema">${WALLACE_LOGO}</span>
@@ -162,14 +171,12 @@ export function panelSuperAdmin(){
     </div>
   </div>
   <div class="contenido">
-    ${tarjetaRecuperaciones()}
-    ${tarjetaPorVencer()}
-    ${tarjetaCobros()}
+    ${bandejaPorAtender([tarjetaAvisosPago(), tarjetaRecuperaciones(), tarjetaPorVencer(), tarjetaCobros()])}
     <div class="stats">
       <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Clientes activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} · ${conteo.prueba} a prueba</div></div>
       <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso del mes</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
       <div class="stat azul"><div class="stat-ico azul">${ic('report')}</div><div class="stat-lbl">Ventas de hoy</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">todos los negocios (sin demos)</div></div>
-      <div class="stat ${porAtender?'naranja':'verde'}"><div class="stat-ico ${porAtender?'naranja':'verde'}">${ic('history')}</div><div class="stat-lbl">Por atender</div><div class="stat-val">${porAtender}</div><div class="stat-sub">${porAtender?'pruebas por vencer, contraseñas y mora':'todo al día ✓'}</div></div>
+      <div class="stat ${porAtender?'naranja':'verde'}"><div class="stat-ico ${porAtender?'naranja':'verde'}">${ic('history')}</div><div class="stat-lbl">Por atender</div><div class="stat-val">${porAtender}</div><div class="stat-sub">${porAtender?'avisos, contraseñas, pruebas y cobros':'todo al día ✓'}</div></div>
     </div>
     ${(()=>{ const sas2=DB.get('superadmins')||[];
       const porVend={};
@@ -202,6 +209,17 @@ export function panelSuperAdmin(){
             <option value="sin" ${STATE.filtroVendedor==='sin'?'selected':''}>Sin asignar</option>
             ${sas.map(v=>`<option value="${escapeHtml(v.id)}" ${STATE.filtroVendedor===v.id?'selected':''}>${escapeHtml(v.nombre)}</option>`).join('')}
           </select>
+          <select class="busca" data-change="filtrarPlan(this.value)">
+            <option value="">Todos los planes</option>
+            ${PLANES.map(x=>`<option value="${escapeHtml(x)}" ${STATE.filtroPlan===x?'selected':''}>${escapeHtml(x)}</option>`).join('')}
+          </select>
+          <select class="busca" data-change="filtrarCiudad(this.value)">
+            <option value="">Todas las ciudades</option>
+            ${Object.keys(ciudades).sort().map(k=>`<option value="${escapeHtml(k)}" ${STATE.filtroCiudad===k?'selected':''}>${escapeHtml(ciudades[k])}</option>`).join('')}
+          </select>
+          <select class="busca" data-change="ordenNegocios(this.value)">
+            ${ORDENES.map(o=>`<option value="${escapeHtml(o[0])}" ${(STATE.ordenNegocios||'')===o[0]?'selected':''}>${escapeHtml(o[1])}</option>`).join('')}
+          </select>
           <button class="btn btn-ghost" data-click="crearNegocioDemo()" title="Crea un negocio de ejemplo ya lleno para mostrar">✨ Crear demo</button>
           <button class="btn btn-gold" data-click="nuevoNegocio()">${ic('plus')} Crear negocio</button>
         </div>
@@ -216,7 +234,7 @@ export function panelSuperAdmin(){
           <td data-label="Vendedor">${n.vendedorId?escapeHtml(nombreVend(n.vendedorId)||n.vendedorNombre||'—'):'<span class="pill pill-rojo chico">Sin asignar</span>'}</td>
           <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
           <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
-          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>'+(pillPago(n)?'<br>'+pillPago(n):''):'<span class="pill pill-rojo">'+(n.esDemo?'Pausada':'Suspendido')+'</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
+          <td data-label="Estado">${n.archivado?'<span class="pill pill-rojo">Archivado</span><br><span class="gris chico">'+escapeHtml(textoArchivo(n))+'</span>':n.activo?'<span class="pill pill-verde">Activo</span>'+(pillPago(n)?'<br>'+pillPago(n):''):'<span class="pill pill-rojo">'+(n.esDemo?'Pausada':'Suspendido')+'</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
           <td data-label="Acciones"><div class="acciones panel-acciones">
             <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
             <details class="menu-sa en-linea">
@@ -227,8 +245,9 @@ export function panelSuperAdmin(){
                 <button data-click="usuariosNegocio('${escapeHtml(n.id)}')">👥 Usuarios</button>
                 <button data-click="reporteMensualNegocio('${escapeHtml(n.id)}')">📄 Informe mensual</button>
                 <button data-click="asignarVendedor('${escapeHtml(n.id)}')">👤 Vendedor</button>
-                <button data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?(n.esDemo?'⏸ Pausar':'⏸ Suspender'):'▶ Activar'}</button>
-                ${dueno?`<hr><button class="peligro" data-click="eliminarNegocio('${escapeHtml(n.id)}')">🗑️ Eliminar</button>`:''}
+                ${n.archivado?'':`<button data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?(n.esDemo?'⏸ Pausar':'⏸ Suspender'):'▶ Activar'}</button>`}
+                ${dueno&&n.archivado?`<button data-click="desarchivarNegocio('${escapeHtml(n.id)}')">♻ Sacar del archivo</button>`:''}
+                ${dueno?`<hr><button class="peligro" data-click="eliminarNegocio('${escapeHtml(n.id)}')">${n.esDemo||n.archivado?'🗑️ Eliminar definitivamente':'🗄 Archivar (eliminar)'}</button>`:''}
               </div>
             </details>
           </div></td>
@@ -238,6 +257,16 @@ export function panelSuperAdmin(){
     </div>
   </div>`;
 }
+// U5: lo que hay que hacer hoy, en UNA bandeja (cada parte conserva sus botones)
+function bandejaPorAtender(partes){
+  const llenas=partes.filter(Boolean);
+  if(!llenas.length) return `<p class="bandeja-vacia">✓ Todo al día: no hay avisos de pago, contraseñas, pruebas por vencer ni cobros pendientes.</p>`;
+  return `<div class="tarjeta bandeja"><span class="t-tit">📋 Por atender</span>${llenas.join('')}</div>`;
+}
+// U6: filtros y orden de la lista (se recuerdan mientras dure la sesión)
+export function filtrarPlan(v){ STATE.filtroPlan=PLANES.indexOf(v)>-1?v:''; render(); }
+export function filtrarCiudad(v){ STATE.filtroCiudad=Dominio.negocio.claveCiudad(v); render(); }
+export function ordenNegocios(v){ STATE.ordenNegocios=['nombre','recientes','precio','mora'].indexOf(v)>-1?v:''; render(); }
 // U2: pestaña de la lista de negocios (se recuerda mientras dure la sesión)
 export function verTabNegocios(t){
   if(Dominio.negocio.GRUPOS_PANEL.indexOf(t)<0) return;
@@ -279,6 +308,17 @@ export function descargarRespaldo(){
     }
     bajar(r.datos, false);
   }).catch(e=>reportarError('el respaldo', e));
+}
+// Baja un archivo de respaldo en el formato que "Restaurar un negocio" sabe leer. Devuelve su nombre.
+export function bajarArchivoRespaldo(datos, parcial, sufijo){
+  const f=new Date(), dd=x=>String(x).padStart(2,'0');
+  const nombre='respaldo-wallace-'+(sufijo?sufijo+'-':'')+(parcial?'PARCIAL-':'')+f.getFullYear()+'-'+dd(f.getMonth()+1)+'-'+dd(f.getDate())+'.json';
+  const blob=new Blob([JSON.stringify({sistema:'Wallace System', fecha:f.toISOString(), parcial:!!parcial, datos}, null, 2)], {type:'application/json'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=nombre;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+  return nombre;
 }
 // ---------- Restaurar UN negocio desde un respaldo (solo el dueño del sistema) ----------
 export function elegirRespaldo(){

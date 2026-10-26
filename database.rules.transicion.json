@@ -12,6 +12,13 @@
         ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,64}$/) && newData.child('id').val() === $id && newData.child('quienUid').val() === auth.uid && newData.child('fecha').val() === now && newData.child('accion').isString() && newData.child('accion').val().length <= 80"
       }
     },
+    "avisos_pago": {
+      ".read": "auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() !== 'vendedor'",
+      "$id": {
+        ".write": "(auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() !== 'vendedor') || (auth != null && root.child('perfiles').child(auth.uid).child('rol').val() === 'superadmin' && root.child('perfiles').child(auth.uid).child('activo').val() !== false && root.child('perfiles').child(auth.uid).child('rolSuper').val() === 'vendedor' && !data.exists() && newData.exists() && newData.child('estado').val() === 'pendiente' && newData.child('quienUid').val() === auth.uid && root.child('data').child('negocios_r').child(newData.child('negocioId').val()).child('vendedorId').val() === root.child('perfiles').child(auth.uid).child('superId').val())",
+        ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,64}$/) && newData.child('id').val() === $id && newData.child('negocioId').isString() && newData.child('mes').isString() && newData.child('mes').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])$/) && newData.child('valor').isNumber() && newData.child('valor').val() > 0 && newData.child('medio').isString() && newData.child('estado').isString()"
+      }
+    },
     "data": {
       ".read": true,
       ".write": true,

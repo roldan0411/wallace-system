@@ -48,3 +48,13 @@
   .panel-acciones .menu-sa.en-linea[open]{flex-basis:100%;}
 }
 @media (max-width:640px){ .ficha-nav{padding:0 12px;} .menu-sa-lista{right:auto;left:0;} }
+
+/* U5: bandeja "Por atender": las tarjetas de adentro quedan como secciones */
+.bandeja>.tarjeta{background:transparent;border:none;border-top:1px solid var(--linea2);border-radius:0;box-shadow:none;margin:14px 0 0;padding:14px 0 0;}
+.bandeja>.tarjeta::before,.bandeja>.tarjeta::after{display:none;}
+.bandeja-vacia{color:var(--gris);font-size:var(--fs-13);margin:0 0 14px;}
+
+/* P5/U9: pasos dentro de la ventana de crear negocio */
+.m-seccion{font-family:var(--fuente-titulos);font-weight:800;font-size:var(--fs-13);color:var(--acento-c);text-transform:uppercase;
+  letter-spacing:.5px;margin:18px 0 8px;padding-top:14px;border-top:1px solid var(--linea2);}
+.m-seccion:first-child{margin-top:0;padding-top:0;border-top:none;}

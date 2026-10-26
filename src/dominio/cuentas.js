@@ -17,7 +17,8 @@ export const CAMPOS_NEGOCIO_RESERVADOS=['id','activo','plan','precioMes','diaPag
   'vendedorNombre','notasComerciales','esDemo','demoDe','creado','sucursales',
   'pruebaDesde','pruebaHasta',    // periodo de prueba (dominio/prueba.js)
   'suspendidoDesde','motivoSuspension',   // suspensión (dominio/negocio.js, P3)
-  'cobroDesde','pagadoHasta'];   // cobro mensual (dominio/cobros.js, P6)
+  'cobroDesde','pagadoHasta',   // cobro mensual (dominio/cobros.js, P6)
+  'archivado','archivadoDesde'];   // archivar antes de eliminar (dominio/negocio.js, P4)
 
 // Firebase no admite . $ # [ ] / en las claves. Se codifica conservando mayúsculas.
 export function claveUsuario(usuario){

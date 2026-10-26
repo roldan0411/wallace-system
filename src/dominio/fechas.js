@@ -44,6 +44,15 @@ export function diasHasta(fecha, hoyStr){
   const f=new Date(fecha+'T00:00:00');
   return Math.round((f-h)/86400000);
 }
+// U7: "hoy", "ayer", "hace 5 días", "hace 3 meses", "hace 2 años" (dias = días transcurridos)
+export function haceTexto(dias){
+  if(dias==null || isNaN(dias)) return '';
+  if(dias<=0) return 'hoy';
+  if(dias===1) return 'ayer';
+  if(dias<60) return 'hace '+dias+' días';
+  if(dias<730) return 'hace '+Math.floor(dias/30)+' meses';
+  return 'hace '+Math.floor(dias/365)+' años';
+}
 // Días completos transcurridos desde una fecha ISO
 export function diasDesde(f, ahora){
   if(!f) return null;

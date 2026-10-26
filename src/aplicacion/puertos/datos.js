@@ -43,6 +43,9 @@
  * @property {(limite?:number) => Promise<Array>} leerHistorialSistema      Las últimas entradas, la más nueva primero (solo el dueño puede leerlas).
  * @property {(pago:Object) => Promise<boolean>} guardarPago                Crea o actualiza (anula) un pago de un cliente (P6; solo dueño y ayudante).
  * @property {(negId:string) => Promise<Array>} leerPagos                   Los pagos registrados de un negocio.
+ * @property {(negId:string) => Promise<{datos:Object, origen:string}>} exportarNegocio  Respaldo de UN negocio (registro, tablas y pagos), en el formato de exportarTodo.
+ * @property {(aviso:Object) => Promise<boolean>} guardarAvisoPago          Crea (vendedor) o resuelve (dueño/ayudante) un aviso de pago (P17).
+ * @property {(cb:(lista:Array)=>void) => Function} escucharAvisosPago      Avisos de pago en vivo (dueño y ayudante); devuelve la función que deja de escuchar.
  *
  * Con cuentas de Firebase (S1):
  * @property {(s:{cuentas:boolean, superAdmin?:boolean, negId?:string}) => void} configurarSesion
@@ -57,7 +60,7 @@
 export const OPERACIONES_DATOS=['iniciar','cargarGlobales','get','set','claveDe','misDatos','datosDe','guardar',
   'eliminar','guardarEn','eliminarEn','modificarRegistro','transaccionRegistro','restaurarNegocio','transaccionUnica','transaccionGlobal','reservarConsecutivo',
   'sincronizarNegocio','detenerSincNegocio','sincronizarTodo','detenerSincTodo','limpiarDatosAjenos',
-  'recargar','exportarTodo','borrarDatosNegocio','registrarSistema','leerHistorialSistema','guardarPago','leerPagos',
+  'recargar','exportarTodo','borrarDatosNegocio','registrarSistema','leerHistorialSistema','guardarPago','leerPagos','exportarNegocio','guardarAvisoPago','escucharAvisosPago',
   'configurarSesion','cargarNegocioPropio','migrarTablasGlobales','leerRegistro','modificarUsuariosLegado',
   'leerNegocioCompleto'];
 

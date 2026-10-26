@@ -10,7 +10,7 @@
 export const ACCION={
   crearNegocio:'Creó el negocio', editarNegocio:'Cambió la configuración', aplicarPlan:'Aplicó las ventanas del plan',
   suspenderNegocio:'Suspendió el negocio', activarNegocio:'Activó el negocio', pausarDemo:'Pausó la demo',
-  eliminarNegocio:'Eliminó el negocio', asignarVendedor:'Cambió el vendedor',
+  eliminarNegocio:'Eliminó el negocio', archivarNegocio:'Archivó el negocio', desarchivarNegocio:'Sacó el negocio del archivo', asignarVendedor:'Cambió el vendedor',
   agregarSucursal:'Agregó una sucursal', quitarSucursal:'Quitó una sucursal',
   iniciarPrueba:'Dejó el negocio a prueba', darDias:'Dio más días de prueba', pasarAPago:'Pasó el negocio a pago',
   crearDemo:'Creó una demo', eliminarDemo:'Eliminó una demo',
@@ -19,7 +19,7 @@ export const ACCION={
   crearSuperAdmin:'Creó un administrador del sistema', editarSuperAdmin:'Editó un administrador del sistema', eliminarSuperAdmin:'Eliminó un administrador del sistema',
   generarTemporal:'Generó una contraseña temporal', descartarRecuperacion:'Descartó una solicitud de contraseña',
   cambiarMiPass:'Cambió su contraseña', pasarAMiCorreo:'Pasó su cuenta a su correo', migrarCuenta:'Pasó una cuenta a Firebase', borrarPerfil:'Borró un perfil sin usuario',
-  descargarRespaldo:'Descargó el respaldo', registrarPago:'Registró un pago', anularPago:'Anuló un pago', restaurarNegocio:'Restauró un negocio desde un respaldo'
+  descargarRespaldo:'Descargó el respaldo', registrarPago:'Registró un pago', anularPago:'Anuló un pago', avisarPago:'Avisó que su cliente pagó', rechazarAvisoPago:'Rechazó un aviso de pago', restaurarNegocio:'Restauró un negocio desde un respaldo'
 };
 
 // Campos que no se copian: pesan mucho (imágenes) o son secretos. Solo se dice que cambiaron.

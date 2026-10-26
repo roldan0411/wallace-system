@@ -65,3 +65,15 @@ test('pagos: validación, último mes pagado, total y mes sugerido', async ()=>{
   assert.equal(co.mesPorPagar({cobroDesde:'2026-09'}, '2026-12-01'), '2026-09');
   assert.equal(co.mesPorPagar({}, '2026-12-01'), '2026-12');
 });
+
+test('P17: aviso de pago del vendedor → pendiente → pago al confirmarlo', ()=>{
+  const a=co.nuevoAviso({id:'a1', negocio:{id:'n1', nombre:'Tienda'}, mes:'2026-10', valor:'99000', medio:'Nequi', fecha:'2026-10-12',
+    nota:'pagó por Nequi', quien:{nombre:'Vende', uid:'u9'}, creado:'2026-10-12T10:00:00Z'});
+  assert.deepEqual(a, {id:'a1', negocioId:'n1', negocioNombre:'Tienda', mes:'2026-10', valor:99000, medio:'Nequi', fecha:'2026-10-12',
+    estado:'pendiente', quien:'Vende', quienUid:'u9', creado:'2026-10-12T10:00:00Z', nota:'pagó por Nequi'});
+  assert.equal(co.problemaDelAviso(a), '');
+  assert.equal(co.problemaDelAviso(Object.assign({}, a, {valor:0})), 'valor');
+  assert.deepEqual(co.avisosPendientes([a, Object.assign({}, a, {id:'a2', estado:'confirmado'})]).map(x=>x.id), ['a1']);
+  const p=co.pagoDesdeAviso(a, {id:'p1', quien:{nombre:'Dueño'}, registrado:'r'});
+  assert.deepEqual(p, {id:'p1', negocioId:'n1', mes:'2026-10', valor:99000, medio:'Nequi', fecha:'2026-10-12', registrado:'r', quien:'Dueño', nota:'Aviso de Vende: pagó por Nequi'});
+});
