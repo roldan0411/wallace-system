@@ -15,6 +15,7 @@ import { abrirModal, cerrarModal, confirmarModal, reportarError, toast } from '.
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase, dejarDeEscucharMiPerfil, logout, mensajeCuenta } from './sesion.js';
 import { reemplazarCuenta } from './cuentas.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 // ---------- 1) La persona que olvidó la contraseña ----------
 export function olvideMiPass(){
@@ -104,6 +105,7 @@ export function generarTemporal(clave){
       .then(cuenta=>{
         // La cuenta nueva ya existe: la temporal se muestra YA, antes de los pasos que pueden fallar
         mostrarTemporal(c.rec, temporal);
+        anotarEnSistema(Dominio.sistema.ACCION.generarTemporal, c.esSuper?null:(DB.get('negocios')||[]).find(n=>n.id===c.rec.negocioId), null, null, (c.rec.nombre||'')+' ('+c.rec.usuario+')');
         return Cuentas.actualizarPerfil(cuenta.uid, {debeCambiarPass:true})
           .then(()=>Cuentas.cerrarRecuperacion(clave, 'resuelta'))
           .then(()=>{
@@ -131,7 +133,8 @@ export function mostrarTemporal(rec, temporal){
 export function descartarRecuperacion(clave){
   if(!esAdminSistema()){ toast(MSJ.soloElDuenoOElAyudanteRestablecen,'error'); return; }
   confirmarModal(MSJ.descartarEstaSolicitud, ()=>{
-    Cuentas.cerrarRecuperacion(clave, 'descartada').catch(e=>reportarError('descartar la solicitud', e));
+    Cuentas.cerrarRecuperacion(clave, 'descartada').then(()=>anotarEnSistema(Dominio.sistema.ACCION.descartarRecuperacion, null, null, null, decodeURIComponent(clave)))
+      .catch(e=>reportarError('descartar la solicitud', e));
   }, 'Descartar');
 }
 
@@ -156,6 +159,8 @@ export function pasarAMiCorreo(){
     Cuentas.confirmarMiPass(d.actual)
       .then(()=>Cuentas.leerPerfil(uidViejo))
       .then(perfil=>Cuentas.crearCuentaConCorreo(correo, d.nueva).then(c=>({perfil, c})))
+      // Se anota ANTES de mover el perfil: después, la cuenta vieja ya no puede escribir
+      .then(x=>anotarEnSistema(Dominio.sistema.ACCION.pasarAMiCorreo, null, null, null, 'Usuario '+(usuario||x.perfil.usuario)).then(()=>x))
       .then(({perfil, c})=>{
         const nuevo=Object.assign({}, perfil, {correoReal:correo, pasoACorreoEn:now(), creadoPor:uidViejo});
         dejarDeEscucharMiPerfil();   // el perfil viejo se borra: no es "te desactivaron"

@@ -12,6 +12,7 @@ import { abrirModal, cerrarModal, confirmarModal, ic, toast } from '../nucleo/co
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from './sesion.js';
 import { borrarCuentaDe, crearCuentaPara, quitarUsuarioLegado, trasGuardarCuenta } from './cuentas.js';
+import { anotarEnSistema } from '../super-admin/historial-sistema.js';
 
 
 // ---------- Usuarios del negocio ----------
@@ -102,10 +103,11 @@ export function editarUsuario(negId,userId){
     if(u){
       const x=usuarios.find(y=>y.id===userId);
       if(x){
-        const antes=x.usuario;
+        const antes=x.usuario, antesU=JSON.parse(JSON.stringify(x));
         Object.assign(x,{nombre:d.nombre,usuario:d.usuario,rol:d.rol,sucursales:sucs,pantallas:pants,permisos:perms,activo:activo});
         if(nuevaPass && !cuentas) ponerPass(x, nuevaPass);
         DB.set('usuarios',usuarios);
+        anotarEnSistema(Dominio.sistema.ACCION.editarUsuario, neg, antesU, x, x.nombre+' ('+x.usuario+')'+(nuevaPass?' · contraseña nueva':''));
         if(cuentas) trasGuardarCuenta(x, false, antes, nuevaPass);
       }
     } else {
@@ -115,12 +117,14 @@ export function editarUsuario(negId,userId){
         crearCuentaPara(rec, nuevaPass, false).then(c=>{
           rec.uid=c.uid;
           const l=DB.get('usuarios')||[]; l.push(rec); DB.set('usuarios',l);
+          anotarEnSistema(Dominio.sistema.ACCION.crearUsuario, neg, null, {rol:rec.rol}, rec.nombre+' ('+rec.usuario+')');
           cerrarModal(); toast(MSJ.usuarioCreado,'success'); render();
         }).catch(e=>toast('No se pudo crear la cuenta: '+mensajeCuenta(e),'error'));
         return;
       }
       usuarios.push(ponerPass(rec, nuevaPass));
       DB.set('usuarios',usuarios);
+      anotarEnSistema(Dominio.sistema.ACCION.crearUsuario, neg, null, {rol:rec.rol}, rec.nombre+' ('+rec.usuario+')');
     }
     cerrarModal(); toast(MSJ.usuarioGuardado,'success'); render();
   }});
@@ -146,6 +150,7 @@ export function eliminarUsuario(id){
       const x=l.find(y=>y.id===id); if(!x){ cerrarModal(); return; }
       x.activo=false;
       DB.set('usuarios',l);
+      anotarEnSistema(Dominio.sistema.ACCION.desactivarUsuario, (DB.get('negocios')||[]).find(n=>n.id===x.negocioId), {activo:true}, {activo:false}, quien);
       if(conCuentasFirebase()) trasGuardarCuenta(x, false, x.usuario, '');
       cerrarModal(); toast(MSJ.usuarioDesactivado,'info'); render();
     }});
@@ -156,6 +161,7 @@ export function eliminarUsuarioDefinitivo(id){
   const rec=us.find(u=>u.id===id); if(!rec) return;
   if(Dominio.permisos.dejaSinAdmin(us, rec.negocioId, id, null)){ toast(MSJ.elNegocioQuedariaSinAdministrador,'error'); return; }
   cerrarModal();
+  anotarEnSistema(Dominio.sistema.ACCION.eliminarUsuario, (DB.get('negocios')||[]).find(n=>n.id===rec.negocioId), null, null, (rec.nombre||rec.usuario)+' ('+rec.usuario+')');
   if(conCuentasFirebase()){
     borrarCuentaDe(rec.usuario).catch(e=>toast('No se pudo borrar su cuenta de acceso: '+mensajeCuenta(e),'error'));
     quitarUsuarioLegado(id);

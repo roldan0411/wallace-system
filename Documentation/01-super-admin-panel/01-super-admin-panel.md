@@ -171,7 +171,7 @@ Clases de `index.html`: `.topbar`, `.sa-emblema`, `.sa-marca`, `.stats/.stat` (v
 ## 10. Limitaciones conocidas
 
 - No existe control de pagos real (fechas de pago, mora); `activo` es manual (P6 de la revisión del panel).
-- Lo que hace un super-admin sobre un negocio (suspender, cambiar plan, dar días…) no deja rastro en una bitácora del sistema (P2). La supervisión sí queda en la auditoría del negocio (P15).
+- ~~Lo que hace un super-admin sobre un negocio no dejaba rastro~~: historial del sistema (P2, sección 14).
 - ~~Las listas de planes difieren (Premium / Empresarial)~~: hoy son Básico, Profesional y Premium en todas partes; un `Empresarial` viejo se lee como Premium (`planDe`).
 - ~~`toggleNegocio` no validaba rol~~: corregido; un vendedor solo pausa sus demos y las funciones de gestión validan `esAdminSistema()` ([-02](../-02-corrections/-02-corrections.md)).
 - ~~No hay restauración de respaldo desde la app~~: existe, sección 13.
@@ -259,3 +259,13 @@ Sin `rolSuper` en el perfil se trata como dueño (perfiles anteriores). El rango
 - **Respaldo** (`descargarRespaldo`): si no se puede leer la base, pregunta y baja un archivo `respaldo-wallace-PARCIAL-<fecha>.json` (con `parcial:true`): con cuentas, el panel casi no tiene datos de los negocios. Antes bajaba esa copia con el nombre de un respaldo completo.
 - **Restaurar un negocio** ("♻️ Restaurar", **solo el dueño del sistema**): se elige el archivo, el negocio y se confirma escribiendo su nombre. `Datos.restaurarNegocio(negId, datos)` (puerto + adaptador) reemplaza su registro (`negocios_r/<id>`) y **todas** sus tablas por las del respaldo (lo que no esté, se borra), en una sola escritura; lo que las reglas rechazarían (logo, ids: S8) se limpia antes. Las cuentas de acceso (`perfiles`, `login`) no se tocan. Sirve con respaldos de la nube y con los parciales (formato del equipo).
 - Pruebas: integración contra el emulador (vuelve todo como estaba, limpia lo inválido, rechaza un negocio que no está) y recorrido en modo local.
+
+## 14. Historial del sistema (P2, 2026-10-24)
+
+Lo que hace cada super-admin sobre negocios y cuentas queda en `auditoria_sistema` ([modelo de datos](../-03-architecture/modelo-de-datos.md), 3.6). Decisiones del usuario: lo ve **solo el dueño**, se anota **todo lo de negocios y cuentas** con antes y después, y se ve en el botón **"🕘 Historial"** del panel.
+
+- **Anotar**: `anotarEnSistema(accion, negocio, antes, despues, detalle)` (`ui/super-admin/historial-sistema.js`) arma la entrada con `Dominio.sistema.entrada` (quién es el super-admin, aunque esté supervisando) y la guarda con `Datos.registrarSistema` (puerto + adaptador; la fecha la pone el servidor). Si no se guarda, `reportarError`.
+- **Qué se anota** (`Dominio.sistema.ACCION`): crear, configurar (solo si algo cambió), aplicar el plan, suspender/activar/pausar, eliminar, vendedor, sucursales, prueba (iniciar, más días, pasar a pago), demos, entrar/salir de supervisión, usuarios del negocio (crear, editar, desactivar, eliminar), administradores, contraseña temporal, descartar solicitud, mi contraseña, mi correo (se anota **antes** de mover el perfil), migrar o borrar cuentas, respaldo y restaurar.
+- **Pantalla** (`pantallaHistorialSistema`, `STATE.page='historial'`): las últimas 500 (`Datos.leerHistorialSistema`), la más nueva primero, con filtros por negocio, persona, acción y texto (`Dominio.sistema.filtrar`) y los cambios "campo: antes → después". El ayudante no ve el botón y, si entra a la página, ve el candado.
+- **Pruebas**: dominio (`tests/dominio/sistema.test.mjs`), reglas cerradas y de transición (a su nombre, fecha del servidor, sin editar ni borrar, solo el dueño lee) y recorrido ("panel, etapa 2").
+- **Falta**: mostrarlo en la ficha de cada negocio cuando exista (U3).

@@ -39,6 +39,8 @@
  * @property {() => Promise<Object>} exportarTodo
  * @property {(negId:string) => void} borrarDatosNegocio
  * @property {string} entorno   produccion | pruebas | emulador | local (lo elige firebase-config.js; el login lo muestra)
+ * @property {(entrada:Object) => Promise<boolean>} registrarSistema       Agrega al historial del sistema (P2; la fecha la pone el servidor).
+ * @property {(limite?:number) => Promise<Array>} leerHistorialSistema      Las últimas entradas, la más nueva primero (solo el dueño puede leerlas).
  *
  * Con cuentas de Firebase (S1):
  * @property {(s:{cuentas:boolean, superAdmin?:boolean, negId?:string}) => void} configurarSesion
@@ -53,7 +55,7 @@
 export const OPERACIONES_DATOS=['iniciar','cargarGlobales','get','set','claveDe','misDatos','datosDe','guardar',
   'eliminar','guardarEn','eliminarEn','modificarRegistro','transaccionRegistro','restaurarNegocio','transaccionUnica','transaccionGlobal','reservarConsecutivo',
   'sincronizarNegocio','detenerSincNegocio','sincronizarTodo','detenerSincTodo','limpiarDatosAjenos',
-  'recargar','exportarTodo','borrarDatosNegocio',
+  'recargar','exportarTodo','borrarDatosNegocio','registrarSistema','leerHistorialSistema',
   'configurarSesion','cargarNegocioPropio','migrarTablasGlobales','leerRegistro','modificarUsuariosLegado',
   'leerNegocioCompleto'];
 

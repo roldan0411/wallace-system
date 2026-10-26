@@ -17,6 +17,7 @@ Todas las tablas de Wallace System con sus campos, en un solo lugar: cómo se gu
 / (raíz)
 ├── login/<claveUsuario>       índice usuario → cuenta (S1)             { correo, uid }
 ├── perfiles/<uid>             negocio, rol y permisos de cada cuenta  { usuario, rol, negocioId, … }
+├── auditoria_sistema/<id>     historial del sistema (P2): qué hizo cada super-admin   (ver 3.6)
 └── data/
     ├── negocios_r/<negId>                 un negocio por nodo (S1)
     ├── superadmins                        lista de administradores del sistema
@@ -169,6 +170,21 @@ Lista en `data/superadmins`.
 
 ### 3.5 `migracion_s1`
 `{negocios, usuarios, negociosCopiados, usuariosCopiados}`: momento y cantidad de la conversión de las tablas globales. La hace **el primer ingreso de cualquiera** con la versión nueva, una sola vez.
+
+### 3.6 `auditoria_sistema` (P2, 2026-10-24)
+Historial de lo que hacen los super-admins sobre negocios y cuentas. Está en la **raíz**, fuera de `data/`, para que solo el dueño del sistema lo lea (el ayudante sí lee `data/`).
+
+| Campo | Tipo | Qué es |
+|---|---|---|
+| `id` | texto | El mismo de la clave |
+| `fecha` | número (ms) | La pone el **servidor** (`serverTimestamp`; las reglas exigen `now`) |
+| `accion` | texto ≤ 80 | De `Dominio.sistema.ACCION` ("Suspendió el negocio", "Creó un usuario"…) |
+| `negocioId`, `negocioNombre` | texto | El negocio afectado (no está en acciones del sistema, como el respaldo) |
+| `quien`, `quienUsuario`, `quienUid`, `rolSuper` | texto | El super-admin. Las reglas exigen `quienUid === auth.uid` |
+| `detalle` | texto ≤ 200 | Dato corto (motivo, usuario afectado, días…) |
+| `cambios` | objeto | `{campo:{antes, despues}}`, solo lo que cambió; logos, fotos y contraseñas no se copian ("(cambió)") |
+
+Reglas: lo escribe cualquier super-admin activo (también el vendedor), **solo agregar** (no se edita ni se borra); lo lee solo el `dueno`. No entra en el respaldo (que copia `data/`).
 
 ## 4. Tablas de cada negocio
 

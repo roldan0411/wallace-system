@@ -16,7 +16,7 @@ POS multi-negocio (SaaS) de WALLACE COMPANY SYSTEM. Sitio estático (`index.html
 - `src/dominio/` reglas puras (sin `window`, Firebase ni DOM) + pruebas en `tests/dominio/`.
 - `src/aplicacion/puertos/` contratos (`datos.js`, `cuentas.js`); `src/aplicacion/servicios/` casos de uso (`sesion.js`).
 - `src/adaptadores/salida/` Firebase (`firebase-datos.js`, `firebase-cuentas.js`), `localStorage`, cripto.
-- `src/adaptadores/entrada/ui/` interfaz: **52 módulos ES** por carpeta (`nucleo/`, `usuarios/`, `ventas/`, `caja/`, `inventario/`…) listados en `ui/manifiesto.js`, cuya `cargarInterfaz()` los importa, instala los eventos delegados (`data-click`) y arma `window.WS`. Estilos en `ui/estilos/` (orden numérico). Para ubicar una función: `Documentation/-03-architecture/mapa-interfaz.md`.
+- `src/adaptadores/entrada/ui/` interfaz: **53 módulos ES** por carpeta (`nucleo/`, `usuarios/`, `ventas/`, `caja/`, `inventario/`…) listados en `ui/manifiesto.js`, cuya `cargarInterfaz()` los importa, instala los eventos delegados (`data-click`) y arma `window.WS`. Estilos en `ui/estilos/` (orden numérico). Para ubicar una función: `Documentation/-03-architecture/mapa-interfaz.md`.
 - `src/arranque.js` es el único que conecta todo; `puente-legado.js` publica en `window` los nombres que usa la interfaz (dominio, datos, cuentas). Retirarlo es lo único que falta de la fase 8.
 - Regla de dependencias y plan de fases: `Documentation/-03-architecture/-03-architecture.md`.
 - Operación nueva de datos o cuentas → agregarla al **puerto** y al **adaptador** (si no, la verificación del puerto falla al arrancar).
@@ -40,6 +40,7 @@ POS multi-negocio (SaaS) de WALLACE COMPANY SYSTEM. Sitio estático (`index.html
 - Errores atrapados: `reportarError(donde, e)`, nunca `catch(e){}` silencioso en pantallas (C2).
 - Agrupar ventas por id (`prodId`, `vendedorId`, `domiciliarioId`), no por nombre (F15); fechas con `fechaLocal`/`Dominio.fechas.diaDe`, nunca `toISOString().slice(0,10)` (F2).
 - Toda acción sensible valida permiso al inicio (`exigirPermiso`, `esAdminSistema`, `puedeVerPantalla`); esconder el botón no basta. Toda acción que **escribe** empieza por `exigirEscritura()` o `exigirPermiso(...)` (respetan la prueba vencida = solo lectura, D10).
+- Toda acción **nueva** del super-admin sobre negocios o cuentas (crear, cambiar, suspender, borrar, contraseñas, respaldo…) llama a `anotarEnSistema(accion, negocio, antes, despues, detalle)` después de guardar, con la acción en `Dominio.sistema.ACCION` (historial del sistema, P2). `auditoria_sistema` es de solo agregar: nunca editarla ni borrarla desde la app.
 - Un cambio a un **pedido que ya existe** (agregar, cobrar, anular, editar) pasa por `Datos.transaccionRegistro` con una regla pura de `src/dominio/ventas.js` que se niega si otro equipo lo cambió (D9); nunca leer, modificar y `guardarMisDatos` el registro entero.
 - Imports ES con ruta relativa y extensión (`'./dominio/pagos.js'`). La app no funciona con `file://`.
 

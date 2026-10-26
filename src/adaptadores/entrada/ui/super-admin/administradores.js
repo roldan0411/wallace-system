@@ -11,6 +11,7 @@ import { abrirModal, cerrarModal, confirmarModal, toast } from '../nucleo/compon
 import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase, mensajeCuenta, ponerPass } from '../usuarios/sesion.js';
 import { borrarCuentaDe, cambiarMiPassCuenta, crearCuentaPara, trasGuardarCuenta } from '../usuarios/cuentas.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 
 // ============================================================
@@ -78,8 +79,9 @@ export function editarSuperAdmin(id){
       if(x.rolSuper==='dueno' && d.rolSuper!=='dueno' && list.filter(y=>y.rolSuper==='dueno').length<=1){
         toast(MSJ.debeQuedarAlMenosUnDueno,'error'); return;
       }
-      const antes=x.usuario;
+      const antes=x.usuario, antesS={nombre:x.nombre, usuario:x.usuario, rolSuper:x.rolSuper};
       Object.assign(x,{nombre:d.nombre.trim(), usuario:usuario, rolSuper:d.rolSuper});
+      anotarEnSistema(Dominio.sistema.ACCION.editarSuperAdmin, null, antesS, {nombre:x.nombre, usuario:x.usuario, rolSuper:x.rolSuper}, x.nombre+(nuevaPass?' · contraseña nueva':''));
       if(nuevaPass && !cuentas) ponerPass(x, nuevaPass);
       if(nuevaPass && cuentas) Dominio.cuentas.CAMPOS_PASS.forEach(k=>{ delete x[k]; });   // la clave vieja ya no sirve
       DB.set('superadmins',list);
@@ -89,12 +91,14 @@ export function editarSuperAdmin(id){
       if(cuentas){
         crearCuentaPara(rec, nuevaPass, true).then(()=>{
           const l=DB.get('superadmins')||[]; l.push(rec); DB.set('superadmins',l);
+          anotarEnSistema(Dominio.sistema.ACCION.crearSuperAdmin, null, null, {rolSuper:rec.rolSuper}, rec.nombre+' ('+rec.usuario+')');
           cerrarModal(); toast(MSJ.administradorCreado,'success'); render();
         }).catch(e=>toast('No se pudo crear la cuenta: '+mensajeCuenta(e),'error'));
         return;
       }
       list.push(ponerPass(rec, nuevaPass));
       DB.set('superadmins',list);
+      anotarEnSistema(Dominio.sistema.ACCION.crearSuperAdmin, null, null, {rolSuper:rec.rolSuper}, rec.nombre+' ('+rec.usuario+')');
     }
     cerrarModal(); toast(MSJ.administradorGuardado,'success'); render();
   }});
@@ -107,6 +111,7 @@ export function eliminarSuperAdmin(id){
   if(s.rolSuper==='dueno' && sas.filter(x=>x.rolSuper==='dueno').length<=1){ toast(MSJ.debeQuedarAlMenosUnDueno,'error'); return; }
   confirmarModal('¿Eliminar al administrador "'+s.nombre+'"? No podrá volver a entrar.',()=>{
     DB.set('superadmins', sas.filter(x=>x.id!==id));
+    anotarEnSistema(Dominio.sistema.ACCION.eliminarSuperAdmin, null, null, null, s.nombre+' ('+s.usuario+')');
     if(conCuentasFirebase()) borrarCuentaDe(s.usuario).catch(e=>toast('No se pudo borrar su cuenta de acceso: '+mensajeCuenta(e),'error'));
     toast(MSJ.administradorEliminado,'info'); render();
   },'Eliminar');
@@ -126,7 +131,7 @@ export function cambiarMiPassSuper(){
     if(d.nueva!==d.nueva2){ toast(MSJ.lasContrasenasNuevasNoCoinciden,'error'); return; }
     const list=DB.get('superadmins')||[];
     const x=list.find(y=>y.id===yo.id);
-    if(x){ ponerPass(x, d.nueva.trim()); DB.set('superadmins',list); }
+    if(x){ ponerPass(x, d.nueva.trim()); DB.set('superadmins',list); anotarEnSistema(Dominio.sistema.ACCION.cambiarMiPass); }
     cerrarModal(); toast(MSJ.contrasenaActualizada,'success');
   }});
 }

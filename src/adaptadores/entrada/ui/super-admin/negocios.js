@@ -15,6 +15,7 @@ import { borrarCuentasDeNegocio, crearCuentaPara, trabajarEn } from '../usuarios
 import { camposPruebaHTML, diasPruebaValidos, iniciarPruebaDe, leerCamposPrueba } from './pruebas.js';
 import { fijarFacturaReservada, reservarFactura } from '../ventas/nueva-venta.js';
 import { fijarResumenNeg } from '../reportes/resumen.js';
+import { anotarEnSistema } from './historial-sistema.js';
 
 
 // ---------- Crear negocio ----------
@@ -80,6 +81,7 @@ export function nuevoNegocio(){
       const usuarios=DB.get('usuarios')||[]; usuarios.push(admin); DB.set('usuarios',usuarios);
       cerrarModal();
       toast('Negocio creado: '+d.nombre,'success');
+      anotarEnSistema(Dominio.sistema.ACCION.crearNegocio, negocio, null, {tipo:negocio.tipo, plan:negocio.plan, precioMes:negocio.precioMes, vendedorId:negocio.vendedorId}, 'Administrador: '+d.usuario);
       iniciarPruebaDe(negId, prueba);
       render();
       mostrarAccesoNegocio(d.nombre, d.usuario, clave);
@@ -122,11 +124,13 @@ export function asignarVendedor(id){
   onGuardar:(d)=>{
     const arr=DB.get('negocios')||[];
     const x=arr.find(y=>y.id===id); if(!x){ cerrarModal(); return; }
+    const antes={vendedorId:x.vendedorId||null, notasComerciales:x.notasComerciales||''};
     x.vendedorId=d.vend||null;
     const v=sas.find(y=>y.id===x.vendedorId);
     x.vendedorNombre=v?v.nombre:'';
     x.notasComerciales=d.notas||'';
     DB.set('negocios',arr);
+    anotarEnSistema(Dominio.sistema.ACCION.asignarVendedor, x, antes, {vendedorId:x.vendedorId, notasComerciales:x.notasComerciales}, x.vendedorNombre||'Sin vendedor');
     cerrarModal(); toast(x.vendedorId?('Asignado a '+x.vendedorNombre):'Vendedor quitado','success'); render();
   }});
 }
@@ -140,9 +144,11 @@ export function toggleNegocio(id){
   }
   // P3: suspender un cliente pide motivo; activar no pide nada. Las demos se pausan sin motivo.
   if(n.activo && !n.esDemo){ suspenderNegocio(id); return; }
+  const antes={activo:n.activo, suspendidoDesde:n.suspendidoDesde, motivoSuspension:n.motivoSuspension};
   n.activo=!n.activo;
   delete n.suspendidoDesde; delete n.motivoSuspension;
   DB.set('negocios',negocios);
+  anotarEnSistema(n.activo?Dominio.sistema.ACCION.activarNegocio:Dominio.sistema.ACCION.pausarDemo, n, antes, {activo:n.activo});
   toast(n.activo?MSJ.negocioActivado:MSJ.negocioSuspendido,'info');
   render();
 }
@@ -158,8 +164,10 @@ export function suspenderNegocio(id){
     if(!s){ toast(MSJ.eligeElMotivoDeLaSuspension,'error'); return; }
     const arr=DB.get('negocios')||[];
     const x=arr.find(y=>y.id===id); if(!x){ cerrarModal(); return; }
+    const antes={activo:x.activo};
     Object.assign(x, s);
     DB.set('negocios',arr);
+    anotarEnSistema(Dominio.sistema.ACCION.suspenderNegocio, x, antes, s, s.motivoSuspension);
     cerrarModal(); toast(MSJ.negocioSuspendido,'info'); render();
   }});
 }
@@ -178,6 +186,7 @@ export function eliminarNegocio(id){
     ], extraHTML:`<p class="nota rojo">Empresa a eliminar: <strong>${escapeHtml(n.nombre)}</strong></p>`,
     onGuardar:(d)=>{
       if((d.conf||'').trim()!==n.nombre){ toast(MSJ.elNombreNoCoincideNoSe,'error'); return; }
+      anotarEnSistema(Dominio.sistema.ACCION.eliminarNegocio, n, null, null, nUsuarios+' usuario(s) y todos sus datos');
       // Borrar las cuentas de acceso de sus usuarios (antes de perder la lista)
       if(conCuentasFirebase()) borrarCuentasDeNegocio(id);
       // Borrar la empresa
@@ -213,7 +222,7 @@ export function entrarComoNegocio(id){
   // R1: con cuentas el panel no tiene los datos del negocio: se escuchan mientras se supervisa
   // (el vendedor, después de fijar ese negocio como su negocio activo)
   // La reserva de factura escribe en el negocio: también después del negocio activo
-  trabajarEn(id).then(()=>{ rastroSupervision(id, 'Entró a supervisar', yo); reservarFactura(); if(conCuentasFirebase()) sincronizarNegocio(id); }).catch(e=>reportarError('entrar al negocio', e));
+  trabajarEn(id).then(()=>{ rastroSupervision(id, 'Entró a supervisar', yo); anotarEnSistema(Dominio.sistema.ACCION.entrarSupervision, neg); reservarFactura(); if(conCuentasFirebase()) sincronizarNegocio(id); }).catch(e=>reportarError('entrar al negocio', e));
   toast('Supervisando '+neg.nombre,'info');
   render();
 }
@@ -228,7 +237,10 @@ export function rastroSupervision(negId, accion, superUser){
   }catch(e){ reportarError('registrar la supervisión', e); }
 }
 export function volverSuperAdmin(){
-  if(STATE.modoSupervision && STATE.negocio) rastroSupervision(STATE.negocio.id, 'Salió de supervisar', STATE._superUser);
+  if(STATE.modoSupervision && STATE.negocio){
+    rastroSupervision(STATE.negocio.id, 'Salió de supervisar', STATE._superUser);
+    anotarEnSistema(Dominio.sistema.ACCION.salirSupervision, STATE.negocio);
+  }
   STATE.esSuperAdmin=true; STATE.modoSupervision=false;
   STATE.negocio=null; STATE.sucursal=null;
   fijarFacturaReservada(null); fijarResumenNeg(null);

@@ -954,6 +954,52 @@ test('panel, etapa 1: clave al azar (P1), suspender con motivo (P3), ventanas de
     noBorraAdmin:true, noDesactivaAdmin:true, noCambiaRol:true, conNombre:true, desactivado:true, eliminado:true,
     banner:true, nombre:'Supervisor: Dueño', rastro:true, pastillas:['Dueño del sistema', 'Ayudante del sistema']});
 });
+test('panel, etapa 2 (P2): las acciones del super-admin quedan en el historial; solo el dueño lo ve', {skip:omitir}, async ()=>{
+  const r=await pagina.evaluate(async ()=>{
+    const res={};
+    const ok=()=>document.getElementById('modal-ok').click();
+    const neg=(DB.get('negocios')||[]).find(n=>n.nombre==='Etapa Uno');
+    const ultimas=async n=>(await Datos.leerHistorialSistema(500)).slice(0,n).map(e=>e.accion);
+    // Suspender, activar, dar vendedor y cambiar el plan
+    WS.STATE.page=''; WS.render();
+    WS.toggleNegocio(neg.id); await __esperar(60);
+    document.getElementById('m-motivo').value='Falta de pago'; ok(); await __esperar(60);
+    WS.toggleNegocio(neg.id); await __esperar(60);
+    WS.configNegocio(neg.id); WS.cfgTab('comercial'); await __esperar(30);
+    document.getElementById('c-precio').value='99000'; WS.guardarConfig(neg.id); await __esperar(100);
+    WS.cfgTab('datos'); WS.STATE.page='';
+    res.acciones=await ultimas(3);
+    const h=(await Datos.leerHistorialSistema(500));
+    const susp=h.find(e=>e.accion==='Suspendió el negocio' && e.negocioId===neg.id);
+    res.suspension=!!susp && susp.quien==='Dueño' && susp.quienUsuario==='dueno' && susp.rolSuper==='dueno' && susp.detalle==='Falta de pago' && susp.cambios.activo.despues==='false';
+    const cfg=h.find(e=>e.accion==='Cambió la configuración' && e.negocioId===neg.id);
+    res.precio=!!cfg && cfg.cambios.precioMes.despues==='99000' && Object.keys(cfg.cambios).length===1;
+    const sup=h.filter(e=>e.negocioId===neg.id).map(e=>e.accion);
+    res.supervision=sup.includes('Entró a supervisar') && sup.includes('Salió de supervisar');
+    res.usuarios=sup.includes('Desactivó un usuario') && sup.includes('Eliminó un usuario') && sup.includes('Creó un usuario');
+    res.alta=sup.includes('Creó el negocio');
+    // Pantalla: el dueño la ve y filtra; el ayudante no tiene botón ni pantalla
+    WS.render();
+    res.boton=!!document.querySelector('[data-click="irHistorialSistema()"]');
+    WS.irHistorialSistema(); await __esperar(150);
+    const filas=()=>document.querySelectorAll('.contenido tbody tr').length;
+    const todas=filas();
+    WS.filtrarHistorial('negocioId', neg.id); await __esperar(30);
+    const delNegocio=filas();
+    WS.filtrarHistorial('accion', 'Suspendió el negocio'); await __esperar(30);
+    const suspensiones=filas();   // la de la etapa 1 ("Cambio de dueño") y la de ahora
+    WS.filtrarHistorial('texto', 'falta de pago'); await __esperar(30);
+    res.filtros=todas>delNegocio && delNegocio>suspensiones && suspensiones===2 && filas()===1 && document.querySelector('.contenido tbody').innerText.includes('Falta de pago');
+    WS.STATE.user.rolSuper='ayudante'; WS.STATE.page=''; WS.render();
+    res.ayudanteSinBoton=!document.querySelector('[data-click="irHistorialSistema()"]');
+    WS.STATE.page='historial'; WS.render();
+    res.ayudanteBloqueado=document.getElementById('app').innerText.includes('Solo el dueño del sistema ve el historial') && !document.querySelector('.contenido tbody');
+    WS.STATE.user.rolSuper='dueno'; WS.STATE.page=''; WS.render();
+    return res;
+  });
+  assert.deepEqual(r, {acciones:['Cambió la configuración', 'Activó el negocio', 'Suspendió el negocio'], suspension:true, precio:true,
+    supervision:true, usuarios:true, alta:true, boton:true, filtros:true, ayudanteSinBoton:true, ayudanteBloqueado:true});
+});
 test('sin errores de JavaScript en todo el recorrido', {skip:omitir}, ()=>{
   assert.deepEqual(errores, []);
 });
