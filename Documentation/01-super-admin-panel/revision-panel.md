@@ -1,6 +1,6 @@
 # Revisión del panel de super-admin (para reestructurarlo)
 
-> 2026-10-14. **Para revisión del usuario.** 2026-10-26: **etapas 1 a 4 hechas** (4 = P6 cobros y P7) (2 = P2, historial del sistema; 3 = U1–U4, menús, pestañas, ficha y 4 cifras). La sección 1 describe el panel de antes (P1, P3, P8, P11, P15, P16 solo la pastilla del rol, P21, P22), con las decisiones del usuario anotadas en la sección 5. El resto sigue sin implementar. Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
+> 2026-10-14. **Para revisión del usuario.** 2026-10-26: **etapas 1 a 5 hechas** (4 = P6 cobros y P7; 5 = U5, U6, U7, P4, P17 y P5/U9, con los precios por plan pendientes del usuario) (2 = P2, historial del sistema; 3 = U1–U4, menús, pestañas, ficha y 4 cifras). La sección 1 describe el panel de antes (P1, P3, P8, P11, P15, P16 solo la pastilla del rol, P21, P22), con las decisiones del usuario anotadas en la sección 5. El resto sigue sin implementar. Este documento solo cubre el panel del super-admin: el panel del dueño y del ayudante, el del vendedor y las pantallas a las que se llega desde ahí (Configurar, Usuarios, Administradores, 🔐 Cuentas, respaldo e informe). La operación **dentro** de un negocio queda fuera.
 > Cada punto sale del código actual. Entre paréntesis va dónde está, con rutas relativas a `src/adaptadores/entrada/`. La numeración sirve para responder ("sí a P3, no a P7…").
 
 Leyenda de prioridad: 🔴 falla o riesgo real · 🟠 flujo incompleto · 🟡 mejora.
@@ -125,7 +125,7 @@ Pruebas: dominio (`suspension`, `dejaSinAdmin`), reglas (los campos nuevos no lo
 2. ~~**Rastro:** P2 (bitácora del sistema).~~ Hecho el 2026-10-24: solo el dueño lo ve, se anota todo lo de negocios y cuentas, botón "🕘 Historial" ([01-super-admin-panel](01-super-admin-panel.md), sección 14).
 3. ~~**Estructura nueva:** U1, U2 y U3 (menús, pestañas, ficha del negocio)~~ hechos el 2026-10-24 con U4 (4 cifras) y parte de U10 (pestañas vacías con texto); quedan U7, U8 y U11. Antes y después, tomar capturas (`node scripts/capturas.mjs`).
 4. ~~**Cobros:** P6 y P7~~ hechos el 2026-10-26 (pagos en `data/pagos/<negId>`, no dentro del negocio, para que su gente no los lea; [01-super-admin-panel](01-super-admin-panel.md), sección 16). U4 se hizo en la etapa 3; U5 (bandeja única) queda pendiente: hoy son tarjetas separadas (contraseñas, por vencer, cobros).
-5. **El resto:** P4, P5/U9, P8–P10, P12–P14, P17–P20, U6, U12–U14.
+5. **El resto:** ~~P4, P5/U9, P17, U5, U6, U7~~ hechos el 2026-10-26 ([01-super-admin-panel](01-super-admin-panel.md), sección 17). Quedan P9–P10, P12–P14, P18–P20, U12 (panel del vendedor como embudo), U13–U14.
 
 Lo que toca datos o reglas nuevas (P2, P6, P3 con su motivo, P18) necesita:
 - su regla pura en `src/dominio/` con su prueba;
