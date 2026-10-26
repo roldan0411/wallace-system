@@ -164,6 +164,11 @@ export const MSJ={
   noPuedesEliminarteATiMismo: 'No puedes eliminarte a ti mismo',
   // panel, etapa 1 y 2 (2026-10-24)
   soloElDuenoVeElHistorial: 'Solo el dueño del sistema ve el historial',
+  // cobros (P6)
+  soloElDuenoOElAyudanteRegistranPagos: 'Solo el dueño o el ayudante del sistema registran pagos',
+  revisaElPago: 'Revisa el pago: el valor debe ser mayor que cero y el mes, el medio y la fecha deben ser válidos.',
+  noSeGuardoElPago: 'No se pudo guardar el pago. Revisa la conexión e inténtalo de nuevo.',
+  pagoAnulado: 'Pago anulado',
   eligeElMotivoDeLaSuspension: 'Elige el motivo. Si es "Otro", escríbelo.',
   negocioSuspendido: 'Negocio suspendido',
   negocioActivado: 'Negocio activado',

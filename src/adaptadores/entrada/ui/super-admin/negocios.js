@@ -72,6 +72,7 @@ export function nuevoNegocio(){
     };
     // A prueba desde que nace (las reglas exigen que el negocio de un vendedor venza)
     if(prueba) Object.assign(negocio, Dominio.prueba.nuevaPrueba(Date.now(), prueba.dias));
+    else{ Object.assign(negocio, Dominio.cobros.inicioDeCobro(today())); delete negocio.pagadoHasta; }   // P6: paga desde hoy
     if(vendedor) negocio.vendedorNombre=STATE.user.nombre||'';
     const admin={id:uid(), negocioId:negId, nombre:'Administrador', usuario:d.usuario, rol:'admin', activo:true, creado:now()};
     // P1: clave al azar (antes todos nacían con la misma); con cuentas, la cambia al primer ingreso

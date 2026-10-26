@@ -23,6 +23,7 @@ import * as ventas from './dominio/ventas.js';
 import * as prueba from './dominio/prueba.js';
 import * as ejemplos from './dominio/ejemplos.js';
 import * as sistema from './dominio/sistema.js';
+import * as cobros from './dominio/cobros.js';
 import { verificarPuertoDatos } from './aplicacion/puertos/datos.js';
 import { verificarPuertoCuentas } from './aplicacion/puertos/cuentas.js';
 import { crearServicioSesion, mensajeDeFallo } from './aplicacion/servicios/sesion.js';
@@ -78,7 +79,7 @@ const adaptadorCuentas=verificarPuertoCuentas(crearAdaptadorCuentas({
   aleatorio: cripto.nuevaSal
 }));
 
-const dominio={fechas, pagos, caja, inventario, facturas, contrasenas, cuentas, permisos, negocio, gastos, ventas, prueba, ejemplos, sistema};
+const dominio={fechas, pagos, caja, inventario, facturas, contrasenas, cuentas, permisos, negocio, gastos, ventas, prueba, ejemplos, sistema, cobros};
 
 // Periodo de prueba (sin pantalla todavía): casos de uso sobre el puerto de datos
 const pruebas=crearServicioPruebas({datos, dominio, usuario:()=>(ui && ui.STATE.user)||null, nuevoId:cripto.nuevoId});

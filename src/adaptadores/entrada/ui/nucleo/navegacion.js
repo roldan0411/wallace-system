@@ -19,6 +19,7 @@ import { panelSuperAdmin } from '../super-admin/panel.js';
 import { pantallaSuperAdmins } from '../super-admin/administradores.js';
 import { pantallaHistorialSistema } from '../super-admin/historial-sistema.js';
 import { pantallaFicha, pantallaHistorialNegocio } from '../super-admin/ficha-negocio.js';
+import { pantallaCobrosNegocio } from '../super-admin/cobros.js';
 import { bannerPrueba } from '../super-admin/pruebas.js';
 import { nuevaVenta } from '../ventas/nueva-venta.js';
 import { cuentas, usaCuentas } from '../ventas/cuentas-abiertas.js';
@@ -257,7 +258,8 @@ export function render(){
   if(STATE.debeCambiarPass){ app.innerHTML=vistaCambioObligatorio(); return; }
   if(STATE.esSuperAdmin){
     // Configuración y usuarios de negocios: solo dueño/ayudante (no vendedor)
-    if(/^(config|usuarios|negocio|historialneg):/.test(STATE.page) && !esAdminSistema()) STATE.page='';
+    if(/^(config|usuarios|negocio|historialneg|cobros):/.test(STATE.page) && !esAdminSistema()) STATE.page='';
+    if(STATE.page.indexOf('cobros:')===0){ app.innerHTML=pantallaCobrosNegocio(STATE.page.split(':')[1]); return; }
     if(STATE.page.indexOf('negocio:')===0){ app.innerHTML=pantallaFicha(STATE.page.split(':')[1]); return; }
     if(STATE.page.indexOf('historialneg:')===0){ app.innerHTML=pantallaHistorialNegocio(STATE.page.split(':')[1]); return; }
     if(STATE.page.indexOf('config:')===0){ app.innerHTML=pantallaConfig(STATE.page.split(':')[1]); return; }

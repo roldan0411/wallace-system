@@ -113,6 +113,9 @@ export function pasarAPago(negId){
   confirmarModal(MSJ.pasarAPagoDejaDeSer, ()=>{
     const r=Pruebas.convertirAPago(negId);
     if(!r.ok){ toast(motivo(r),'error'); return; }
+    // P6: desde hoy se le cobra (conserva su día de pago si ya lo tenía)
+    const l=DB.get('negocios')||[], x=l.find(n=>n.id===negId);
+    if(x){ Object.assign(x, Dominio.cobros.inicioDeCobro(today(), x.diaPago)); delete x.pagadoHasta; DB.set('negocios', l); }
     toast(MSJ.negocioPasadoAPago,'success');
     anotarEnSistema(Dominio.sistema.ACCION.pasarAPago, (DB.get('negocios')||[]).find(n=>n.id===negId));
     render();

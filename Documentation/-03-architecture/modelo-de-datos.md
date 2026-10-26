@@ -19,6 +19,7 @@ Todas las tablas de Wallace System con sus campos, en un solo lugar: cómo se gu
 ├── perfiles/<uid>             negocio, rol y permisos de cada cuenta  { usuario, rol, negocioId, … }
 ├── auditoria_sistema/<id>     historial del sistema (P2): qué hizo cada super-admin   (ver 3.6)
 └── data/
+    ├── pagos/<negId>/<id>                 pagos mensuales de cada cliente (P6, ver 3.7)
     ├── negocios_r/<negId>                 un negocio por nodo (S1)
     ├── superadmins                        lista de administradores del sistema
     ├── usuarios                           tabla VIEJA de usuarios (con contraseñas) — solo para migrar
@@ -185,6 +186,11 @@ Historial de lo que hacen los super-admins sobre negocios y cuentas. Está en la
 | `cambios` | objeto | `{campo:{antes, despues}}`, solo lo que cambió; logos, fotos y contraseñas no se copian ("(cambió)") |
 
 Reglas: lo escribe cualquier super-admin activo (también el vendedor), **solo agregar** (no se edita ni se borra); lo lee solo el `dueno`. No entra en el respaldo (que copia `data/`).
+
+### 3.7 `pagos` y el cobro del negocio (P6, 2026-10-26)
+`data/pagos/<negId>/<id>`: `{id, negocioId, mes:'AAAA-MM', valor (> 0), medio (Efectivo · Transferencia · Nequi · Daviplata · Otro), fecha:'AAAA-MM-DD', registrado (ISO), quien, nota?, anulado?, anuladoEn?, anuladoPor?}`. Solo el dueño y el ayudante del sistema (por `data/`). No se borran: se anulan.
+
+En el negocio (`negocios_r/<id>`, campos reservados): `diaPago` (1–31), `cobroDesde` ('AAAA-MM', primer mes que se cobra) y `pagadoHasta` ('AAAA-MM', último mes pagado sin huecos). Reglas: `src/dominio/cobros.js`.
 
 ## 4. Tablas de cada negocio
 

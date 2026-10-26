@@ -170,7 +170,7 @@ Clases de `index.html`: `.topbar`, `.sa-emblema`, `.sa-marca`, `.stats/.stat` (v
 
 ## 10. Limitaciones conocidas
 
-- No existe control de pagos real (fechas de pago, mora); `activo` es manual (P6 de la revisión del panel).
+- ~~No existe control de pagos real~~: cobro mensual (P6, sección 16). La suspensión sigue siendo manual, por decisión.
 - ~~Lo que hace un super-admin sobre un negocio no dejaba rastro~~: historial del sistema (P2, sección 14).
 - ~~Las listas de planes difieren (Premium / Empresarial)~~: hoy son Básico, Profesional y Premium en todas partes; un `Empresarial` viejo se lee como Premium (`planDe`).
 - ~~`toggleNegocio` no validaba rol~~: corregido; un vendedor solo pausa sus demos y las funciones de gestión validan `esAdminSistema()` ([-02](../-02-corrections/-02-corrections.md)).
@@ -287,3 +287,25 @@ Decisiones del usuario: **ficha con secciones** al tocar un negocio y **una fila
   - Eliminar desde la ficha vuelve al panel.
 - **Pruebas**: dominio (pestañas y actividad) y recorrido ("panel, etapa 3"; además la ficha y su historial se dibujan para los 18 negocios). Capturas nuevas al final: `panel-demos`, `panel-menus`, `panel-menu-negocio`, `ficha-negocio` (y móvil).
 - **Pendiente de la revisión**: U5 (bandeja única "Por atender"), U6 (filtros y orden), U7 (fechas legibles), U8–U11, U12 (panel del vendedor), U13–U14.
+
+## 16. Cobro mensual a los clientes (etapa 4, P6 y P7, 2026-10-26)
+
+Decisiones del usuario: cada pago guarda **mes, valor y medio**; **5 días de gracia**; en mora el sistema **avisa y sugiere suspender** (no suspende solo); registran pagos **el dueño y el ayudante**.
+
+- **Reglas puras** (`src/dominio/cobros.js`): cada mes vence el **día de pago** (`diaPago`; el 31 en un mes corto es su último día). Estados de `estadoPago(neg, hoy)`:
+  - `no_aplica`: demos, pruebas y negocios sin precio;
+  - `sin_iniciar`: negocios de antes del control, que empieza con el primer pago que se registre;
+  - `al_dia`: el próximo mes aún no vence;
+  - `por_pagar`: venció hace 5 días o menos (`DIAS_GRACIA`);
+  - `en_mora`: los días se cuentan desde el vencimiento del mes más viejo sin pagar, y se dice cuántos meses debe.
+- **Campos del negocio** (reservados en el dominio y en `database.rules.json`): `cobroDesde` (primer mes que se cobra) y `pagadoHasta` (último mes pagado **sin huecos**: pagar noviembre no tapa la deuda de octubre). Al crear un negocio sin prueba y al pasar una prueba a pago (`inicioDeCobro`) se fija el día de pago (el de ese día, máximo 28; o el que ya tenía) y el primer mes: paga al empezar.
+- **Pagos**: `data/pagos/<negId>/<id>` `{id, negocioId, mes, valor, medio, fecha, registrado, quien, nota?, anulado?, anuladoEn?, anuladoPor?}`. Los leen y escriben solo el dueño y el ayudante (la gente del negocio y el vendedor no). Las reglas validan id, negocio, mes, valor > 0 y medio. Puerto + adaptador: `guardarPago` y `leerPagos` (bajo demanda; el panel usa solo los campos del negocio).
+- **Interfaz** (`ui/super-admin/cobros.js`):
+  - **"💰 Cobros del mes"**: tarjeta del panel con los clientes en mora, por pagar o sin pagos, y los botones "Registrar pago" y (en mora) "Suspender".
+  - La mora suma en **"Por atender"**.
+  - El estado de pago aparece en la tabla (también en "Tus clientes" del vendedor, que lo ve pero no registra).
+  - **Ficha → Cobros**: estado, día de pago, desde cuándo se cobra, pagado hasta, **total pagado de verdad** (P7) y la lista de pagos con "Anular". Un pago anulado se queda en la lista marcado y ese mes vuelve a deberse.
+  - "Registrar pago" sugiere el primer mes que falta y el precio del plan.
+- **Historial**: "Registró un pago" y "Anuló un pago", con el antes y el después de `pagadoHasta`.
+- **P7**: en Configurar → Plan y vendedor, "Facturado desde que entró" queda marcado como estimado; lo pagado de verdad está en la ficha → Cobros.
+- **Pruebas**: dominio (`tests/dominio/cobros.test.mjs`), reglas (quién lee y escribe, validación, campos reservados) y recorrido ("panel, etapa 4": alta → por pagar → registrar → al día → anular → mora en "Por atender" → pasar a pago inicia el cobro).

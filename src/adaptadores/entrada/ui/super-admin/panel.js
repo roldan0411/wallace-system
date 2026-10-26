@@ -14,6 +14,7 @@ import { render } from '../nucleo/navegacion.js';
 import { conCuentasFirebase } from '../usuarios/sesion.js';
 import { cuantasRecuperaciones, tarjetaRecuperaciones } from '../usuarios/recuperacion.js';
 import { cuantasPorVencer, pillPrueba, tarjetaPorVencer } from './pruebas.js';
+import { cuantasEnMora, pillPago, tarjetaCobros } from './cobros.js';
 import { resumenDe } from '../reportes/resumen.js';
 import { anotarEnSistema } from './historial-sistema.js';
 
@@ -104,7 +105,7 @@ export function panelSuperAdmin(){
           ${misDemos.length? misDemos.map(n=>`<tr>
             <td data-label="Negocio"><strong>${escapeHtml(n.nombre)}</strong> <span class="pill pill-azul fs-9">DEMO</span>${pillPrueba(n).replace('DEMO · ','')}${n.ciudad?`<br><span class="gris">${escapeHtml(n.ciudad)}</span>`:''}</td>
             <td data-label="Tipo">${escapeHtml(n.tipo)}</td>
-            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">Pausado</span>'}</td>
+            <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>'+(pillPago(n)?'<br>'+pillPago(n):''):'<span class="pill pill-rojo">Pausado</span>'}</td>
             <td class="acciones" data-label="Acciones">
               <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
               <button class="btn btn-sm ${n.activo?'btn-naranja':'btn-verde'}" data-click="toggleNegocio('${escapeHtml(n.id)}')">${n.activo?'Pausar':'Activar'}</button>
@@ -119,7 +120,7 @@ export function panelSuperAdmin(){
 
   // ===== PANEL DEL DUEÑO Y DEL AYUDANTE (U1–U4) =====
   const dueno=STATE.user.rolSuper==='dueno', cuentas=conCuentasFirebase() && esAdminSistema();
-  const porAtender=cuantasPorVencer()+cuantasRecuperaciones();
+  const porAtender=cuantasPorVencer()+cuantasRecuperaciones()+cuantasEnMora();
   // U2: pestañas. Los contadores salen de la lista ya filtrada por búsqueda y vendedor.
   const conteo=Dominio.negocio.contarPorGrupo(lista);
   const tab=Dominio.negocio.GRUPOS_PANEL.indexOf(STATE.tabNegocios)>-1 ? STATE.tabNegocios : 'clientes';
@@ -163,11 +164,12 @@ export function panelSuperAdmin(){
   <div class="contenido">
     ${tarjetaRecuperaciones()}
     ${tarjetaPorVencer()}
+    ${tarjetaCobros()}
     <div class="stats">
       <div class="stat gold"><div class="stat-ico gold">${ic('box')}</div><div class="stat-lbl">Clientes activos</div><div class="stat-val">${activos}</div><div class="stat-sub">de ${reales.length} · ${conteo.prueba} a prueba</div></div>
       <div class="stat verde"><div class="stat-ico verde">${ic('cash')}</div><div class="stat-lbl">Ingreso del mes</div><div class="stat-val">${fmtMoney(ingreso)}</div><div class="stat-sub">suma de planes activos</div></div>
       <div class="stat azul"><div class="stat-ico azul">${ic('report')}</div><div class="stat-lbl">Ventas de hoy</div><div class="stat-val">${fmtMoney(ventasHoy)}</div><div class="stat-sub">todos los negocios (sin demos)</div></div>
-      <div class="stat ${porAtender?'naranja':'verde'}"><div class="stat-ico ${porAtender?'naranja':'verde'}">${ic('history')}</div><div class="stat-lbl">Por atender</div><div class="stat-val">${porAtender}</div><div class="stat-sub">${porAtender?'pruebas por vencer y contraseñas':'todo al día ✓'}</div></div>
+      <div class="stat ${porAtender?'naranja':'verde'}"><div class="stat-ico ${porAtender?'naranja':'verde'}">${ic('history')}</div><div class="stat-lbl">Por atender</div><div class="stat-val">${porAtender}</div><div class="stat-sub">${porAtender?'pruebas por vencer, contraseñas y mora':'todo al día ✓'}</div></div>
     </div>
     ${(()=>{ const sas2=DB.get('superadmins')||[];
       const porVend={};
@@ -205,7 +207,7 @@ export function panelSuperAdmin(){
         </div>
       </div>
       <div class="cats mb-14">${TABS.map(x=>`<button class="cat ${tab===x[0]?'on':''}" data-click="verTabNegocios('${escapeHtml(x[0])}')">${x[1]} <span class="cat-num">${conteo[x[0]]}</span></button>`).join('')}</div>
-      <div class="tabla-wrap"><table class="tabla tabla-cards">
+      <div class="tabla-wrap"><table class="tabla tabla-cards" id="tabla-negocios">
         <thead><tr><th>Negocio</th><th>Tipo</th><th>Vendedor</th><th>Plan</th><th>Precio/mes</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
         ${enTab.length? enTab.map(n=>`<tr>
@@ -214,7 +216,7 @@ export function panelSuperAdmin(){
           <td data-label="Vendedor">${n.vendedorId?escapeHtml(nombreVend(n.vendedorId)||n.vendedorNombre||'—'):'<span class="pill pill-rojo chico">Sin asignar</span>'}</td>
           <td data-label="Plan">${escapeHtml(n.plan||'—')}</td>
           <td data-label="Precio/mes">${fmtMoney(n.precioMes)}</td>
-          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>':'<span class="pill pill-rojo">'+(n.esDemo?'Pausada':'Suspendido')+'</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
+          <td data-label="Estado">${n.activo?'<span class="pill pill-verde">Activo</span>'+(pillPago(n)?'<br>'+pillPago(n):''):'<span class="pill pill-rojo">'+(n.esDemo?'Pausada':'Suspendido')+'</span>'+(n.suspendidoDesde?'<br><span class="gris chico">desde '+escapeHtml(Dominio.fechas.diaDe(n.suspendidoDesde))+'</span>':'')+(n.motivoSuspension?'<br><span class="gris chico">'+escapeHtml(n.motivoSuspension)+'</span>':'')}</td>
           <td data-label="Acciones"><div class="acciones panel-acciones">
             <button class="btn btn-sm btn-verde" data-click="entrarComoNegocio('${escapeHtml(n.id)}')">Entrar</button>
             <details class="menu-sa en-linea">

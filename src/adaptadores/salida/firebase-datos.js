@@ -35,6 +35,7 @@ export const TABLAS_UNICAS=['caja_actual','config','factura_seq','conceptos_gast
 export const TABLAS_GLOBALES=['negocios','superadmins','usuarios'];
 // Claves de data/ que con cuentas no se copian tal cual al caché
 const CLAVES_ESQUEMA_S1={negocios:1, negocios_r:1, negocios_bk:1, usuarios:1, migracion_s1:1};
+const CLAVES_FUERA_DE_CACHE={pagos:1};   // se leen bajo demanda (leerPagos)
 const SRV_NEG='__negocios';   // REG_SRV de negocios_r
 
 /**
@@ -653,7 +654,7 @@ export function crearAdaptadorFirebase(opc){
   function aplicarTodo(data){
     let cambio=false;
     Object.keys(data).forEach(k=>{
-      if(estado.cuentas && CLAVES_ESQUEMA_S1[k]) return;
+      if((estado.cuentas && CLAVES_ESQUEMA_S1[k]) || CLAVES_FUERA_DE_CACHE[k]) return;
       if(JSON.stringify(data[k])!==JSON.stringify(CACHE[k])){ guardarLocal(k,data[k]); cambio=true; }
     });
     Object.keys(CACHE).forEach(k=>{
@@ -813,6 +814,20 @@ export function crearAdaptadorFirebase(opc){
       .then(sn=>{ const out=[]; sn.forEach(c=>{ out.push(c.val()); }); return out.reverse(); });
   }
 
+  // ---------- Pagos de los clientes (P6): data/pagos/<negId>/<id> ----------
+  // Fuera de las tablas del negocio: su gente no los lee. Se leen bajo demanda (ficha del negocio);
+  // el panel usa cobroDesde/pagadoHasta del negocio, que no exigen descargar los pagos.
+  function guardarPago(p){
+    if(!p || !p.id || !p.negocioId) return Promise.resolve(false);
+    if(!(estado.listo && FB)){ soloLocal('pagos', (CACHE.pagos||[]).filter(x=>x.id!==p.id).concat([limpiar(p)])); return Promise.resolve(true); }
+    const u={}; u['pagos/'+p.negocioId+'/'+p.id]=limpiar(p);
+    return actualizar('data', u).then(()=>true).catch(err=>{ console.warn('FB pagos', err&&err.message); negada('pagos', err); return false; });
+  }
+  function leerPagos(n){
+    if(!(estado.listo && FB)) return Promise.resolve((CACHE.pagos||[]).filter(p=>p && p.negocioId===n));
+    return leerNodo('data/pagos/'+n).then(v=>aLista(v).filter(p=>p && p.id));
+  }
+
   return {
     TABLAS, TABLAS_UNICAS, TABLAS_GLOBALES,
     estado, cache:CACHE,
@@ -823,6 +838,6 @@ export function crearAdaptadorFirebase(opc){
     modificarRegistro, transaccionRegistro, transaccionUnica, transaccionGlobal, reservarConsecutivo,
     sincronizarNegocio, detenerSincNegocio, sincronizarTodo, detenerSincTodo,
     limpiarDatosAjenos, recargar, exportarTodo, restaurarNegocio, borrarDatosNegocio,
-    registrarSistema, leerHistorialSistema
+    registrarSistema, leerHistorialSistema, guardarPago, leerPagos
   };
 }

@@ -132,6 +132,12 @@ async function tomar(dir){
     await en(()=>{ document.querySelectorAll('.topbar details.menu-sa').forEach(d=>{ d.open=true; }); }); await foto('panel-menus');
     await en(()=>{ document.querySelector('.contenido tbody details.menu-sa').open=true; }); await foto('panel-menu-negocio');
     await en(()=>{ WS.abrirFicha((DB.get('negocios')||[])[0].id); }); await foto('ficha-negocio'); await foto('ficha-negocio-movil', 390);
+    // Cobros (etapa 4): un cliente que paga desde hoy aparece en "Cobros del mes"
+    await en(()=>{ WS.STATE.page=''; WS.nuevoNegocio(); });
+    await en(()=>{ document.getElementById('m-nombre').value='Cliente Ejemplo'; document.getElementById('m-usuario').value='cliente1';
+      document.getElementById('m-prueba').value=''; document.getElementById('modal-ok').click(); });
+    await en(()=>{ WS.cerrarModal(); WS.verTabNegocios('clientes'); }); await foto('panel-cobros');
+    await en(()=>{ WS.cobrosNegocio((DB.get('negocios')||[]).find(x=>x.nombre==='Cliente Ejemplo').id); }); await foto('ficha-cobros');
   } catch(e){
     // Que se vea claro dónde se detuvo (la traza completa queda debajo)
     console.error('✖ Las capturas se detuvieron después de la '+n+' ('+(readdirSync(dir).filter(f=>f.endsWith('.png')).sort().pop()||'ninguna')+'): '+(e&&e.message));
